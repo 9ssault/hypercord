@@ -63,7 +63,11 @@
         { "target": "portable", "arch": ["x64"] }
       ]
     },
+    "portable": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-portable.${ext}"
+    },
     "nsis": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
