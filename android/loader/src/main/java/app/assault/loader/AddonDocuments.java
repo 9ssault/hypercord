@@ -66,7 +66,7 @@ final class AddonDocuments {
                         }
                     }
                 });
-            } catch (Throwable error) { XposedBridge.log("Assault addon document bridge unavailable: " + error.getClass().getSimpleName()); }
+            } catch (Throwable error) { XposedBridge.log("Hypercord addon document bridge unavailable: " + error.getClass().getSimpleName()); }
         }
         private static synchronized void begin(Activity activity, String id) throws Exception {
             if (active != null && active.writing) throw new IOException("Finish the existing file operation first.");
@@ -100,7 +100,7 @@ final class AddonDocuments {
                     try {
                         Intent intent = new Intent(operation.equals("export") ? Intent.ACTION_CREATE_DOCUMENT : Intent.ACTION_OPEN_DOCUMENT)
                             .addCategory(Intent.CATEGORY_OPENABLE).setType(operation.equals("export") ? "application/json" : "*/*");
-                        if (operation.equals("export")) intent.putExtra(Intent.EXTRA_TITLE, "Assault-addons.json");
+                        if (operation.equals("export")) intent.putExtra(Intent.EXTRA_TITLE, "Hypercord-addons.json");
                         activity.startActivityForResult(intent, session.code);
                     } catch (RuntimeException error) { finish(session, null, "Document picker unavailable. Please retry."); }
                 });
@@ -110,7 +110,7 @@ final class AddonDocuments {
                 new Thread(() -> {
                     try { finish(session, transfer(session, resolver), null); }
                     catch (Exception error) { finish(session, null, error.getMessage()); }
-                }, "Assault addon transfer").start();
+                }, "Hypercord addon transfer").start();
             }
         }
         static synchronized void result(Activity activity, int request, int result, Intent intent) {
@@ -160,7 +160,7 @@ final class AddonDocuments {
                     task.complete(() -> finish(session, response, null));
                 } catch (Exception error) { task.complete(() -> finish(session, null, "File operation failed: " + error.getMessage())); }
             }
-        }, "Assault addon document").start();
+        }, "Hypercord addon document").start();
     }
     private static JSONObject transfer(Session session, ContentResolver resolver) throws Exception {
         JSONObject request = session.request;
@@ -196,7 +196,7 @@ final class AddonDocuments {
             if (error != null) response.put("error", error.length() > 240 ? error.substring(0, 240) : error);
             AddonFiles.publish(new File(session.cacheDirectory, "assault-addon-result-" + session.id + ".json"),
                 response.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (Exception failure) { XposedBridge.log("Assault addon result could not be saved: " + failure.getClass().getSimpleName()); }
+        } catch (Exception failure) { XposedBridge.log("Hypercord addon result could not be saved: " + failure.getClass().getSimpleName()); }
         finally { active = null; }
     }
 }

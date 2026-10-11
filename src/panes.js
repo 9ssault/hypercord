@@ -501,40 +501,145 @@
 
   /* ---- logs ---------------------------------------------------------------- */
 
+  /**
+   * This client's own log lines, when the shell has a log reader to give them.
+   * `null` means there is no reader in this build - not that the log is empty, and
+   * not an error: the pane below falls back to the state the shell does hold.
+   */
+  async function readOwnLog() {
+    const reader = hc && hc.logs && typeof hc.logs.read === "function" ? hc.logs : null;
+    if (!reader) return null;
+    const res = await guard("client log", () => reader.read(200));
+    if (res === undefined || res === null) return null;
+    if (Array.isArray(res)) return res.map(text);
+    if (res && Array.isArray(res.lines)) return res.lines.map(text);
+    return res && res.text ? [text(res.text)] : [];
+  }
+
+  /**
+   * What this client can say about itself right now, read back from the shell: the
+   * plugin host's own counts, any plugin that broke and why, and what the key store
+   * holds. Every line comes from a channel that answers without a control server.
+   */
+  async function ownStateReport() {
+    const lines = [];
+    const status = await guard("plugin state", () => hc.plugins.status());
+    if (status) {
+      const broken = status.broken && typeof status.broken === "object" ? Object.keys(status.broken) : [];
+      const running = Array.isArray(status.running) ? status.running.length : 0;
+      lines.push("plugins: " + text(status.catalogue || 0) + " in the catalogue, " + text(status.enabled || 0) + " enabled, " + running + " running");
+      for (const id of broken) lines.push("  broken: " + id + " - " + text(status.broken[id]));
+    } else {
+      lines.push("plugins: the shell did not report plugin state");
+    }
+    const keys = await guard("access keys", () => hc.tokens.list());
+    lines.push("keys: " + (Array.isArray(keys) ? keys.length + " stored on this machine" : "the shell did not report the key store"));
+    const update = await guard("update state", () => hc.update.state());
+    lines.push("updates: " + (update ? text(update.supported ? "on" : "not updating in this run") + (update.version ? " (" + text(update.version) + ")" : "") + (update.error ? " - last error: " + text(update.error) : "") : "the shell did not report update state"));
+    return {
+      note: "No log file is read in this run, so this is the state this client holds right now; the lines it writes go to the terminal Hypercord was started from. A build that keeps a log shows its own lines here instead.",
+      lines,
+    };
+  }
+
+  /**
+   * The Logs view.
+   *
+   * Deliberately not a proxy for the control server's log: a client pointed at
+   * Discord and nothing else has no server to ask, and asking anyway is what put
+   * "no control server configured" in this pane's header and left the body empty.
+   * The shell decides the source - its own log reader when this build has one, and
+   * otherwise the state above - and the pane always has something true to show.
+   */
   async function loadLogs() {
     const out = $("hp-logsOut");
+    const note = $("hp-logsNote");
     if (out) out.textContent = "reading\u2026";
-    const res = await guard("logs", () => hc.api.request("/api/logs?lines=200"));
+    // Whether a reader exists is asked first and separately, because "this build
+    // keeps no log" and "the log is empty" are different answers and only one of
+    // them is about a missing reader.
+    const hasReader = Boolean(hc && hc.logs && typeof hc.logs.read === "function");
+    const lines = hasReader ? await readOwnLog() : null;
     if (!out) return;
-    if (!res) {
-      out.textContent = "no logs to show";
-      return;
+    if (hasReader && lines && lines.length) {
+      if (note) note.textContent = "the client's own log, newest last";
+      out.textContent = lines.join("\n");
+    } else if (hasReader) {
+      if (note) note.textContent = "the client keeps a log in this run and has written nothing to it yet.";
+      out.textContent = "the log is empty so far";
+    } else {
+      const report = await ownStateReport();
+      if (note) note.textContent = report.note;
+      out.textContent = report.lines.join("\n");
     }
-    out.textContent = text(res.text) || (res.json ? JSON.stringify(res.json, null, 1) : "the log is empty");
     out.scrollTop = out.scrollHeight;
   }
 
   /* ---- accounts and updates ------------------------------------------------ */
 
+  /**
+   * The Accounts view: which accounts this client can be.
+   *
+   * The token store is the source of truth, not the control server. Every account a
+   * key is stored for is an account this client can sign in as, with or without a
+   * server, so a machine with no control server is not a machine with no accounts -
+   * which is what this pane used to say by describing the server's absence as the
+   * client's emptiness. Both lists are merged when both exist, the server's absence
+   * is said plainly, and a row only offers the switch its own account can perform:
+   * a stored key signs this window in, while an account the server holds is handed
+   * its own session.
+   */
   async function loadAccounts() {
+    const stored = await guard("access keys", () => hc.tokens.list());
     const seen = await guard("accounts", () => hc.account.current());
     const container = $("hp-accountList");
-    const accounts = seen && Array.isArray(seen.accounts) ? seen.accounts : [];
-    const current = seen ? text(seen.account) : "";
+    const note = $("hp-accountNote");
     if (!container) return;
-    if (!accounts.length) {
-      empty(container, "the control server reported no accounts" + (current ? " (this client is on " + current + ")" : ""));
+    const local = Array.isArray(stored) ? stored : [];
+    const onServer = seen && Array.isArray(seen.accounts) ? seen.accounts.map(text) : [];
+    const current = seen ? text(seen.account) : "";
+    const held = new Set(local.map((entry) => text(entry.account)));
+    if (!local.length && !onServer.length) {
+      empty(container, "nothing to switch to yet: store a key under Access keys, and this client can sign in as that account.");
     } else {
       container.replaceChildren();
-      for (const id of accounts) {
+      for (const entry of local) {
+        const account = text(entry.account);
+        const isCurrent = account === current;
+        container.appendChild(
+          card({
+            name: entry.label ? text(entry.label) : account,
+            meta: (entry.label ? account + " \u00b7 " : "") + keyMeta(entry),
+            badges: isCurrent ? [{ text: "current", kind: "on" }] : [{ text: "key stored", kind: "on" }],
+            actions: isCurrent
+              ? []
+              : [
+                  { label: "Use in this client", run: () => useKey(account) },
+                  { label: "Forget", kind: "danger", run: () => removeKey(account) },
+                ],
+          }),
+        );
+      }
+      for (const id of onServer) {
+        if (held.has(id)) continue; // already listed above, as the key it is
+        const isCurrent = id === current;
         container.appendChild(
           card({
             name: id,
-            meta: id === current ? "this client is logged in as " + id : "switch to this account",
-            badges: id === current ? [{ text: "current", kind: "on" }] : [],
-            actions: id === current ? [] : [{ label: "Switch", run: () => switchAccount(id) }],
+            meta: isCurrent ? "this client is signed in as " + id : "on the control server; switching gives it its own session",
+            badges: isCurrent ? [{ text: "current", kind: "on" }] : [{ text: "server", kind: "" }],
+            actions: isCurrent ? [] : [{ label: "Switch", run: () => switchAccount(id) }],
           }),
         );
+      }
+    }
+    if (note) {
+      if (onServer.length) {
+        note.textContent = "The control server lists " + onServer.length + " account(s), and " + local.length + " key(s) are stored on this machine.";
+      } else if (local.length) {
+        note.textContent = "No control server is configured here, so this list is the " + local.length + " key(s) this machine holds: a key signs this window in as that account. An account on a control server would also get its own session, and would appear here beside these.";
+      } else {
+        note.textContent = "No control server is configured here either, so there is nothing to sign in as until a key is stored.";
       }
     }
     await loadUpdates();
@@ -841,7 +946,9 @@
       if (currentView === "themes") loadThemes();
     });
     hc.on("tokens:changed", () => {
+      // the keys are what the accounts view lists too, so both follow the push
       if (currentView === "tokens") loadTokens();
+      else if (currentView === "accounts") loadAccounts();
     });
   }
 

@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+# Kept under its original name on purpose: this is where script projects already live on
+# installed devices, and a rename here would orphan every one of them.
 ROOT = Path.home() / '.local/share/assault-runner'
 MAX_LOG = 1024 * 1024
 
@@ -73,6 +75,26 @@ def status(directory):
         if not alive and time.time() - value.get('updated', 0) > 10:
             value['state'] = 'interrupted'
             value['error'] = 'Android or Termux stopped the supervisor. You can run this project again.'
+    return value
+
+
+def observation(directory):
+    """A run's state together with the output it has produced so far.
+
+    A launch and a poll answer with this same shape. A launch that answered with the
+    status alone would show a script that finished before the first poll as exited
+    with no output at all, and the client would have to poll from inside its own
+    launch - racing the runner mailbox - to learn what a run it just started said.
+    """
+    value = status(directory)
+    log = directory / 'console.log'
+    value['console'] = ''
+    if log.exists():
+        with log.open('rb') as stream:
+            size = os.fstat(stream.fileno()).st_size
+            stream.seek(max(0, size - 16384))
+            value['console'] = stream.read(16384).decode('utf-8', errors='replace')
+            value['truncated'] = size > 16384
     return value
 
 
@@ -257,7 +279,7 @@ def dispatch(request):
         with (ROOT / 'launch.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if directory.exists():
-                return status(directory)
+                return observation(directory)
             parent = directory.parent
             parent.mkdir(parents=True, exist_ok=True)
             for previous in parent.iterdir():
@@ -279,18 +301,9 @@ def dispatch(request):
                 except Exception as error:
                     atomic(directory / 'status.json', {'state': 'failed', 'error': str(error)[:240], 'updated': time.time()})
                 # Close our descriptor without LOCK_UN: the child inherits the same lock.
-        return status(directory)
+        return observation(directory)
     if operation == 'poll':
-        value = status(directory)
-        log = directory / 'console.log'
-        value['console'] = ''
-        if log.exists():
-            with log.open('rb') as stream:
-                size = os.fstat(stream.fileno()).st_size
-                stream.seek(max(0, size - 16384))
-                value['console'] = stream.read(16384).decode('utf-8', errors='replace')
-                value['truncated'] = size > 16384
-        return value
+        return observation(directory)
     if operation in ('stop', 'input'):
         return command(directory, {'operation': operation, 'data': request.get('data', '')})
     raise ValueError('Unknown runner operation.')

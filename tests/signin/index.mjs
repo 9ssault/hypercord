@@ -201,5 +201,59 @@ ok("the decision ignores case", decideSignIn({ pathname: "/LOGIN" }) === "reject
 ok("a route that merely starts like an auth path is not one", decideSignIn({ pathname: "/loginfo" }) === "waiting", decideSignIn({ pathname: "/loginfo" }));
 ok("a non-string pathname does not throw", decideSignIn({ pathname: null }) === "waiting");
 
+/* ---- a token in storage decides nothing ---------------------------------- */
+
+// The bug this whole file exists for: the old client read the token's presence in
+// storage as the answer, so a token Discord had already refused still came out as a
+// successful sign-in. Only where the client ended up is a witness.
+ok(
+  "a token still in storage does not make an auth route a sign-in",
+  decideSignIn({ pathname: "/login", tokenPresent: true }) === "rejected",
+  decideSignIn({ pathname: "/login", tokenPresent: true }),
+);
+for (const path of ["/login", "/register", "/verify"]) {
+  ok("  " + path + " is refused with a token present", decideSignIn({ pathname: path, tokenPresent: true }) === "rejected");
+}
+ok("a deeper auth route with a token present is refused too", decideSignIn({ pathname: "/verify/xyz", tokenPresent: true }) === "rejected", decideSignIn({ pathname: "/verify/xyz", tokenPresent: true }));
+ok("the answer is the same with the token and without it", decideSignIn({ pathname: "/channels/@me", tokenPresent: true }) === decideSignIn({ pathname: "/channels/@me", tokenPresent: false }));
+ok("nor does any other field of the observation decide", decideSignIn({ pathname: "/login", verdict: "accepted", status: 200 }) === "rejected", decideSignIn({ pathname: "/login", verdict: "accepted", status: 200 }));
+
+/* ---- the write shapes are made per call, and never rewritten -------------- */
+
+// Both attempts carry the same secret, so a caller that edits one shape must not
+// change what the other writes - and the next caller must not be handed a shape
+// somebody already touched.
+const firstCall = signInForms("MTIz.abc.def");
+const secondCall = signInForms("MTIz.abc.def");
+ok("two calls hand back independent lists", firstCall !== secondCall && firstCall.length === 2 && firstCall[0] !== secondCall[0]);
+firstCall[0].value = "tampered";
+ok("editing one call's shape does not reach the next call", secondCall[0].value === "MTIz.abc.def", JSON.stringify(secondCall[0].value));
+ok("and the next caller is handed a fresh shape", signInForms("MTIz.abc.def")[0].value === "MTIz.abc.def");
+
+/* ---- the value is the raw secret, whatever shape it arrives in ----------- */
+
+ok("a number is taken as the text it is", signInForms(123456789).every((f) => f.value === "123456789"), JSON.stringify(signInForms(123456789)[0].value));
+ok("zero is text, not an absence", signInForms(0)[0].value === "0", JSON.stringify(signInForms(0)[0].value));
+const awkward = 'has "quotes" in it';
+ok("a secret carrying quotes is written as it is, without escaping", signInForms(awkward).every((f) => f.value === awkward), JSON.stringify(signInForms(awkward)[0].value));
+const awkwardStorage = fakeStorage();
+const awkwardResult = run(tokenWriteScript(signInForms(awkward)[0]), { document: fakeDocument(awkwardStorage), localStorage: undefined });
+ok("and it round-trips raw through the frame write", awkwardResult === "ok:same-origin frame" && awkwardStorage.peek("token") === awkward, awkwardResult + " | " + JSON.stringify(awkwardStorage.peek("token")));
+ok("the framed value is never the quoted form", awkwardStorage.peek("token") !== JSON.stringify(awkward), JSON.stringify(awkwardStorage.peek("token")));
+
+/* ---- a page with no body still gets the frame ---------------------------- */
+
+// The live page is a single-page app: the frame cannot assume a <body> is there
+// when the write runs, so the root element has to be enough.
+const rootStorage = fakeStorage();
+const rootFrame = { style: {}, contentWindow: { localStorage: rootStorage }, remove() {} };
+const appendedToRoot = [];
+const rootResult = run(tokenWriteScript(frameForm), {
+  document: { body: null, documentElement: { appendChild: (node) => appendedToRoot.push(node) }, createElement: () => rootFrame },
+  localStorage: undefined,
+});
+ok("the frame goes to the root element when the page has no body", rootResult === "ok:same-origin frame" && appendedToRoot.length === 1 && appendedToRoot[0] === rootFrame, rootResult + " | appended " + appendedToRoot.length);
+ok("and the token still lands in the frame's storage", rootStorage.peek("token") === "MTIz.abc.def", JSON.stringify(rootStorage.peek("token")));
+
 console.log("\npassed " + passed + "  failed " + failed);
 process.exit(failed === 0 ? 0 : 1);

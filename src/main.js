@@ -24,12 +24,16 @@ import { createTokens, redact } from "./tokens.js";
 import { createUpdater } from "./updater.js";
 import { findDiscord, patch } from "./patcher.js";
 import passkeys from "./passkeys.cjs";
-import { decideSignIn, signInForms } from "./signin.js";
+import { appRoute, decideSignIn, signInForms, tokenWriteScript } from "./signin.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE = () => path.join(app.getPath("userData"), "hypercord.json");
 const RAIL_TOGGLE = "CommandOrControl+Shift+H";
 const DISCORD = "https://discord.com/app";
+// The client does not act on a stored token every boot: measured against the live
+// page, the same write was taken up by its gateway once and ignored four times.
+// One click therefore makes two passes over the two places a token can go.
+const SIGN_IN_ROUNDS = 2;
 
 // Windows stops painting an occluded window with this on, which is the
 // difference between an idle client and one that keeps burning a core behind
@@ -197,15 +201,85 @@ async function waitForSignIn(win, timeoutMs = 12000) {
 }
 
 /**
+ * Does the client actually use the token? The one question a route cannot answer,
+ * and it separates the two failures that need opposite fixes: the client never read
+ * the entry, or it read it and Discord refused the token.
+ *
+ * Watches the window's own session for a request whose authorization header is the
+ * token, keeps only that fact - never the value, never a URL - and lets the
+ * listener go as soon as there is an answer or the wait runs out.
+ */
+function watchForTokenUse(win, secret, timeoutMs = 25000) {
+  const wanted = String(secret || "");
+  return new Promise((resolve) => {
+    if (!wanted || !win || win.isDestroyed()) return resolve(false);
+    const ses = win.webContents.session;
+    let timer = null;
+    const stop = (answer) => {
+      clearTimeout(timer);
+      try {
+        ses.webRequest.onBeforeSendHeaders(null);
+      } catch {
+        /* never attached, or the session is gone */
+      }
+      resolve(answer);
+    };
+    timer = setTimeout(() => stop(false), timeoutMs);
+    try {
+      ses.webRequest.onBeforeSendHeaders({ urls: ["<all_urls>"] }, (details, callback) => {
+        const headers = details.requestHeaders || {};
+        for (const name of Object.keys(headers)) {
+          if (name.toLowerCase() === "authorization" && String(headers[name] || "") === wanted) {
+            stop(true);
+            break;
+          }
+        }
+        callback({ requestHeaders: headers });
+      });
+    } catch {
+      stop(false);
+    }
+  });
+}
+
+/**
+ * One line per sign-in attempt, in the user's own data directory: what the write
+ * did, whether the client used the token, where it landed. Never the token and
+ * never a header value - a log that could leak a credential is worse than no log.
+ */
+function logSignIn(line) {
+  try {
+    fs.appendFileSync(path.join(app.getPath("userData"), "signin.log"), new Date().toISOString() + " " + redact(String(line)) + "\n");
+  } catch {
+    /* a log that cannot be written is not a sign-in that did not happen */
+  }
+}
+
+/**
+ * Resolve once the window has finished loading the route it was sent to - or once
+ * the wait runs out, so a page that never finishes loading cannot hang a sign-in.
+ */
+function settledLoad(win, timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    let timer = null;
+    const done = () => {
+      clearTimeout(timer);
+      win.webContents.off("did-finish-load", done);
+      resolve();
+    };
+    timer = setTimeout(done, timeoutMs);
+    win.webContents.on("did-finish-load", done);
+  });
+}
+
+/**
  * Sign this client in with a stored user token.
  *
- * The value goes into the page's own storage and the page reloads, which is what
- * skips Discord's login screen. Nothing about the token is logged, cached in this
- * process or echoed - but the *outcome* is looked at, and reported: the shapes a
- * client may read are not documented (see src/signin.js), so this writes one,
- * reloads, watches where the client ended up, and writes the other if the first
- * was refused. "Stored" and "signed in" are two different things, and the caller
- * is told which one happened.
+ * The token is written where the live page actually keeps it (see src/signin.js:
+ * a same-origin frame, the raw value), the window is then sent to the app route -
+ * the login page never restores a session - and the route it lands on is judged.
+ * Nothing about the token is logged, cached in this process or echoed; "stored" and
+ * "signed in" stay two different things and the caller is told which one happened.
  */
 async function useToken(account) {
   if (!tokens) return { ok: false, error: "no token store in this run" };
@@ -214,29 +288,49 @@ async function useToken(account) {
   if (!secret) return { ok: false, error: "no user token stored for " + (id || "this client") };
   const win = accountWindow();
   const tried = [];
-  for (const form of signInForms(secret)) {
+  // Two passes over both places, because the client takes the entry on some boots
+  // and not others: one click should not have to be clicked twice.
+  const queue = [];
+  for (let round = 1; round <= SIGN_IN_ROUNDS; round += 1) for (const form of signInForms(secret)) queue.push({ form, round });
+  for (const { form, round } of queue) {
     try {
-      const wrote = await win.webContents.executeJavaScript(
-        "(() => { try { localStorage.setItem('token', " +
-          JSON.stringify(form.value) +
-          "); localStorage.setItem('hypercord.token.form', " +
-          JSON.stringify(form.name) +
-          "); return true; } catch { return false; } })()",
-        true,
-      );
-      if (!wrote) return { ok: false, account: id, error: "this client cannot write to the page's storage", tried };
+      // The script src/signin.js defines, and the one the diagnostics measure: it
+      // writes through a same-origin frame, because the page's own world has no
+      // storage at all, and it answers with its reason rather than a bare false -
+      // a write that failed silently is what made this look like a working sign-in.
+      const wrote = String(await win.webContents.executeJavaScript(tokenWriteScript(form), true));
+      if (!wrote.startsWith("ok")) {
+        tried.push({ form: form.name, round, result: "unwritable", why: wrote.slice(0, 90) });
+        continue;
+      }
     } catch (err) {
       return { ok: false, account: id, error: redact(String((err && err.message) || err)).slice(0, 160), tried };
     }
-    win.webContents.reload();
+    // The login page never restores a session: the client reads the entry when the
+    // *app* boots, so the window is sent there and where it lands is the answer.
+    const watching = watchForTokenUse(win, form.value);
+    const settled = settledLoad(win);
+    win.loadURL(appRoute(win.webContents.getURL())).catch(() => {});
+    await settled;
     const outcome = await waitForSignIn(win);
-    tried.push({ form: form.name, result: outcome.verdict });
-    if (outcome.verdict === "accepted") return { ok: true, account: id, stored: form.name, tried };
+    const used = await watching;
+    tried.push({ form: form.name, round, result: outcome.verdict, url: outcome.pathname, used });
+    logSignIn("attempt round=" + round + " write=" + form.name + " used=" + used + " landed=" + String(outcome.pathname) + " verdict=" + outcome.verdict);
+    if (outcome.verdict === "accepted") return { ok: true, account: id, stored: form.name, used, tried };
   }
+  const writable = tried.filter((one) => one.result !== "unwritable");
+  const used = writable.some((one) => one.used === true);
+  const landed = writable.map((one) => one.url).filter(Boolean).pop();
+  logSignIn("failed used=" + used + " writes=" + writable.length);
   return {
     ok: false,
     account: id,
-    error: "Discord did not accept that token (tried " + tried.map((one) => one.form).join(" then ") + ") - it may be expired or reset",
+    used,
+    error: !writable.length
+      ? "this client could not write the token into the page: " + String((tried[0] && tried[0].why) || "the page offers no storage")
+      : used
+        ? "the client read that token and Discord refused it (it came back to " + String(landed || "its login page") + "): the token is expired, reset, or not a user token"
+        : "the client never used that token: it did not read it from the page's storage. Try again - it takes the entry on some boots and not others - or sign in with the email and password form",
     tried,
   };
 }
@@ -274,7 +368,8 @@ function createWindow() {
     width: 1280,
     height: 820,
     show: false,
-    backgroundColor: "#1e1f22",
+    // AMOLED: the client's own surfaces are true black, matching the default theme
+    backgroundColor: "#000000",
     title: "Hypercord",
     webPreferences: {
       preload: path.join(here, "preload.cjs"),
@@ -436,6 +531,26 @@ ipcMain.on("passkeys:policy", (event) => {
   event.returnValue = String(passkeys && passkeys.POLICY ? passkeys.POLICY : "");
 });
 
+/* ---- the log the settings pane reads -------------------------------------- */
+
+// The Logs pane used to show the control server's log, which on a machine with no
+// server was an error in its header and an empty box below it. What this client can
+// honestly show is its own log, so every line the shell already prints to the
+// terminal is also kept here, bounded - a long session cannot grow it without end.
+const LOG_LINES = 400;
+const logRing = [];
+function note(line) {
+  for (const part of redact(String(line === undefined || line === null ? "" : line)).split("\n")) {
+    logRing.push(part);
+    if (logRing.length > LOG_LINES) logRing.shift();
+  }
+}
+
+ipcMain.handle("logs:read", (_event, lines) => {
+  const want = Math.max(1, Math.min(LOG_LINES, Number(lines) || 200));
+  return { lines: logRing.slice(-want), total: logRing.length, limit: LOG_LINES };
+});
+
 ipcMain.handle("api:request", async (_event, endpoint, opts = {}) => {
   if (!api) buildApi();
   return api.request(String(endpoint || "/"), opts || {});
@@ -504,7 +619,10 @@ ipcMain.handle("tokens:store", () => {
   // what the UI is allowed to know: where the store is and whether it can keep a
   // secret at all - never what is in it
   if (!tokens) return { ok: false, error: "no token store in this run" };
-  return { ok: true, file: tokens.file, encrypted: safeStorage.isEncryptionAvailable(), count: tokens.size() };
+  // tokens.file() - the function itself is not structured-cloneable, and returning
+  // the reference instead of calling it was an "object could not be cloned" error
+  // on a screen that only wanted to show where the store lives
+  return { ok: true, file: String(tokens.file()), encrypted: safeStorage.isEncryptionAvailable(), count: tokens.size() };
 });
 
 ipcMain.handle("plugins:list", () => (host ? host.list() : []));
@@ -670,6 +788,14 @@ async function boot() {
   readState();
   buildApi();
   buildTokens();
+  // the pane and the terminal must not be able to disagree about what happened, so
+  // the lines this shell prints are the same lines the ring keeps (never a secret:
+  // everything goes through redact first)
+  const print = console.log.bind(console);
+  console.log = (...parts) => {
+    note(parts.map((part) => String(part)).join(" "));
+    print(...parts);
+  };
   // a launch can be handed its token: HYPERCORD_USER_TOKEN=… is stored (after
   // Discord confirms it) and used, which is how a scripted start skips the login
   if (process.env.HYPERCORD_USER_TOKEN) {
@@ -694,6 +820,14 @@ async function boot() {
     }
   }
   themes = createThemes({ userData: app.getPath("userData"), log: (line) => console.log(line) });
+  // The client comes up black. The built-in AMOLED default goes through the same
+  // sanitising gate as a theme a user installs (see src/themes.js), it is installed
+  // idempotently, and a theme the user chose is never replaced by it.
+  try {
+    themes.installDefault();
+  } catch (err) {
+    console.log("[hypercord] could not install the default theme: " + String((err && err.message) || err));
+  }
   createWindow();
   globalShortcut.register(RAIL_TOGGLE, () => toggleRail());
   await startPlugins();

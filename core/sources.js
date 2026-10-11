@@ -1,0 +1,688 @@
+// The catalogue of plugin and theme sources, as the addon browser on the device sees
+// it.
+//
+// Two copies of one list exist on purpose, and the runtime is why: the bundled React
+// Native code cannot read `addon-sources.json` out of the app package, so this module
+// is the copy the device actually runs, while the JSON file next to it is the copy the
+// desktop tooling, the docs and the repository's own checks read. They are meant to be
+// identical; when one changes, the other changes with it.
+//
+// Nothing here promises that an addon installs. A source can be reached and its
+// entries listed, and most ecosystems publish something other than this client's own
+// documented dialect (docs/addon-framework.md) - prebuilt ZIPs, TypeScript sources,
+// single files hosted by their author. Every entry therefore carries what it really
+// is, including which ecosystems are unmaintained or gone, because a browser that
+// lists things it cannot use without saying so is the failure this file exists to
+// prevent. Entries recorded as `404` are sources that were checked and are no longer
+// there; they are kept so a client that tries them reports a missing source instead of
+// an empty list that looks like an empty ecosystem.
+
+/** Every source the browser offers, in the order the JSON file lists them. */
+export const ADDON_SOURCES = [
+  {
+    id: 'aliucord-plugins',
+    name: 'Aliucord plugin manifest',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://plugins.aliucord.com/manifest.json',
+    format: 'json-list',
+    machine_readable: true,
+    notes: 'Every published Aliucord plugin: name, version, metadata and the ZIP artifact URL, in one array. The most useful single Android source; the artifacts are prebuilt ZIPs, not source.'
+  },
+  {
+    id: 'aliucord-plugins-repo',
+    name: 'Aliucord plugins source tree',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://api.github.com/repos/Aliucord/plugins/contents',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'GitHub Contents API JSON for the official monorepo, plugin sources under plugins/<plugin>/. Unauthenticated and rate-limited, so the manifest above is the better default.'
+  },
+  {
+    id: 'aliucord-verified-repo',
+    name: 'Aliucord verified repository (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/Aliucord/plugins-repo-old',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The fetched central verified repository, including legacy and React Native plugins. Its README points at a data branch rather than publishing a machine-readable index, so this is one to read, not to parse.'
+  },
+  {
+    id: 'aliucord-builds-branch-404',
+    name: 'Aliucord builds branch (gone)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/Aliucord/plugins-repo-old/tree/builds',
+    format: '404',
+    machine_readable: false,
+    notes: 'This branch URL 404ed when fetched. It is kept as its own entry so a browser that tries the old builds path can say the source is gone instead of showing an empty list as if the ecosystem were empty.'
+  },
+  {
+    id: 'aliucord-themes',
+    name: 'Aliucord themes (community)',
+    platform: 'android',
+    kinds: ['themes'],
+    url: 'https://api.github.com/repos/catppuccin/aliucord/git/trees/main?recursive=1',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'There is no official Aliucord theme index and the themes page is view-only, so this is a directory listing of one community theme repository; each theme is its own JSON file, e.g. https://raw.githubusercontent.com/catppuccin/aliucord/main/src/catppuccin-mocha-blue.json. Rate-limited when unauthenticated. Enumerating the tree is mechanical; finding themes in the first place is not.'
+  },
+  {
+    id: 'aliucord-themes-page',
+    name: 'Aliucord themes page',
+    platform: 'android',
+    kinds: ['themes'],
+    url: 'https://aliucord.com/themes',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'The official listing, fetched, and it is a rendered view-only page - the fetched text exposed only its title, so there is nothing here a program should parse.'
+  },
+  {
+    id: 'aliucord-org-repos',
+    name: 'Aliucord repositories (org API)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/orgs/Aliucord/repos?per_page=100',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: "GitHub REST API JSON listing every repository the Aliucord organisation owns. Good for discovering what the project maintains; it cannot see third-party authors' plugins, and it is rate-limited when unauthenticated."
+  },
+  {
+    id: 'vendetta-plugins',
+    name: 'Vendetta proxy plugin list (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/vd-plugins/proxy/trunk/plugins.json',
+    format: 'json-list',
+    machine_readable: true,
+    notes: 'A JSON array of plugin URL strings from the Vendetta plugin proxy. Vendetta itself was discontinued in 2024, so treat this as a legacy snapshot rather than a maintained feed.'
+  },
+  {
+    id: 'vendetta-plugins-full',
+    name: 'Vendetta proxy plugin metadata (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/vd-plugins/proxy/trunk/plugins-full.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The same Vendetta list with metadata objects rather than bare URLs. Legacy, as above.'
+  },
+  {
+    id: 'vendetta-web',
+    name: 'Vendetta plugin browser (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://vd-plugins.github.io/web/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'A rendered browser over the proxy lists, fetched but only its title came out. Useful as a thing to open in the built-in browser; there is nothing here a program should parse.'
+  },
+  {
+    id: 'vendetta-org',
+    name: 'Vendetta plugin organisations (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/vd-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The organisation page listing the proxy, scripts and web repositories, with visible activity only in 2023-2024. Vendetta is discontinued; this is a rendered listing, not a JSON index.'
+  },
+  {
+    id: 'bunny-plugins',
+    name: 'Bunny proxy plugin list (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/bn-plugins/vd-proxy/trunk/plugins.json',
+    format: 'json-list',
+    machine_readable: true,
+    notes: 'Same shape as the Vendetta list, with some Bunny-patched entries. Bunny is archived and unmaintained.'
+  },
+  {
+    id: 'bunny-plugins-full',
+    name: 'Bunny proxy plugin metadata (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/bn-plugins/vd-proxy/trunk/plugins-full.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The Bunny list with metadata objects. Includes entries hosted under rico040.github.io/bunny-plugins/.'
+  },
+  {
+    id: 'bunny-plugin-manifest',
+    name: 'Bunny per-plugin manifest (example)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://rico040.github.io/bunny-plugins/hideappbutton/manifest.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'Fetched example of how one author publishes a single plugin: a manifest.json beside the plugin, not an entry in a central index. This is also the shape of a hand-added source URL.'
+  },
+  {
+    id: 'bunny-proxy-web',
+    name: 'Bunny plugin browser (legacy)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://bn-plugins.github.io/vd-web/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'The bn-plugins fork of the Vendetta proxy browser, fetched and again only its title came out. Pyoncord was archived in 2025, so whether the list behind it is complete is unverified.'
+  },
+  {
+    id: 'bunny-author-plugins',
+    name: 'Rico040 Bunny plugins (author)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/Rico040/bunny-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README list of plugin names and install URLs for Vendetta plugins the author patched for Bunny. A per-author listing, not a central index, and Bunny itself is archived.'
+  },
+  {
+    id: 'pyoncord-org',
+    name: 'Pyoncord organisation (archived)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/pyoncord',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The organisation page says it was archived on 2025-08-07 and is no longer maintained. Useful for historical provenance; it publishes no addon index of its own, and its legacy browsing overlaps the Vendetta and Bunny sources above.'
+  },
+  {
+    id: 'revenge-community-plugins',
+    name: 'Revenge community catalogue',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://revenge-mod.github.io/revenge-community-plugins/index.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The maintained mobile catalogue: plugin id, version, channel, artifact URL and SHA-256 digest per entry. In this ecosystem themes are plugins, so one list covers both kinds. Mirror: https://raw.githubusercontent.com/revenge-mod/revenge-community-plugins/gh-pages/index.json'
+  },
+  {
+    id: 'revenge-gh-pages-index',
+    name: 'Revenge catalogue (raw mirror)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://raw.githubusercontent.com/revenge-mod/revenge-community-plugins/gh-pages/index.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The same index from the raw host, which is the form to prefer on a device where the pages domain is blocked. Plugin ids, descriptions, authors, channels, versions, ZIP URLs, SHA-256 hashes and dependencies.'
+  },
+  {
+    id: 'revenge-community-plugins-repo',
+    name: 'Revenge community plugins repo',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/revenge-mod/revenge-community-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The repository behind the catalogue, sources under plugins/<plugin>/ and the published index on gh-pages. Browseable; read the index.json above instead of walking this.'
+  },
+  {
+    id: 'revenge-contents-api',
+    name: 'Revenge repository contents (API)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/repos/revenge-mod/revenge-community-plugins/contents/',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'GitHub REST API JSON array of the repository root, including plugins/ and repo.config.json. Enumerating it works; it is not as convenient as the published index, and it is rate-limited when unauthenticated.'
+  },
+  {
+    id: 'revenge-branches-api',
+    name: 'Revenge repository branches (API)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/repos/revenge-mod/revenge-community-plugins/branches?per_page=100',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'GitHub REST API JSON array of branch names and commit metadata; the fetched response confirmed gh-pages and main. Rate-limited when unauthenticated.'
+  },
+  {
+    id: 'revenge-org-repos',
+    name: 'Revenge repositories (org API)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/orgs/revenge-mod/repos?per_page=100',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'GitHub REST API JSON for every repository the Revenge organisation owns, tooling included. Discovery, not an addon catalogue, and rate-limited when unauthenticated.'
+  },
+  {
+    id: 'revenge-plugin-template',
+    name: 'Revenge plugin format template',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://raw.githubusercontent.com/revenge-mod/revenge-plugin-template/main/README.md',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'Plain text documenting the monorepo layout (plugins/<name>/) and the static index.json a repository publishes on gh-pages, with artifact URLs and checksums. The best description of what a Revenge-compatible index contains; it is prose, so nothing parses it.'
+  },
+  {
+    id: 'revenge-plugins-list',
+    name: 'Revenge Plugins List (community)',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://plugins-list.pages.dev/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'A status and listing site for Revenge plugins and themes. Not affiliated with or maintained by Revenge, and it publishes no raw index, so nothing should parse it.'
+  },
+  {
+    id: 'plugins-list-tree',
+    name: 'Revenge Plugins List source tree',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/repos/Purple-EyeZ/Plugins-List/git/trees/main?recursive=1',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: "GitHub REST API JSON tree of the tracker site's source, including src/Themes. It enumerates files rather than installable addon metadata, and it is rate-limited when unauthenticated."
+  },
+  {
+    id: 'nexpid-revenge-plugins',
+    name: "Nexpid's Revenge plugins (author)",
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://revenge.nexpid.xyz/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'An author-maintained list whose site at https://revenge.nexpid.xyz/index.json returned 404, so it is a page for a person, not a catalogue for a program. It lists 19 plugins with finished, broken, unfinished and discontinued statuses; Cloud Sync and Themes+ cover theme work.'
+  },
+  {
+    id: 'nexpid-revenge-plugins-repo',
+    name: "Nexpid's Revenge plugins source",
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/nexpid/RevengePlugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The repository behind the list, a README of per-author status rather than an index. Maintenance is mixed, so an entry being listed does not mean it works today.'
+  },
+  {
+    id: 'shipwr3ckd-revengeplugin',
+    name: "Siguma's plugins (author)",
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/shipwr3ckd/revengeplugin',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README naming plugins and their install pages, several maintained from Vendetta for Revenge and Kettu. A per-author listing, not an official index.'
+  },
+  {
+    id: 'kmmiio-vd-plugins',
+    name: 'kmmiio99o plugins (author)',
+    platform: 'android',
+    kinds: ['plugins'],
+    url: 'https://github.com/kmmiio99o/vd-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README list the author states is for Kettu, Revenge and ShiggyCord, with individually hosted install URLs. Per-author and of uncertain maintenance.'
+  },
+  {
+    id: 'kettu',
+    name: 'Kettu',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/C0C0B01/Kettu',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A continuation of Bunny whose GitHub repository is a mirror, with contributions directed to Codeberg. No Kettu-owned plugin or theme index was found, so this is a project page, not a catalogue.'
+  },
+  {
+    id: 'shiggycord',
+    name: 'ShiggyCord',
+    platform: 'android',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/kmmiio99o/ShiggyCord',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A Kettu-based mobile bundle documenting a release bundle URL and build steps. A bundle is not an addon catalogue; no machine-readable ShiggyCord index was verified.'
+  },
+  {
+    id: 'catppuccin-vendetta',
+    name: 'Catppuccin themes (legacy clients)',
+    platform: 'android',
+    kinds: ['themes'],
+    url: 'https://github.com/catppuccin/vendetta',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README documenting JSON theme files in a themes directory, and stating support for Bunny, Revenge and Enmity while noting Vendetta is end-of-life. The individual theme file was not separately fetched, so treat the per-theme URLs as repository contents rather than a verified index.'
+  },
+  {
+    id: 'enmity',
+    name: 'Enmity (iOS)',
+    platform: 'ios',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/enmity-mod/enmity',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The iOS client whose ecosystem also serves Vendetta-lineage addons. The fetched page describes plugins and themes but publishes no catalogue or index, and its 2026 maintenance is unclear.'
+  },
+  {
+    id: 'enmity-addons-browser',
+    name: 'Enmity addons browser (iOS)',
+    platform: 'ios',
+    kinds: ['plugins'],
+    url: 'https://enmity-addons.github.io/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: "A rendered addon listing with names, authors, descriptions and install buttons. It says explicitly that it does not work inside Discord's built-in browser, which matters for a client whose catalogue is opened in one; no machine-readable endpoint was verified."
+  },
+  {
+    id: 'spinfal-enmity-plugins',
+    name: 'spinfal Enmity plugins (author)',
+    platform: 'ios',
+    kinds: ['plugins'],
+    url: 'https://github.com/spinfal/enmity-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README list with compiled and source links; the author states the repository is no longer in development and cannot be kept working. Historical.'
+  },
+  {
+    id: 'fifi-enmity-store',
+    name: "Fifi's Enmity addon store",
+    platform: 'ios',
+    kinds: ['plugins'],
+    url: 'https://github.com/FifiTheBulldog/enmity-addons-store',
+    format: 'directory',
+    machine_readable: false,
+    notes: "One author's store, generated with enmity-store. Its generated data format was not verified and it is not a global Enmity registry."
+  },
+  {
+    id: 'mortyick-enmity-themes',
+    name: 'Mortyick Enmity themes (author)',
+    platform: 'ios',
+    kinds: ['themes'],
+    url: 'https://github.com/Mortyick/enmity-themes',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A README listing theme names and URLs with files under themes/. The author says no new Enmity-specific themes are planned. A human list; no raw theme file was separately fetched.'
+  },
+  {
+    id: 'vencord-plugins',
+    name: 'Vencord plugin sources',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://api.github.com/repos/Vendicated/Vencord/contents/src/plugins?ref=main',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: 'Directory listing of the Vencord plugin tree. These are TypeScript sources in the repository, not installable artifacts, and https://vencord.dev/plugins is a rendered page rather than an index. Rate-limited when unauthenticated.'
+  },
+  {
+    id: 'vencord-plugins-tree',
+    name: 'Vencord plugin tree (page)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://github.com/Vendicated/Vencord/tree/main/src/plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The same directory as the API entry above, as a rendered GitHub page. Built-in plugins live under src/plugins/; this is source code, not an install catalogue.'
+  },
+  {
+    id: 'vencord-plugin-page',
+    name: 'Vencord plugin catalogue (page)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://vencord.dev/plugins',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'The official catalogue page with names, authors, descriptions and filters. Useful to open; no JSON manifest or public catalogue API was verified behind it.'
+  },
+  {
+    id: 'vencord-source-page',
+    name: 'Vencord source projects',
+    platform: 'desktop',
+    kinds: ['plugins', 'themes'],
+    url: 'https://vencord.dev/source',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'A rendered list of Vencord repositories, including the main source and Vesktop, which confirms the project relationships. It is not an addon listing.'
+  },
+  {
+    id: 'vencord-plugin-readmes',
+    name: 'Vencord plugin readmes',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/Vencord/builds/main/plugin-readmes.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'JSON mapping plugin names to README text. Useful for descriptions; it is not a catalogue of installable artifacts and carries no download URLs.'
+  },
+  {
+    id: 'vencord-plugins-topic',
+    name: 'Vencord plugins on GitHub (topic)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://github.com/topics/vencord-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'Community discovery through GitHub topic tags, which authors apply unevenly. Incomplete by construction and a rendered listing; useful for finding a repository, not for a catalogue.'
+  },
+  {
+    id: 'd3sox-vencord-userplugins',
+    name: 'D3SOX userplugins (author)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://github.com/D3SOX/vencord-userplugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: "A README list of the author's plugins with install instructions; the author states the collection is unmaintained and provided as-is. A useful example of a per-author Vencord plugin repository."
+  },
+  {
+    id: 'equicord-plugins',
+    name: 'Equicord plugin metadata',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/Equicord/Equibuilds/main/plugins.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'Generated metadata for the combined Equicord catalogue, which includes the Vencord plugins it ships. Metadata and source paths only; there are no plugin ZIPs.'
+  },
+  {
+    id: 'equicord-equicordplugins',
+    name: 'Equicord-only plugin metadata',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/Equicord/Equibuilds/main/equicordplugins.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The Equicord-specific half of the catalogue, from src/equicordplugins/. Same shape and same limitation: metadata, not artifacts.'
+  },
+  {
+    id: 'equicord-vencordplugins',
+    name: "Equicord's Vencord plugin metadata",
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://raw.githubusercontent.com/Equicord/Equibuilds/main/vencordplugins.json',
+    format: 'json-metadata',
+    machine_readable: true,
+    notes: 'The Vencord half as Equicord builds it, from src/plugins/. Metadata only.'
+  },
+  {
+    id: 'equicord-themes',
+    name: 'Equicord/Vencord theme library',
+    platform: 'desktop',
+    kinds: ['themes'],
+    url: 'https://themes.equicord.org/',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'A community theme and snippet library serving Equicord and Vencord, with descriptions and update information in the page. No public JSON theme index was verified, so it is a site to open rather than a catalogue to read.'
+  },
+  {
+    id: 'betterdiscord-plugins',
+    name: 'BetterDiscord plugins page',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://betterdiscord.app/plugins',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'The listing is rendered in the page and there is no verified public raw catalogue endpoint; BetterDiscord addons are single files hosted by their authors, not a shared repository.'
+  },
+  {
+    id: 'betterdiscord-themes',
+    name: 'BetterDiscord themes page',
+    platform: 'desktop',
+    kinds: ['themes'],
+    url: 'https://betterdiscord.app/themes',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'Same page-only situation as the plugin listing above. Open it in the built-in browser; do not scrape it in code.'
+  },
+  {
+    id: 'betterdiscord-plugins-topic',
+    name: 'BetterDiscord plugins on GitHub (topic)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://github.com/topics/betterdiscord-plugins',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'A rendered topic page of tagged repositories. Community discovery only: tags are user-applied and incomplete, and it is not a curated index.'
+  },
+  {
+    id: 'betterdiscord-theme-topic',
+    name: 'BetterDiscord themes on GitHub (topic)',
+    platform: 'desktop',
+    kinds: ['themes'],
+    url: 'https://github.com/topics/betterdiscord-theme',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'The theme half of the same topic-tag discovery, with the same incompleteness. A rendered page, not a trusted theme store.'
+  },
+  {
+    id: 'discordstyles-org',
+    name: 'DiscordStyles organisation',
+    platform: 'desktop',
+    kinds: ['themes'],
+    url: 'https://github.com/DiscordStyles',
+    format: 'directory',
+    machine_readable: false,
+    notes: 'An organisation page of CSS and SCSS themes and tooling, with repository activity visible in 2026. An org-level listing a person reads, not a unified theme manifest.'
+  },
+  {
+    id: 'discordstyles-themerepo-404',
+    name: 'DiscordStyles ThemeRepo (gone)',
+    platform: 'desktop',
+    kinds: ['themes'],
+    url: 'https://github.com/DiscordStyles/ThemeRepo',
+    format: '404',
+    machine_readable: false,
+    notes: 'A commonly assumed theme index repository that 404ed when fetched. Recorded so a client that guesses this path reports a missing source rather than an empty theme list.'
+  },
+  {
+    id: 'discordstyles-pluginrepo-404',
+    name: 'DiscordStyles PluginRepo (gone)',
+    platform: 'desktop',
+    kinds: ['plugins'],
+    url: 'https://github.com/DiscordStyles/PluginRepo',
+    format: '404',
+    machine_readable: false,
+    notes: 'The plugin-side version of the same guess, also 404 when fetched. Not a verified plugin index.'
+  },
+  {
+    id: 'betterdiscord-org-repos',
+    name: 'BetterDiscord repositories (org API)',
+    platform: 'desktop',
+    kinds: ['plugins', 'themes'],
+    url: 'https://api.github.com/orgs/BetterDiscord/repos?per_page=100',
+    format: 'github-tree',
+    machine_readable: true,
+    notes: "GitHub REST API JSON for the organisation's own repositories - the mod, the CLI and tooling - not third-party plugin or theme entries. Rate-limited when unauthenticated."
+  },
+  {
+    id: 'betterdiscord-cli',
+    name: 'BetterDiscord CLI',
+    platform: 'desktop',
+    kinds: ['plugins', 'themes'],
+    url: 'https://github.com/BetterDiscord/cli',
+    format: 'directory',
+    machine_readable: false,
+    notes: "A README documenting bdcli commands that search the store and manage local plugins and themes. It shows the store can be queried, but it is a desktop command-line tool - not an endpoint this client's browser can reach."
+  },
+  {
+    id: 'betterdiscord-cli-docs',
+    name: 'BetterDiscord CLI documentation',
+    platform: 'desktop',
+    kinds: ['plugins', 'themes'],
+    url: 'https://docs.betterdiscord.app/users/guides/cli',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'Rendered documentation for the CLI, less current than the repository README on store browsing. Not an addon index.'
+  },
+  {
+    id: 'replugged-store',
+    name: 'Replugged store',
+    platform: 'desktop',
+    kinds: ['plugins', 'themes'],
+    url: 'https://replugged.dev/store/plugins',
+    format: 'web-page',
+    machine_readable: false,
+    notes: 'A store UI over per-addon manifests; no public raw index was verified. Themes beyond the store are arbitrary CSS URLs with no central catalogue anywhere in this ecosystem.'
+  }
+];
+
+/** One source by its id, or null - ids are the stable name, the display name is not. */
+export function sourceById(id) {
+  const wanted = String(id ?? '');
+  return ADDON_SOURCES.find(source => source.id === wanted) ?? null;
+}
+
+/**
+ * The sources for one kind of addon, as the pages ask for it: 'plugin' / 'plugins',
+ * 'theme' / 'themes'. An entry that serves both kinds appears in both lists, which is
+ * what "themes are plugins" ecosystems need to show up at all.
+ *
+ * Anything else is an empty list rather than a throw: this runs while a screen is
+ * rendering, and a page with no rows is a better answer than a blank one.
+ */
+export function sourcesForKind(kind) {
+  const wanted = String(kind ?? '').toLowerCase();
+  const plural = wanted.endsWith('s') ? wanted : wanted + 's';
+  return ADDON_SOURCES.filter(source => Array.isArray(source.kinds) && source.kinds.includes(plural));
+}
+
+/** The catalogue split by platform, so a phone shows the phone sources first. */
+export function groupByPlatform() {
+  const grouped = {};
+  for (const source of ADDON_SOURCES) {
+    const platform = source.platform || 'other';
+    (grouped[platform] ??= []).push(source);
+  }
+  return grouped;
+}
+
+/** The platforms present in the catalogue, in the order they first appear. */
+export function platforms() {
+  return Object.keys(groupByPlatform());
+}
+
+/**
+ * How a page would fetch an entry, or null when only a person can.
+ *
+ * `parse` names what comes back rather than pretending it is uniform: `list` for a
+ * plain array (`plugins.json`), `metadata` for an array or object of described
+ * entries, `tree` for a GitHub Contents/Trees/org listing - each needs different
+ * reading, and a caller that cannot tell them apart would have to guess. Null is the
+ * honest answer for a rendered page, a browseable repository or a source that is gone:
+ * `unfetchableReason` says which in one line, and the page opens it in the browser
+ * instead.
+ */
+export function fetchPlan(source) {
+  const entry = source && typeof source === 'object' ? source : null;
+  if (!entry || !entry.machine_readable || typeof entry.url !== 'string' || !entry.url) return null;
+  const parse = entry.format === 'json-list' ? 'list' : entry.format === 'github-tree' ? 'tree' : 'metadata';
+  return { id: entry.id, url: entry.url, format: entry.format, parse };
+}
+
+/** Why `fetchPlan` gave null - one sentence, safe to draw on the screen. */
+export function unfetchableReason(source) {
+  const entry = source && typeof source === 'object' ? source : null;
+  if (entry && entry.format === '404') {
+    return `${entry.name || 'That source'} is gone: the URL returned 404 when it was checked.`;
+  }
+  if (!entry || !entry.machine_readable) {
+    return `${(entry && entry.name) || 'That source'} is a page for a person to read, not a catalogue to fetch.`;
+  }
+  if (typeof entry.url !== 'string' || !entry.url) return `${entry.name || 'That source'} has no URL recorded.`;
+  return '';
+}

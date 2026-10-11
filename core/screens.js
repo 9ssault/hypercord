@@ -116,7 +116,10 @@ export function createScreens(api, manager, bridge) {
     const busy = Boolean(pending);
     const current = data.entries.find(e => e.manifest.id === data.selectedTheme)?.manifest.colors ?? {};
     const c = {
-      bg: current.BACKGROUND_PRIMARY ?? '#1e1f22', card: current.BACKGROUND_SECONDARY ?? '#2b2d31',
+      // The fallbacks are the client's own AMOLED default (themes/index.js,
+      // DEFAULT_THEME_COLORS): a screen that must draw before a theme is applied
+      // should already be black, not dark grey.
+      bg: current.BACKGROUND_PRIMARY ?? '#000000', card: current.BACKGROUND_SECONDARY ?? '#060607',
       text: current.TEXT_NORMAL ?? '#f2f3f5', muted: current.TEXT_MUTED ?? '#b5bac1', accent: current.BRAND_500 ?? '#5865f2',
     };
     c.text = readableColor(c.card, c.text); c.muted = readableColor(c.card, c.muted);

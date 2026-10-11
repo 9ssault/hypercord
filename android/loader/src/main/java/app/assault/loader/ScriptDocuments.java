@@ -35,9 +35,9 @@ final class ScriptDocuments {
                     result = new JSONObject().put("error", message.substring(0, Math.min(240, message.length())));
                 }
                 AddonFiles.publish(output, result.toString().getBytes(StandardCharsets.UTF_8));
-            } catch (Exception error) { XposedBridge.log("Assault script result could not be saved: " + error.getClass().getSimpleName()); }
+            } catch (Exception error) { XposedBridge.log("Hypercord script result could not be saved: " + error.getClass().getSimpleName()); }
             finally { synchronized (ScriptDocuments.class) { running = false; } }
-        }, "Assault script bridge");
+        }, "Hypercord script bridge");
         try { worker.start(); }
         catch (RuntimeException error) { running = false; throw error; }
     }

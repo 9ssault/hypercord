@@ -1,0 +1,28 @@
+// language: JavaScript, file: themes/examples/midnight.txt
+//
+// A theme is data, not code. These are the ten colour tokens themes/index.js
+// accepts, each a six-digit hex value, and there is no lifecycle method at all: a
+// theme that declares one is refused before it is installed, because themes have no
+// hooks and no remote assets. Applying a theme goes through the pinned runtime's
+// semantic-colour updater, which is why each value becomes a triple - the same
+// colour for normal, dark and high-contrast - and why a token this client does not
+// know would be a silent no-op rather than an error on Discord's screen.
+export default {
+  id: "example.midnight",
+  kind: "theme",
+  name: "Midnight",
+  version: "1.0.0",
+  description: "A midnight-blue palette for the ten surfaces this client themes.",
+  colors: {
+    BACKGROUND_PRIMARY: "#0b1020",
+    BACKGROUND_SECONDARY: "#141b30",
+    BACKGROUND_TERTIARY: "#0f1526",
+    BACKGROUND_ACCENT: "#1d2846",
+    TEXT_NORMAL: "#e4e9f5",
+    TEXT_MUTED: "#97a3c2",
+    TEXT_LINK: "#8ab4ff",
+    HEADER_PRIMARY: "#ffffff",
+    BRAND_500: "#5865f2",
+    STATUS_DANGER: "#f2555a"
+  }
+}

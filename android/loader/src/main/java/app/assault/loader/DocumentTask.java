@@ -9,7 +9,7 @@ import java.util.TimerTask;
 /** Owns a document operation's deadline and rejects completion after cancellation. */
 final class DocumentTask implements AutoCloseable {
     final CancellationSignal signal = new CancellationSignal();
-    private final Timer timer = new Timer("Assault document deadline", true);
+    private final Timer timer = new Timer("Hypercord document deadline", true);
     private final Thread worker = Thread.currentThread();
     private boolean settled;
     private Closeable resource;

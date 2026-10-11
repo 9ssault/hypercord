@@ -36,7 +36,7 @@
   z-index: 2147483000;
   display: none;
   flex-direction: column;
-  background: var(--hc-bg, #1e1f22);
+  background: var(--hc-bg, #000000);
   color: var(--hc-text, #dbdee1);
   font: 13px/1.45 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
   text-align: left;
@@ -60,7 +60,7 @@
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  background: var(--hc-bg-raised, #2b2d31);
+  background: var(--hc-bg-raised, #060607);
   border-bottom: 1px solid var(--hc-border, #3f4147);
   flex: 0 0 auto;
 }
@@ -102,7 +102,7 @@
    label and it names itself the way a settings screen does */
 #hypercord-panes .nav {
   flex: 0 0 152px;
-  background: var(--hc-bg-raised, #2b2d31);
+  background: var(--hc-bg-raised, #060607);
   border-right: 1px solid var(--hc-border, #3f4147);
   padding: 8px;
   display: flex;
@@ -183,7 +183,7 @@
   border: 1px solid var(--hc-border, #3f4147);
   border-left: 3px solid var(--hc-accent, #5865f2);
   border-radius: 6px;
-  background: var(--hc-bg-raised, #2b2d31);
+  background: var(--hc-bg-raised, #060607);
   padding: 9px 11px;
   color: var(--hc-text-muted, #949ba4);
   flex: 0 0 auto;
@@ -266,7 +266,7 @@
   overflow-y: auto;
   border: 1px solid var(--hc-border, #3f4147);
   border-radius: 8px;
-  background: var(--hc-bg-raised, #2b2d31);
+  background: var(--hc-bg-raised, #060607);
 }
 
 #hypercord-panes .card {
@@ -370,7 +370,7 @@
 #hypercord-panes .settings {
   border: 1px solid var(--hc-border, #3f4147);
   border-radius: 8px;
-  background: var(--hc-bg-raised, #2b2d31);
+  background: var(--hc-bg-raised, #060607);
   padding: 10px;
   flex: 0 0 auto;
 }

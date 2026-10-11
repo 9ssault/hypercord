@@ -1,6 +1,6 @@
 # Android code runner
 
-The native client has **Settings → Assault → Code runner**, with JavaScript, Python and Shell tabs. This is separate from restricted addon plugins and from the release portal's simulated terminal.
+The native client has **Settings → Hypercord → Code runner**, with JavaScript, Python and Shell tabs. This is separate from restricted addon plugins and from the release portal's simulated terminal.
 
 ## Setup
 
@@ -22,9 +22,9 @@ The native client has **Settings → Assault → Code runner**, with JavaScript,
 
 An optional **Setup command** runs Bash in that project's directory only when **Run setup** is tapped. For example, `npm install package-name` or `python -m pip install package-name`. Review dependency commands as code. Android/Termux does not support every desktop/native package; installation errors appear in the console with an exit code. An npm setup can create and retain `package.json`, lockfiles and `node_modules` in the project directory.
 
-Each project's working directory is `~/.local/share/assault-runner/projects/<project-id>` inside Termux. Normal script runs preserve other project files. Standard input is line-based; this is a pipe console, not a PTY for curses/full-screen interactive programs. Stop sends SIGTERM to the script's process group, then SIGKILL after two seconds if necessary. A separate guard terminates the group when its supervisor disappears. Android may terminate Termux processes; this is reported as interrupted after reconciliation, not a successful completion.
+Each project's working directory is `~/.local/share/assault-runner/projects/<project-id>` inside Termux. (The path keeps its old name on purpose: it is where projects already exist on installed devices, so renaming it would orphan them.) Normal script runs preserve other project files. Standard input is line-based; this is a pipe console, not a PTY for curses/full-screen interactive programs. Stop sends SIGTERM to the script's process group, then SIGKILL after two seconds if necessary. A separate guard terminates the group when its supervisor disappears. Android may terminate Termux processes; this is reported as interrupted after reconciliation, not a successful completion.
 
-Only one run per project is accepted. A launch ID is committed to the client's two-slot journal before dispatch, and retries with that ID are idempotent. Unknown/starting/running/stopping runs must be refreshed or stopped before a new launch. Multiple projects can run independently; broker commands are serialized on a dedicated runner mailbox. Script startup and polling do not occupy plugin/theme file operations. The screen polls while a run is active; Refresh also reconciles state after reopening. Already-started work continues if the settings screen closes.
+Only one run per project is accepted. A launch ID is committed to the client's two-slot journal before dispatch, and retries with that ID are idempotent. Unknown/starting/running/stopping runs must be refreshed or stopped before a new launch. A launch answers with the run's status *and the output it already has*, so a script that finishes before the first poll is shown with its console instead of as a silent exit; nothing is polled from inside a launch, because the screen owns that while a run is active. Multiple projects can run independently; broker commands are serialized on a dedicated runner mailbox. Script startup and polling do not occupy plugin/theme file operations. The screen polls while a run is active; Refresh also reconciles state after reopening. Already-started work continues if the settings screen closes.
 
 ## Persistence and backups
 
@@ -45,11 +45,12 @@ Manager exposes a broker provider. Every call checks the Binder UID, rejects sha
 Run from `assault-main/source`:
 
 ```sh
-ANDROID_HOME=/path/to/android-sdk mise exec java@21 -- node --test tests/scripts.test.mjs tests/script-screen.test.mjs tests/script-runner.test.mjs tests/script-trust.test.mjs tests/addon-documents.test.mjs tests/storage-runtime.test.mjs
-npm run build:addons
-python3 scripts/build_android.py
+ANDROID_HOME=/path/to/android-sdk mise exec java@21 -- node --test tests/scripts.test.mjs tests/script-screen.test.mjs tests/script-runner.test.mjs tests/script-trust.test.mjs tests/addon-documents.test.mjs
+# The loader assets and the addons.js bundle are not built by anything in this tree:
+# no Gradle build file, no build:addons script and no scripts/build_android.py exist.
+# See docs/addon-framework.md, Build and verification.
 ```
 
-Host tests execute actual Node/Python/Bash processes, including stdin, working-directory persistence, duplicate launches, exit codes, stop escalation, forced supervisor death and bounded console output. React tests cover drafts, unsaved navigation, imports, duplicate taps and unmounts. JVM tests exercise the actual broker authorization method with synthetic installed-package data and a generated test certificate. These do not replace Android Binder/Termux acceptance.
+Host tests execute actual Node/Python/Bash processes, including stdin, working-directory persistence, duplicate launches, exit codes, stop escalation, forced supervisor death and bounded console output. `tests/loader-assets.test.mjs` is the suite that fails on the missing packaging script. React tests cover drafts, unsaved navigation, imports, duplicate taps and unmounts. JVM tests exercise the actual broker authorization method with synthetic installed-package data and a generated test certificate. These do not replace Android Binder/Termux acceptance.
 
 On supported physical devices/API 28 and API 36: verify Termux installation and permission denial/retry, runtime checks, start/stdin/stop, setup failures, process death, force-stop/reopen, rotation, keyboard, large text, TalkBack, and a client signed by the wrong Manager. Live DM/voice/RPC regressions require an authenticated test session. The sandbox's software API 30 emulator previously lost Android system services before Manager installation; no current device pass or production certification is claimed.

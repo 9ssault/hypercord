@@ -71,6 +71,198 @@ Discord's settings opens. There is no second window to find or raise, and the
 manager is one tab per thing - commands, plugins, our own Hyper plugins, themes,
 logs, accounts, access keys.
 
+## Setup
+
+Prerequisites: Node on Windows, macOS or Linux (CI uses 20; `electron` 44).
+There is **no lockfile** in this tree, so `npm ci` cannot run - use `npm install`
+and commit the lockfile if you want reproducible installs.
+
+```bash
+npm install
+npm test              # every suite: units (node), then the electron ones
+```
+
+### Desktop - run it
+
+```bash
+npm start                     # the Electron window: Discord web + our preload
+npm start -- --attach         # patch a real Discord and start *that* as the client
+npm run perf                  # --perf=45: the same client, measures each process, quits
+```
+
+`--attach` needs an installed Discord. `src/patcher.js` looks under Windows
+`%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`, macOS
+`/Applications|~/Applications/Discord{ PTB, Canary}.app`, Linux
+`~/.config/discord*/app-<v>/resources`, package roots and Flatpak. It renames
+`app.asar` to `hypercord.app.asar` (never rewritten, so unpatch is byte-exact)
+and writes a `resources/app` entry point that requires `src/loader.cjs`. A
+`resources/app` that is not ours, and a directory that is not a Discord install,
+are left alone and refused rather than touched. With no Discord installed, the
+Electron window *is* the client, and nothing of ours starts at boot or stays
+resident: closing the window ends Hypercord.
+
+### Desktop - build it
+
+```bash
+npm run vendor        # merge + rebrand the vendored catalogue into plugins/manifest.json
+npm run vendor:check  # the same audit, read-only
+npm run pack          # electron-builder --dir -> dist/win-unpacked (or the platform equivalent)
+npm run check:packaged -- --fresh   # start the packed exe and read its page
+npm run dist          # the installers, into dist/
+```
+
+`build` in `package.json` decides what each platform gets:
+
+| Platform | Targets | Artifact names in `dist/` |
+| --- | --- | --- |
+| Windows | `nsis` setup + `portable`, x64 and arm64 | `Hypercord-<version>-win-<arch>-setup.exe`, `...-portable.exe` |
+| macOS | `dmg` + `zip`, x64 and arm64 | `Hypercord-<version>-mac-<arch>.dmg`, `....zip` |
+| Linux | `AppImage`, `deb`, `tar.gz`, x64 and arm64 | `Hypercord-<version>-linux-<arch>.AppImage`, `....deb`, `....tar.gz` |
+
+One run can do several targets: `npm run dist -- --win --linux --x64`.
+**Signing is not configured in this tree** - there is no certificate, notarisation
+or `CSC_*` step, so macOS and Windows artifacts are unsigned; macOS will warn on
+first open, and Gatekeeper refuses an unsigned replacement, so a macOS build must
+be signed for the silent updater to install into it. Building macOS artifacts
+needs macOS; Windows and Linux artifacts can both be produced from either.
+
+`npm run release` is the gate, in this order and no other: the vendor audit, the
+suites, `pack`, a freshness check (a `dist/` older than `src/` is refused - that
+is the failure this script exists for), the packaged check on a throwaway
+profile, and only then the installers, always with `--publish never`. Flags:
+`--skip-tests`, `--no-fresh`, `--allow-dirty`, `--dry-run`. Nothing in it
+publishes; uploading artifacts is a separate, deliberate act.
+
+### Android - the APK
+
+It is a **Manager + Loader** pair, not a fork: Manager downloads Discord's own
+APK splits, verifies their signer and version, patches the Loader in with
+LSPatch, and hands the result to Android's package installer. The installed
+client runs Discord's own React Native UI, with the plugin and theme runtime
+under Discord's Settings under the Hypercord entry. Documented requirements:
+Java 21, Python 3.9+, Android SDK platform 36 and build-tools 36.0.0.
+
+**This tree cannot build the APK as it stands.** The commands the Android docs
+and CI name - `npm run build:addons`, `python3 scripts/build_android.py`,
+`npm run build`, `npm run release:zip`, `scripts/candidate_artifacts.py` - are
+not here: `scripts/` holds only `vendor.mjs`, `release.mjs`,
+`check-packaged.mjs`, `measure.mjs`, `make-icons.mjs` and `patch_runtime.py`,
+`android/` has no Gradle wrapper and no `build.gradle`/`settings.gradle`, and the
+Android project has no `package.json` of its own (so its `npm ci` cannot run
+either, and the repository has no lockfile). What *is* here: the Java sources
+(`android/manager`, `android/loader`), the JS runtime (`core/`, `utils/`,
+`plugins/`, `themes/`), the Android Node tests (`tests/*.test.mjs`, run one at a
+file with `node --test tests/<name>.test.mjs`), and the tag-triggered release
+workflow (`.github/workflows/android-release.yml`), which expects exactly the
+missing scripts. Treat the APK as source-only: no build is claimed, and the
+output path the docs name (`public/releases/Assault-Manager.apk`, kept for the
+reason in its branding note, and copied to `Hypercord-Manager.apk` /
+`Hypercord-Loader.apk` with `SHA256SUMS` by that workflow) is where a complete
+tree would put it.
+
+Installing it, once built, is the flow in [docs/ANDROID-README.md](docs/ANDROID-README.md):
+
+1. install the Manager APK and open it;
+2. tap **Download & prepare client** - Manager fetches the base, ABI, language and density splits itself;
+3. tap **Install prepared update** and allow installs from Manager;
+4. open Hypercord and sign in with Discord's own login.
+
+Keep Manager installed and its data intact: it holds the private key the client
+is signed with, and clearing it means future updates need a fresh install. The
+patched client keeps `com.discord` but is signed by Manager, so it cannot update
+an official Discord install - Android reports a signing conflict. Sideloading is
+the only distribution here; expect Play Protect to warn.
+
+**Android without an APK:** `pwa/manifest.webmanifest` is in this tree, so the
+client can be installed from a browser as a web app. The route that serves it
+(`/discord`) lives in the control server, not in this repository.
+
+### Plugins, themes and sources
+
+* **Plugins.** The vendored Vencord/Equicord catalogue (371 entries) is written
+  by `npm run vendor` into `plugins/manifest.json`, which is metadata only that
+  the host reads; a plugin's code is imported the moment it is enabled and never
+  before. `plugins/hyper/` holds our five, and they are the only ones on at
+  first run.
+* **Themes.** Local `.theme.css` files, online themes by URL (fetched once, at
+  install time) and quick CSS, all through the one injection point in `src/themes.js`.
+* **Sources.** `addon-sources.json` is the catalogue of plugin and theme sources
+  other clients publish - Aliucord's `manifest.json`, the Vendetta and Bunny
+  plugin proxies, Revenge's `index.json`, Equicord's `Equibuilds` JSON, plus the
+  browseable Vencord, BetterDiscord and Replugged listings - and
+  [docs/addon-sources.md](docs/addon-sources.md) says what each one returns and
+  how to fetch it. The limit is honest: those plugins are written for *their*
+  runtimes. This client installs only its own addon dialect (the bounded
+  interpreter in [docs/addon-framework.md](docs/addon-framework.md): `.js`/`.txt`,
+  no loops, imports, async or prototype access), and the desktop host refuses a
+  TypeScript plugin body with "TypeScript source, not built" instead of
+  pretending. Sources are for browsing and fetching; what installs has to be in
+  this dialect.
+
+### Signing in with a token
+
+Run `npm start` and the token card sits directly under Discord's own email and
+password fields; the rail's Accounts view does the same for a stored account. A
+pasted token is **checked with Discord first** - only a token whose identity
+Discord confirms is stored - and then kept by the operating system's keychain
+(`safeStorage`, through `src/tokens.js`); what reaches disk is metadata plus the
+cipher's own output, and the manager lists a fingerprint and the last four
+characters of a token, never the token itself. Signing in writes the token where
+that page keeps it and sends the window to the app route, because the login page
+never restores a session; "stored" and "signed in" are reported as the two
+different things they are, and a refusal says which half failed. Every attempt
+appends one line to `signin.log` in the app's userData directory (Windows
+`%APPDATA%\Hypercord`, macOS `~/Library/Application Support/Hypercord`, Linux
+`~/.config/Hypercord`): the form, whether the client used the token, and where
+it landed - never the token, never a header value.
+
+## Where the code comes from
+
+Two clients, one repository, and none of the interesting parts are Discord's:
+
+* **The plugin platform is upstream's, rebranded.** `vendor/equicord` is the build
+  base (it already contains Vencord's core) and `vendor/vencord` is merged into it
+  by `npm run vendor` (`scripts/vendor.mjs`): a plugin folder Equicord does not have
+  is added, and where both ship the same folder **Equicord wins**. The rebrand
+  changes display strings only - the identifiers the runtime and the injector need
+  keep their upstream names (`Vencord` the renderer global, the `vencord:` and
+  `equicord:` protocols, the `~plugins` virtual import, `retainEquicord`,
+  `generateEquicordPluginJson`, `EquicordData`, source-map URLs) - and no LICENSE
+  file or credit line is ever opened, let alone rewritten. `about.html` is the one
+  file the display-string audit exempts, because naming upstream is its whole job.
+* **Attribution is recorded, and checkable.** `plugins/manifest.json` carries
+  `provenance`: core Equicord at `e0e85c8d4f6dc73aac9368cf3f4b2200eac4d4b4`, merged
+  Vencord at `16ec4ea838899706019e7f472e45f055070abeb1` - the commits the checkouts
+  were at when the catalogue was generated. `npm run vendor:check` re-reads them and
+  re-runs the audit without changing anything. Both upstream licence texts are in
+  the tree exactly as shipped, at `vendor/vencord/LICENSE` and
+  `vendor/equicord/LICENSE`. Which half an entry came from is not a guess: every
+  catalogue entry carries its `entry` file and a `source` of `upstream` or
+  `hypercord`, and its `authors` are resolved out of upstream's own `Devs` map -
+  `authorRefs` keeps the raw reference beside the resolved name so attribution can
+  be checked rather than believed.
+* **Ours.** `plugins/hyper/` (the five that are on by default), `src/` (the shell,
+  patcher, preload, rail, manager sheet, plugin host, theme system and token store),
+  `plugins/examples/` with `themes/examples/`, and the Android client in `android/`,
+  `core/`, `utils/`.
+* **Not ours, and not bundled.** Discord's own client is never in this repository.
+  The desktop path renames an installed `app.asar` byte-exact and leaves a
+  `resources/app` entry point that requires our loader (`src/patcher.js`), so
+  unpatching restores the original bytes; the Android path downloads Discord's own
+  APK splits and verifies them on device before a loader is merged in
+  (`android/manager`).
+* **Third-party addon sources are not vendored code.** `addon-sources.json` lists
+  where the *other* clients publish their plugins and themes (Aliucord, Revenge,
+  Vendetta, Bunny, Vencord, Equicord, BetterDiscord, Replugged) so the browser can
+  find and open them. It is a map of other people's catalogues, not a copy of their
+  contents, and nothing from it ships in this client.
+
+One gap, stated rather than implied: there is **no licence file at the root of this
+repository**. `package.json` records `"license": "GPL-3.0-or-later"` and the two
+upstream texts are kept verbatim under `vendor/`, but a `LICENSE`/`COPYING` file for
+this work itself is not in the tree, and neither is the Android half's
+`android/LICENSE` (see [the Android README](docs/ANDROID-README.md)).
+
 ## Layout
 
 ```

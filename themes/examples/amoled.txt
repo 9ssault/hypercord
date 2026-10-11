@@ -1,0 +1,32 @@
+// language: JavaScript, file: themes/examples/amoled.txt
+//
+// The theme the client ships as its default: full AMOLED black. A theme is data,
+// not code - the ten colour tokens themes/index.js accepts, each a six-digit hex
+// value, and no lifecycle method at all (a theme that declares one is refused
+// before it is installed, because themes have no hooks and no remote assets).
+//
+// The values are the same ones the desktop client's built-in theme uses (AMOLED_CSS
+// in src/themes.js), so the two clients look like one product. Pure black is kept
+// for the surfaces behind content, and the raised and recessed surfaces sit a hair
+// above it - a sheet that is exactly the colour of the page under it has no edge,
+// which is how an AMOLED theme becomes unreadable rather than dark. Text is left
+// light rather than dimmed for the same reason: the background is the theme.
+export default {
+  id: "example.amoled",
+  kind: "theme",
+  name: "AMOLED Black",
+  version: "1.0.0",
+  description: "True black for every surface behind content, with the raised surfaces a hair above it.",
+  colors: {
+    BACKGROUND_PRIMARY: "#000000",
+    BACKGROUND_SECONDARY: "#060607",
+    BACKGROUND_TERTIARY: "#000000",
+    BACKGROUND_ACCENT: "#0a0a0c",
+    TEXT_NORMAL: "#f2f3f5",
+    TEXT_MUTED: "#a3a6aa",
+    TEXT_LINK: "#7aa2ff",
+    HEADER_PRIMARY: "#ffffff",
+    BRAND_500: "#5865f2",
+    STATUS_DANGER: "#f2555a"
+  }
+}

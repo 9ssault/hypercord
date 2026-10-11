@@ -1,15 +1,37 @@
 import { Journal } from '../utils/store.js';
-import { ensure, jsonCopy, utf8Size } from '../utils/validation.js';
+import { LIMITS, ensure, jsonCopy, utf8Size } from '../utils/validation.js';
 
 export const runtimes = { javascript: 'JavaScript', python: 'Python', shell: 'Shell' };
+export const scriptStates = ['starting', 'running', 'stopping', 'stopped', 'exited', 'failed', 'interrupted', 'missing', 'unknown'];
 const active = new Set(['starting', 'running', 'stopping', 'unknown']);
 const id = () => `s${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+
+/**
+ * The arguments field is edited as JSON text, so a mistyped bracket is a person's
+ * typo rather than a crash: everything here either returns an array of strings or
+ * throws a sentence that names the shape the runner will accept.
+ */
+export function parseArgs(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') throw new Error('Arguments must be a JSON array of at most 32 strings.');
+  if (!value.trim()) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error('Arguments are not valid JSON. Write them as an array of strings, for example ["one", "two"].');
+  }
+  ensure(Array.isArray(parsed), 'Arguments must be a JSON array of strings, for example ["one", "two"].');
+  return parsed;
+}
+
 export function scriptValues(value) {
   ensure(value && typeof value.name === 'string' && value.name.trim() && value.name.length <= 80, 'Use a project name of 1–80 characters.');
   ensure(Object.prototype.hasOwnProperty.call(runtimes, value.runtime), 'Choose a supported runtime.');
   ensure(typeof value.source === 'string' && value.source.trim() && utf8Size(value.source) <= 65536, 'Use a nonempty script of at most 64 KiB.');
-  const args = typeof value.args === 'string' ? JSON.parse(value.args) : value.args ?? [];
-  ensure(Array.isArray(args) && args.length <= 32 && args.every(item => typeof item === 'string' && item.length <= 2048 && !item.includes('\0')), 'Arguments must be a JSON array of at most 32 strings.');
+  const args = parseArgs(value.args);
+  ensure(args.length <= LIMITS.arguments && args.every(item => typeof item === 'string' && item.length <= LIMITS.argument && !item.includes('\0')), 'Arguments must be a JSON array of at most 32 strings.');
   ensure(utf8Size(JSON.stringify(args)) <= 65536, 'Arguments exceed the 64 KiB encoded limit.');
   const module = value.module ?? 'commonjs';
   ensure(['commonjs', 'esm'].includes(module), 'Choose CommonJS or ES modules.');
@@ -36,7 +58,7 @@ export class ScriptManager {
     saved.projects = saved.projects.map(project => {
       ensure(project && typeof project.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(project.id) && !identifiers.has(project.id), 'Script project identifier is invalid.');
       identifiers.add(project.id);
-      if (project.run) ensure(typeof project.run.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(project.run.id) && ['starting', 'running', 'stopping', 'stopped', 'exited', 'failed', 'interrupted', 'missing', 'unknown'].includes(project.run.state), 'Script run record is invalid.');
+      if (project.run) ensure(typeof project.run.id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(project.run.id) && scriptStates.includes(project.run.state), 'Script run record is invalid.');
       return { ...project, ...scriptValues(project) };
     });
     return saved;
@@ -85,6 +107,14 @@ export class ScriptManager {
       try {
         const result = await this.bridge.request('runner', { request: { operation: 'start', project: projectId, run: run.id, runtime: setup ? 'shell' : project.runtime, module: project.module ?? 'commonjs', source: setup ? project.setup : project.source, args: setup ? [] : project.args } });
         await this.record(projectId, result);
+        // Nothing is polled from inside a launch. The runner answers a launch with
+        // the run's state *and the output it has so far*, so a script that finished
+        // before anyone polled is recorded with its console instead of as a silent
+        // exit; a run that is still going is polled by the screen while it is active,
+        // which is where the design puts that job. A poll sent from here would race
+        // the runner mailbox against whatever is queued behind this launch - a runtime
+        // check, say - and would report the run the person just started as over before
+        // its first line had been read.
       } catch (error) {
         await this.record(projectId, { state: 'unknown', error: `Launch result is unknown. Refresh before retrying. ${error.message}` });
         throw error;
@@ -94,17 +124,22 @@ export class ScriptManager {
   async record(projectId, result) {
     const data = jsonCopy(this.data, 4 * 1024 * 1024), project = data.projects.find(p => p.id === projectId);
     ensure(project?.run, 'Run no longer exists.');
-    ensure(['starting', 'running', 'stopping', 'stopped', 'exited', 'failed', 'interrupted', 'missing', 'unknown'].includes(result.state), 'Invalid runner response.');
-    project.run = { id: project.run.id, phase: project.run.phase ?? 'script', startedAt: project.run.startedAt, state: result.state, console: String(result.console ?? project.run.console ?? '').slice(-16384), error: String(result.error ?? '').slice(0, 400), exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null, truncated: result.truncated === true };
+    ensure(scriptStates.includes(result.state), 'Invalid runner response.');
+    project.run = { id: project.run.id, phase: project.run.phase ?? 'script', startedAt: project.run.startedAt, state: result.state, console: String(result.console ?? project.run.console ?? '').slice(-LIMITS.console), error: String(result.error ?? '').slice(0, 400), exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null, truncated: result.truncated === true };
     if (JSON.stringify(project.run) !== JSON.stringify(this.find(projectId).run)) await this.commit(data);
   }
-  poll(projectId) {
-    return this.serial(async () => {
-      const project = this.find(projectId); if (!project.run) return;
-      const result = await this.bridge.request('runner', { request: { operation: 'poll', project: projectId, run: project.run.id } });
-      await this.record(projectId, result);
-    });
+  /**
+   * Read a run's state, console and exit code - poll() without the queue. Reading is
+   * safe outside the queue because a commit only happens when something changed, and
+   * a run whose record is gone is left alone.
+   */
+  async read(projectId) {
+    const project = this.find(projectId);
+    if (!project.run) return;
+    const result = await this.bridge.request('runner', { request: { operation: 'poll', project: projectId, run: project.run.id } });
+    await this.record(projectId, result);
   }
+  poll(projectId) { return this.serial(() => this.read(projectId)); }
   control(projectId, operation, text = '') {
     return this.serial(async () => {
       ensure(['stop', 'input'].includes(operation), 'Invalid process control.');

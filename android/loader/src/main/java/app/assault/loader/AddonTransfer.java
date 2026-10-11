@@ -54,7 +54,7 @@ final class AddonTransfer {
         } finally { connection.disconnect(); }
     }
     private static final class TransferDeadline implements AutoCloseable {
-        private final java.util.Timer timer = new java.util.Timer("Assault transfer deadline", true);
+        private final java.util.Timer timer = new java.util.Timer("Hypercord transfer deadline", true);
         private boolean settled, expired;
         TransferDeadline(HttpsURLConnection connection, Runnable timedOut, long millis) {
             timer.schedule(new java.util.TimerTask() {

@@ -12,6 +12,11 @@
 //
 // Everything ends up in `css()`, a single string the client pastes into the page
 // at one injection point. A theme that is not enabled is never read from disk.
+//
+// The client also ships one theme of its own - AMOLED black - as a string in this
+// file, installed and enabled by `installDefault()`. It goes through the same gate
+// and the same injection point as a user's, so the default cannot do anything a
+// downloaded theme could not, and it needs no network and no file to exist.
 import fs from "node:fs";
 import path from "node:path";
 
@@ -39,6 +44,41 @@ export function sanitizeCss(text) {
   }
   return { ok: true, css };
 }
+
+/**
+ * The built-in theme this client ships with: full AMOLED black.
+ *
+ * True black on every surface Discord paints behind content, and a hair off black
+ * for the few that have to stay distinguishable - two black surfaces with nothing
+ * between them is how an AMOLED theme makes a client unusable. Text colours are
+ * left alone: the point is the background, and overriding text here would fight
+ * every accessibility setting the person already has.
+ */
+export const AMOLED_ID = "amoled-black";
+
+export const AMOLED_CSS = `/* Hypercord's built-in theme: full AMOLED black. */
+:root {
+  --background-primary: #000000;
+  --background-secondary: #000000;
+  --background-secondary-alt: #060607;
+  --background-tertiary: #000000;
+  --background-accent: #0a0a0c;
+  --background-floating: #060607;
+  --background-mobile-primary: #000000;
+  --background-mobile-secondary: #060607;
+  --channeltextarea-background: #0a0a0c;
+  --input-background: #0a0a0c;
+  --modal-background: #000000;
+  --modal-footer-background: #060607;
+  --deprecated-card-bg: #060607;
+  --deprecated-quickswitcher-input-background: #0a0a0c;
+  --background-modifier-hover: rgba(255, 255, 255, 0.03);
+  --background-modifier-active: rgba(255, 255, 255, 0.05);
+  --background-modifier-selected: rgba(255, 255, 255, 0.07);
+  --background-modifier-accent: rgba(255, 255, 255, 0.06);
+}
+html, body { background: #000000; }
+[class^="app-"], [class^="bg-"], [class^="sidebar-"], [class^="chat-"], [class^="members-"], [class^="scroller-"] { background-color: #000000; }`;
 
 /** an id that is safe as a file name on every platform */
 function idFor(raw) {
@@ -255,9 +295,26 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
     return { version: current.version, order: [...current.order], themes: JSON.parse(JSON.stringify(current.themes)), quickCss: current.quickCss, dir };
   }
 
+  /**
+   * Put the built-in AMOLED theme in place as the default.
+   *
+   * Called by the shell on the first run: idempotent, offline, and it never touches
+   * a theme the person installed - it writes its own CSS text and enables that. A
+   * default theme the person can switch off is a default, not a policy.
+   */
+  function installDefault() {
+    const current = read();
+    const existing = current.themes[AMOLED_ID];
+    if (existing && existing.builtin && existing.enabled) return { ok: true, id: AMOLED_ID, already: true };
+    record({ id: AMOLED_ID, name: "AMOLED Black", enabled: true, builtin: true, source: "builtin" }, AMOLED_CSS);
+    log("[hypercord] theme: the built-in AMOLED default is on");
+    return { ok: true, id: AMOLED_ID, already: false };
+  }
+
   return {
     list,
     install,
+    installDefault,
     remove,
     setEnabled,
     setQuickCss,

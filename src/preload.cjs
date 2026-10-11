@@ -118,6 +118,11 @@ contextBridge.exposeInMainWorld("hypercord", {
   },
   notify: (title, body) => call("notify", String(title || ""), String(body || "")),
   metrics: () => call("perf:metrics"),
+  // this client's own log, never the control server's: the pane says which one it
+  // is reading, and a build that keeps no log answers null rather than an empty box
+  logs: {
+    read: (lines) => call("logs:read", Number(lines) || 200),
+  },
   update: {
     check: () => call("update:check"),
     install: () => call("update:install"),
@@ -386,14 +391,23 @@ async function renderAccounts() {
   const box = host && $(host, '[data-hc="accounts"]');
   if (!box) return;
   let info = null;
+  let stored = [];
   try {
     info = await call("account:current");
+    stored = await call("tokens:list");
   } catch {
     info = null;
   }
+  // The token store is the local truth. A machine with no control server still has
+  // an account for every key stored on it, and "the control server reports no
+  // accounts" was telling the user they had none when they had several.
   const accounts = (info && Array.isArray(info.accounts) ? info.accounts : []).map(String);
+  for (const key of Array.isArray(stored) ? stored : []) {
+    const id = String((key && key.account) || key || "");
+    if (id && !accounts.includes(id)) accounts.push(id);
+  }
   if (!accounts.length) {
-    empty(box, "the control server reports no accounts");
+    empty(box, "no key is stored on this machine and no control server is configured");
     return;
   }
   box.replaceChildren();

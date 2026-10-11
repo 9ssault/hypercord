@@ -26,7 +26,7 @@ final class ScriptSetup {
             }
         });
         new AlertDialog.Builder(activity).setTitle("Code runner setup")
-            .setMessage("Install and open Termux from its official distribution. In Termux run:\n\npkg install python nodejs bash\nmkdir -p ~/.termux\nprintf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties\ntermux-reload-settings\n\nScripts run with Termux permissions and can access its files and network. Only run code you trust. Discord credentials are not passed to scripts. Turning execution off prevents new starts; stop any active script from the client runner.\n\nThen grant permission below. In Discord, open Assault settings → Code runner.")
+            .setMessage("Install and open Termux from its official distribution. In Termux run:\n\npkg install python nodejs bash\nmkdir -p ~/.termux\nprintf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties\ntermux-reload-settings\n\nScripts run with Termux permissions and can access its files and network. Only run code you trust. Discord credentials are not passed to scripts. Turning execution off prevents new starts; stop any active script from the client runner.\n\nThen grant permission below. In Discord, open Hypercord settings → Code runner.")
             .setView(enabled).setNegativeButton("Close", null).setPositiveButton("Grant permission", (dialog, which) -> {
                 if (activity.checkSelfPermission(ScriptProvider.PERMISSION) == PackageManager.PERMISSION_GRANTED) return;
                 try {
@@ -40,7 +40,7 @@ final class ScriptSetup {
                 } catch (PackageManager.NameNotFoundException error) {
                     new AlertDialog.Builder(activity).setMessage("Install and open Termux first, then retry Grant permission.").setPositiveButton("OK", null).show();
                 } catch (RuntimeException error) {
-                    new AlertDialog.Builder(activity).setMessage("Open Android Settings → Apps → Assault Manager → Permissions and allow Termux execution.").setPositiveButton("OK", null).show();
+                    new AlertDialog.Builder(activity).setMessage("Open Android Settings → Apps → Hypercord Manager → Permissions and allow Termux execution.").setPositiveButton("OK", null).show();
                 }
             }).show();
     }

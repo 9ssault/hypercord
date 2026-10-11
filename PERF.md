@@ -83,6 +83,70 @@ either way.
   no window to create, raise or release), there is no tray or resident process,
   and the client quits with its window.
 
+## What ships, and what actually weighs
+
+Read from the tree and the build config, not measured - this section is a source
+inventory, and every number in it that is an estimate says so. `scripts/measure.mjs`
+now prints the same figures as a reading (`shipped: <files> file(s), <KiB> KiB |
+packed asar <KiB> KiB`, also in `vendor/_measure.json` as `shipped`), so running it
+once replaces the estimates below with measured bytes.
+
+`package.json` decides what is packaged: `files` is `src/**/*`, `plugins/**/*`,
+`pwa/**/*` with `!**/*.map`, `!**/*.ts`, `!**/*.tsx`; `asar: true`;
+`compression: "maximum"`; `electronLanguages: ["en-US"]` - one locale pack instead
+of roughly fifty. Everything else in the repository is repository weight, and the
+only production dependency is `electron-updater`.
+
+| What | Where | Ships? | Weight of the artifact |
+| --- | --- | --- | --- |
+| the shell, preload, rail, panes, prompt | `src/` - 18 files, all reached from `main.js`, `preload.cjs`, `panes.html` or `rail.html` | yes | kilobytes of JS, CSS and HTML |
+| the plugin catalogue | `plugins/manifest.json` - 7,805 lines of indented JSON, **on the order of 300 KB (estimated from the line count, not measured)** | yes | the largest single file of ours |
+| the interpreter and the host | `plugins/sandbox.js`, `plugins/index.js` | yes | kilobytes |
+| our plugins | `plugins/hyper/` - 5 plugins, the ones on by default | yes | kilobytes |
+| the reference addons | `plugins/examples/`, `themes/examples/`, `themes/index.js` | yes | kilobytes; inert for the desktop host, which reads the manifest rather than enumerating directories |
+| the served manifest | `pwa/manifest.webmanifest` | yes | one file |
+| the vendored catalogue's *bodies* | `vendor/vencord/`, `vendor/equicord/` | **no** | not in `build.files` at all; the `.ts`/`.tsx` exclusions would also drop them if it were |
+| the Android client | `android/`, `core/`, `utils/`, `themes/` | **no** | not in `build.files`; an APK build is a separate artifact |
+| Electron | the runtime | yes | **the floor of every number above** - a Chromium plus Node per platform, an order of magnitude more than everything of ours together |
+
+Two consequences worth stating plainly, because both are easy to misread:
+
+* **The 371-entry catalogue is metadata, not weight.** Every vendored entry records
+  an `entry` under `vendor/equicord/src/...` with `"built": false`, and the host
+  refuses a `.ts`/`.tsx` entry as "TypeScript source, not built". So the catalogue is
+  browsable and its bodies are absent - browsing costs one JSON read, and "371 in the
+  catalogue, 5 running" is the designed state, not a fault. A debloat that removed
+  the manifest would remove the manager's entire plugin list, so it is load-bearing.
+* **`compression: "maximum"` buys installer size with build time, not memory.** It
+  changes the artifact on disk, never the RSS of a running client.
+
+### Debloat list
+
+1. **Scratch under `vendor/` - safe to remove.** `_asar.txt`, `_clone-status.txt`,
+   `_clone-vencord.log`, `_electron-binary.log`, `_npm-install*.log`, `_pack*.log`,
+   `_t-*.log`, `_perf-*.log`, `_app-run.log` and the rest are diagnostics from earlier
+   runs. `.gitignore` already covers `*.log`, so the logs are untracked scratch; the
+   `.txt` and `.json` siblings are **not** ignored, so they can still be committed by
+   accident. Keep `vendor/_measure.json` - `scripts/measure.mjs` writes it on purpose -
+   and either delete the rest or ignore `vendor/_*` explicitly. Cost of removing: none.
+2. **The two upstream checkouts - the large one, and a risk rather than a bug.**
+   `vendor/vencord/` and `vendor/equicord/` are full upstream trees, and there is **no
+   `.gitmodules`**, so they are not submodules: they are checked into this repository's
+   history. That is the single biggest thing here, and it also means the vendored
+   commit the catalogue records has nothing pinning it. Cost of removing: the `vendor` script cannot
+   rebuild `plugins/manifest.json` until they are cloned again; the shipped client is
+   unaffected.
+3. **Keep the `.ts`/`.tsx` and source-map exclusions.** They are doing real work: without
+   them the vendored TypeScript would ship inside the asar.
+4. **Keep `electronLanguages: ["en-US"]`.** Re-adding locales adds tens of megabytes of
+   Chromium `.pak` files for no feature.
+5. **Nothing found that ships and that nothing reads.** All 18 files in `src/` are
+   reached from `main.js`, `preload.cjs`, `panes.html` or `rail.html`; `pwa/` is what
+   `PLATFORMS.md` tells a TWA wrapper to use; `themes/index.js` is imported by
+   `core/index.js` and `plugins/index.js`. There is no second copy of the rail, no
+   bundled webview and no icon set beyond `build/` (which `make-icons.mjs` generates
+   rather than committing opaque binaries).
+
 ## To settle the RSS question properly
 
 Interleave the two apps rather than running them one after the other: N=5 samples

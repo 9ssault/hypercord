@@ -18,6 +18,28 @@ function inspect(source, filename) {
   if (m.kind === 'theme') { ensure(!compiled.hasHooks, 'Themes cannot contain lifecycle code.'); validateTheme(m.colors); }
   return compiled;
 }
+/**
+ * The settings an addon starts with, and the settings a saved one is read back
+ * into: the schema, the declared `default` of every field, and then whatever was
+ * actually saved on top.
+ *
+ * A declared default fills what is absent, and a stored value always wins -
+ * including a deliberately empty one - which is why the merge is by presence and
+ * not by truthiness. Without this the previous committed revision of a journal read
+ * back as empty text for a setting that declares a default, and "the older slot was
+ * used" looked the same as "the older slot was empty".
+ */
+function declaredDefaults(manifest) {
+  const declared = {};
+  for (const [name, field] of Object.entries(manifest.settings ?? {})) {
+    if (field && Object.prototype.hasOwnProperty.call(field, 'default')) declared[name] = field.default;
+  }
+  return declared;
+}
+function seedSettings(manifest, saved = {}) {
+  ensure(saved === undefined || saved === null || (typeof saved === 'object' && !Array.isArray(saved)), 'Saved settings are not a set of values.');
+  return settingsValues(manifest.settings, { ...declaredDefaults(manifest), ...(saved ?? {}) });
+}
 export class AddonManager {
   constructor(store, host) {
     this.store = store; this.host = host; this.listeners = new Set(); this.tail = Promise.resolve();
@@ -45,10 +67,17 @@ export class AddonManager {
     const ids = new Set();
     for (const e of data.entries) {
       ensure(e && typeof e === 'object', 'Invalid addon record.');
-      const { manifest } = inspect(e.source, e.filename);
+      // A backup carries exported addons, one per file. An entry the interpreter
+      // cannot read as one - a truncated file, a hand-edited archive, an addon
+      // written for a different client - is refused here with the interpreter's own
+      // reason attached, because "the archive is not an archive of addons" is the
+      // part the person restoring it can act on, and the rest is why.
+      let manifest;
+      try { ({ manifest } = inspect(e.source, e.filename)); }
+      catch (error) { throw new Error(`Invalid addon backup: Export one addon per file, exactly as it was installed. ${message(error).slice(0, 240)}`); }
       ensure(!ids.has(manifest.id), 'Duplicate addon identifier.'); ids.add(manifest.id);
       e.manifest = manifest;
-      e.settings = settingsValues(manifest.settings, e.settings);
+      e.settings = seedSettings(manifest, e.settings);
       ensure(e.state && typeof e.state === 'object' && !Array.isArray(e.state), 'Invalid plugin state.');
       e.state = jsonCopy(e.state); e.enabled = e.enabled === true && manifest.kind === 'plugin';
       e.error = typeof e.error === 'string' ? e.error.slice(0, 240) : null;
@@ -96,7 +125,7 @@ export class AddonManager {
     return this.transaction(data => {
       ensure(data.entries.length < LIMITS.addons, 'Remove an addon before installing more (32 maximum).');
       ensure(!data.entries.some(e => e.manifest.id === manifest.id), 'This addon is already installed. Remove it before installing a replacement. Export its state first.');
-      data.entries.push({ source, filename, origin, installedAt: new Date().toISOString(), manifest, enabled: false, settings: settingsValues(manifest.settings), state: {}, error: null });
+      data.entries.push({ source, filename, origin, installedAt: new Date().toISOString(), manifest, enabled: false, settings: seedSettings(manifest), state: {}, error: null });
     });
   }
   async enable(id, enabled) {
@@ -112,7 +141,7 @@ export class AddonManager {
   }
   configure(id, values) {
     return this.transaction((data, effects) => {
-      const entry = this.record(data, id); entry.settings = settingsValues(entry.manifest.settings, values);
+      const entry = this.record(data, id); entry.settings = seedSettings(entry.manifest, values);
       if (entry.enabled && !this.startupErrors[id] && this.host.canActivate?.() !== false) {
         const savedState = jsonCopy(entry.state);
         try { this.hook(entry, 'onSettingsChanged', effects); entry.error = null; }

@@ -2,7 +2,7 @@
 
 ## Implementation and acceptance status
 
-The build adds React Native **Plugins** and **Themes** pages under Discord Settings → Assault. The authoritative project is `assault-main/source/`; its root modules are `plugins/`, `themes/`, `core/`, and `utils/`. `core/index.js` connects to the pinned upstream runtime and existing Android loader. `plugins/index.js`, `themes/index.js`, and `utils/store.js` are independent entry points for lifecycle, theme validation, and storage.
+The build adds React Native **Plugins** and **Themes** pages under Discord Settings → Hypercord. The authoritative project is `assault-main/source/`; its root modules are `plugins/`, `themes/`, `core/`, and `utils/`. `core/index.js` connects to the pinned upstream runtime and existing Android loader. `plugins/index.js`, `themes/index.js`, and `utils/store.js` are independent entry points for lifecycle, theme validation, and storage.
 
 This is a candidate implementation, **not a production-certified Discord build**. Host regression tests and Android compilation do not establish live voice/audio, DMs, presence visibility, all theme surfaces, picker compatibility, accessibility, or crash-free operation on a device. The existing Manager downloads and patches device-specific Discord splits; its APK is not itself a patched Discord client. The target Discord version and device must be agreed and acceptance-tested before production installation.
 
@@ -41,6 +41,8 @@ Cloud backup is optional and explicit: provide an HTTPS endpoint that supports a
 
 ## Build and verification
 
-Run `npm ci`, `npm run build:addons`, `npm test`, `npm run build`, and `python3 scripts/build_android.py` with Java 21 and SDK 36 configured. Gradle rebuilds `addons.js` from the module roots; Acorn's MIT license is packaged with the loader. Source packaging includes Xposed's entry point, ProGuard rules and all addon modules.
+Run the host suites from this directory - `mise exec java@21 -- node --test tests/*.test.mjs`, the same shape the code-runner gates use - with Java 21 and SDK 36 configured. The addon bundle the loader reads (`assets://addons.js`, consumed by `android/loader/.../AssaultLoader.java`) is assembled from the four module roots `core/`, `plugins/`, `themes/` and `utils/`, with Acorn's MIT license packaged alongside Xposed's entry point and the ProGuard rules.
+
+**Stated gap:** nothing in this tree assembles that bundle. There is no Gradle build file under `android/`, no `build:addons` script in any `package.json` here, and no `scripts/build_android.py` - which `tests/loader-assets.test.mjs` imports by that exact path, so it cannot pass as it stands. Until that step exists, the module roots above are the addon sources and the loader assets have to be produced by hand.
 
 Device acceptance must cover import cancellation/permission errors, remote hash/network failures, backgrounding/rotation during picker use, repeated theme changes, large text/accessibility settings, multiple enabled plugins, force-stop/relaunch persistence, export/reimport equality, storage-full failures, voice join/leave/streaming, DM send/receive, RPC updates and safe-mode recovery. Record the exact Discord version, ABI, Android version and signing identity. Do not describe these checks as passed without exercising them.

@@ -1,5 +1,7 @@
 // Derived from JingMatrix/LSPatch v1.2, GPL-3.0. See android/THIRD_PARTY.md.
-// Assault changes: alignment, launcher XML, split identity/version consistency and code-less bootstrap handling.
+// Hypercord changes: alignment, launcher XML, split identity/version consistency and code-less bootstrap handling.
+// The manager's package id (`app.assault.manager`, written below) is left alone: the id is what the patched
+// client's provider authority and the loader call back through, so it moves only with those two.
 package org.lsposed.patch;
 
 import static org.lsposed.lspatch.share.Constants.CONFIG_ASSET_PATH;

@@ -99,6 +99,11 @@ export function createScriptScreen(api, manager, bridge, addons) {
     }
     async function importScript() {
       const result = await bridge.request('importScript');
+      // The picker answers with the chosen file's name and its contents. A result
+      // missing either is a broken contract, and naming the missing half beats a
+      // crash inside a `.replace`, or a project saved with "undefined" as its source.
+      if (typeof result?.filename !== 'string' || !result.filename) throw new Error('The file picker returned no file name. Choose the script again.');
+      if (typeof result.data !== 'string' || !result.data.trim()) throw new Error('That file is empty, or could not be read as text. Choose a .js, .cjs, .mjs, .py, .sh or .txt script.');
       const language = /\.py$/i.test(result.filename) ? 'python' : /\.sh$/i.test(result.filename) ? 'shell' : 'javascript';
       if (mounted.current) {
         open(null, language);
@@ -149,7 +154,8 @@ export function createScriptScreen(api, manager, bridge, addons) {
           project.run.error && text(project.run.error, { color: c.cardError }),
           button('Refresh status', () => run('Refreshing run…', () => manager.poll(project.id))),
           button('Stop script', () => run('Requesting stop…', async () => { await manager.control(project.id, 'stop'); await manager.poll(project.id); }), !['running', 'stopping'].includes(project.run.state)),
-          h(N.Text, { selectable: true, accessibilityLabel: 'Console output', style: { fontFamily: 'monospace', color: c.text, fontSize: 13, backgroundColor: c.bg, padding: 12 } }, project.run.console || 'No output yet.'),
+          h(N.Text, { selectable: true, accessibilityLabel: 'Console output', style: { fontFamily: 'monospace', color: c.text, fontSize: 13, backgroundColor: c.bg, padding: 12 } }, project.run.console || (active(project.run.state) ? 'No output yet.' : 'This run produced no output.')),
+          project.run.truncated && text('Older output has rotated out of the console; what is shown is the most recent part of it.', { color: c.cardMuted, fontSize: 13 }),
           text('Showing the latest 16 KiB. Console storage rotates at 1 MiB; write project files for full program output.', { color: c.cardMuted, fontSize: 13 }),
           input('Standard input', stdin, setStdin, { maxLength: 1000 }),
           button('Send input', () => run('Sending input…', async () => { await manager.control(project.id, 'input', `${stdin}\n`); if (mounted.current) { setStdin(''); setNotice('Input queued for the script.'); } }), project.run.state !== 'running')),

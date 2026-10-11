@@ -55,7 +55,7 @@ public class ManagerActivity extends Activity {
         fetch = button(hero, "Download & prepare client", true, v -> prepare());
         install = button(hero, "Install prepared update", false, v -> requestInstall());
         cancel=button(hero,"Cancel preparation",false,v->{ClientEngine.cancel();message("Cancellation requested. Downloads stop at the next progress boundary; patching stops before publication.");});
-        button(hero, "Open Assault", false, v -> {
+        button(hero, "Open Hypercord", false, v -> {
             Intent launch = getPackageManager().getLaunchIntentForPackage(ClientEngine.CLIENT);
             if (launch == null) message("Install the client first."); else {try {startActivity(launch);}catch(RuntimeException e){message("Android could not open the client.");}}
         });
@@ -100,16 +100,16 @@ public class ManagerActivity extends Activity {
             try{worker.execute(()->{try{ClientEngine.clearDownloads(getApplicationContext());message("Failed downloads cleared. Prepared client and signing key retained.");}catch(Exception e){message(e.getMessage());}});}catch(RejectedExecutionException e){message("Reopen Manager to retry.");}
         });
         button(activity,"Copy diagnostics",false,v->{
-            try{getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Assault diagnostics","Manager "+BuildConfig.VERSION_NAME+"\nAPI "+Build.VERSION.SDK_INT+" · "+Build.SUPPORTED_ABIS[0]+"\nInstalled Discord: "+ClientEngine.installed(this)+"\nLatest: "+latest+"\nPrepared APKs: "+ClientEngine.prepared(this).size()));message("Diagnostics copied without messages, tokens or signing material.");}catch(RuntimeException e){message("Clipboard unavailable.");}
+            try{getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Hypercord diagnostics","Manager "+BuildConfig.VERSION_NAME+"\nAPI "+Build.VERSION.SDK_INT+" · "+Build.SUPPORTED_ABIS[0]+"\nInstalled Discord: "+ClientEngine.installed(this)+"\nLatest: "+latest+"\nPrepared APKs: "+ClientEngine.prepared(this).size()));message("Diagnostics copied without messages, tokens or signing material.");}catch(RuntimeException e){message("Clipboard unavailable.");}
         });
         LinearLayout about = card(page);
         text(about, "A separate manager. A native client.", 19, WHITE, true);
-        text(about, "Discord supplies chat, voice, DMs and its mobile interface. Assault adds its loader, message controls, plugins and themes. No WebView client.", 14, MUTED, false);
+        text(about, "Discord supplies chat, voice, DMs and its mobile interface. Hypercord adds its loader, message controls, plugins and themes. No WebView client.", 14, MUTED, false);
         button(about, "Client app settings", false, v -> {
             try { startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.discord"))); }
             catch (RuntimeException e) { message("The client is not installed."); }
         });
-        button(about,"Open-source notices",false,v->new AlertDialog.Builder(this).setTitle("Open-source notices").setMessage("LSPatch: GPL-3.0\nRevenge runtime: BSD-3-Clause (Assault display branding)\nXposed API: Apache-2.0\n\nSource and full licenses: github.com/hypercharacterization/assault").setPositiveButton("OK",null).show());
+        button(about,"Open-source notices",false,v->new AlertDialog.Builder(this).setTitle("Open-source notices").setMessage("LSPatch: GPL-3.0\nRevenge runtime: BSD-3-Clause (Hypercord display branding)\nXposed API: Apache-2.0\n\nSource and full licenses: github.com/hypercharacterization/assault").setPositiveButton("OK",null).show());
         schedule(this); checkUpdates(false);
     }
     private void render() {
@@ -139,7 +139,7 @@ public class ManagerActivity extends Activity {
             try {
                 long remote = ReleaseSource.latest();
                 getSharedPreferences("manager",0).edit().putLong("latest",remote).putLong("lastCheck",System.currentTimeMillis()).apply();
-                message(ClientEngine.needsUpdate(this,remote) ? "A client or loader update is available. Prepare the latest client." : "Discord and Assault loader are up to date.");
+                message(ClientEngine.needsUpdate(this,remote) ? "A client or loader update is available. Prepare the latest client." : "Discord and Hypercord loader are up to date.");
                 if (managerToo || getSharedPreferences("manager",0).getBoolean("auto",true)) {
                     try { String result = ManagerUpdater.check(this); if (managerToo || ManagerUpdater.prepared(this).isFile()) message(result); }
                     catch(Exception error) { if (managerToo) message("Client check complete. Manager update unavailable: " + error.getMessage()); }
@@ -167,7 +167,7 @@ public class ManagerActivity extends Activity {
     }
     private void openInstallPermission() {
         try{startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
-        catch(RuntimeException e){awaitingPermission=false;message("Open Android Settings → Apps → Special app access → Install unknown apps, and allow Assault Manager.");}
+        catch(RuntimeException e){awaitingPermission=false;message("Open Android Settings → Apps → Special app access → Install unknown apps, and allow Hypercord Manager.");}
     }
     private void policySwitch(LinearLayout panel,String label,String key,boolean fallback){
         Switch control=new Switch(this);control.setText(label);control.setTextColor(WHITE);control.setChecked(getSharedPreferences("manager",0).getBoolean(key,fallback));panel.addView(control);
@@ -180,8 +180,8 @@ public class ManagerActivity extends Activity {
         } else confirmInstall();
     }
     private void confirmInstall() {
-        new AlertDialog.Builder(this).setTitle("Install native Assault")
-            .setMessage("Android will install the prepared Discord client. An existing official Discord install uses a different signing key and cannot be updated in place. If Android reports a conflict, remove it yourself in Settings after preparing the client; removal clears its local app data. Subsequent Assault updates keep your data while Manager retains its signing key. Uninstalling Manager or clearing its data permanently deletes that key; future updates then require reinstalling the client and losing its local app data.")
+        new AlertDialog.Builder(this).setTitle("Install native Hypercord")
+            .setMessage("Android will install the prepared Discord client. An existing official Discord install uses a different signing key and cannot be updated in place. If Android reports a conflict, remove it yourself in Settings after preparing the client; removal clears its local app data. Subsequent Hypercord updates keep your data while Manager retains its signing key. Uninstalling Manager or clearing its data permanently deletes that key; future updates then require reinstalling the client and losing its local app data.")
             .setNegativeButton("Cancel",null).setPositiveButton("Continue",(d,w)->installFiles(ClientEngine.prepared(this),ClientEngine.CLIENT)).show();
     }
     private void installFiles(List<File> files, String packageName) {

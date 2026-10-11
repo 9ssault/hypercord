@@ -14,6 +14,10 @@ import java.util.*;
 import org.json.JSONObject;
 import app.assault.shared.AccountSettings;
 
+// Display branding only: the class name, the package `app.assault.loader` and the
+// asset names it loads (`assault-runtime.js`, `assault.js`) are module identifiers
+// shared with the module manifest and the injected pages, so renaming them here
+// alone would break the loader. See docs/ANDROID-README.md.
 public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZygoteInit {
     private static String modulePath;
     private final Set<Object> initialized = Collections.newSetFromMap(new WeakHashMap<>());
@@ -59,9 +63,9 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
                     }
                 };
                 XposedBridge.hookMethod(assets,hook); XposedBridge.hookMethod(file,hook); hooked=true; hookName=name;
-            } catch(Throwable unsupported) { XposedBridge.log("Assault: unsupported script hook " + name); }
+            } catch(Throwable unsupported) { XposedBridge.log("Hypercord: unsupported script hook " + name); }
         }
-        if(!hooked)failure="This Discord build has an unsupported React Native loader. Update Assault Manager.";
+        if(!hooked)failure="This Discord build has an unsupported React Native loader. Update Hypercord Manager.";
         XposedHelpers.findAndHookMethod(Activity.class,"onPostResume",new XC_MethodHook() {
             @Override protected void afterHookedMethod(MethodHookParam param) {
                 Activity activity=(Activity)param.thisObject;
@@ -80,7 +84,7 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
                 activities.add(activity);
                 ViewGroup decor=(ViewGroup)activity.getWindow().getDecorView();
                 try {
-                    ImageButton button=new ImageButton(activity); button.setContentDescription("Assault controls");
+                    ImageButton button=new ImageButton(activity); button.setContentDescription("Hypercord controls");
                     var resources=XModuleResources.createInstance(modulePath,null);
                     button.setImageDrawable(resources.getDrawable(R.drawable.ic_assault_foreground,null));
                     button.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(9,9,11)));
@@ -89,14 +93,14 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
                     FrameLayout.LayoutParams layout=new FrameLayout.LayoutParams(Math.round(48*density),Math.round(48*density),Gravity.TOP|(left?Gravity.START:Gravity.END));
                     layout.topMargin=Math.round(48*density); layout.setMarginStart(Math.round(8*density));layout.setMarginEnd(Math.round(8*density));
                     decor.addView(button,layout);FloatingControl.attach(activity,decor,button);button.setOnClickListener(v->Controls.show(activity,failure,hookName));
-                } catch(RuntimeException error) { XposedBridge.log("Assault controls unavailable: " + error.getClass().getSimpleName()); }
+                } catch(RuntimeException error) { XposedBridge.log("Hypercord controls unavailable: " + error.getClass().getSimpleName()); }
             }
         });
     }
     private void loadOptionalAddons(Method assets,Object instance,AssetManager resources,Object synchronous) {
         try { XposedBridge.invokeOriginalMethod(assets,instance,new Object[]{resources,"assets://addons.js",synchronous}); }
         catch(Throwable error) {
-            failure="Addon screens could not load. Existing runtime features remain available; update Assault Manager and prepare the client again.";
+            failure="Addon screens could not load. Existing runtime features remain available; update Hypercord Manager and prepare the client again.";
             XposedBridge.log(error);
         }
     }
@@ -104,9 +108,9 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
         while(type!=null) {
             try{XposedBridge.hookMethod(type.getDeclaredMethod(name,args),hook);return;}
             catch(NoSuchMethodException absent){type=type.getSuperclass();}
-            catch(Throwable unsupported){XposedBridge.log("Assault callback unavailable: "+name);return;}
+            catch(Throwable unsupported){XposedBridge.log("Hypercord callback unavailable: "+name);return;}
         }
-        XposedBridge.log("Assault: unsupported activity callback "+name);
+        XposedBridge.log("Hypercord: unsupported activity callback "+name);
     }
 
 }

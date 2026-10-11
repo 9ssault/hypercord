@@ -1,0 +1,53 @@
+// language: JavaScript, file: plugins/examples/welcome.txt
+//
+// The smallest complete addon, and the reference for the dialect the interpreter
+// accepts (plugins/sandbox.js): one export default of literal data, const locals,
+// if/else, return, &&/||, ?:, comparisons and arithmetic - plus the three lifecycle
+// methods, whose only capability is the four api calls used below. Import it with
+// Import JavaScript file; like every addon it starts disabled.
+//
+// Read the shape as a contract rather than a style. The dialect has no loops, no
+// imports, no functions of its own, no typeof and no way to build text out of a
+// number (addition needs two numbers or two pieces of text), so an addon says
+// everything it has to say through its settings, its state and api.notify.
+export default {
+  id: "example.welcome",
+  kind: "plugin",
+  name: "Welcome",
+  version: "1.0.0",
+  description: "A working reference addon: greets on start, keeps its own start count, and answers to its settings.",
+  settings: {
+    greeting: { label: "Greeting", type: "string" },
+    announce: { label: "Announce the greeting on start", type: "boolean" },
+    quiet: { label: "Stay quiet when settings change", type: "boolean" },
+    startAt: { label: "Count starts from", type: "number", min: 0, max: 1000 }
+  },
+  onStart(api) {
+    // The documented state pattern: read through api.getState with a default, work
+    // on the copy, write it back with api.setState. The manager commits the write,
+    // and the queued notification, only if this whole hook succeeds.
+    const seeded = api.getSetting("startAt");
+    const previous = api.getState("starts", seeded);
+    const starts = previous + 1;
+    api.setState("starts", starts);
+    if (api.getSetting("announce")) {
+      api.notify(api.getSetting("greeting"));
+    }
+    if (starts === 1) {
+      api.notify("Welcome started for the first time.");
+    }
+  },
+  onSettingsChanged(api) {
+    if (api.getSetting("quiet")) {
+      api.notify("Welcome settings saved.");
+    } else {
+      api.notify(api.getSetting("greeting"));
+    }
+  },
+  onStop(api) {
+    const starts = api.getState("starts", 0);
+    if (starts > 0) {
+      api.notify("Welcome stopped; its start count is kept for next time.");
+    }
+  }
+}

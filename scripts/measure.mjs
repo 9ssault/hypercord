@@ -90,6 +90,58 @@ function runBaseline() {
   };
 }
 
+/**
+ * What the app actually weighs: the trees `package.json` packages, with the same
+ * exclusions the build applies, plus the packed asar when one has been built.
+ * PERF.md carried this as an estimate read off the file listings - the manifest is
+ * thousands of lines, so "on the order of 300 KB" was the honest way to write it.
+ * A number this script prints is the end of estimating it; the asar beside it is
+ * the only figure that says what a person downloads.
+ */
+function shippedWeight() {
+  let files = 0;
+  let bytes = 0;
+  const visit = (target) => {
+    let stat = null;
+    try {
+      stat = fs.statSync(target);
+    } catch {
+      return;
+    }
+    if (stat.isDirectory()) {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(target);
+      } catch {
+        return;
+      }
+      for (const entry of entries) visit(path.join(target, entry));
+      return;
+    }
+    // the exclusions the build applies: no source maps, no TypeScript sources
+    if (/\.(map|ts|tsx)$/i.test(target)) return;
+    files += 1;
+    bytes += stat.size;
+  };
+  for (const rel of ["src", "plugins", "pwa", "package.json"]) visit(path.join(root, rel));
+  const asar =
+    [
+      "dist/win-unpacked/resources/app.asar",
+      "dist/linux-unpacked/resources/app.asar",
+      "dist/mac/Hypercord.app/Contents/Resources/app.asar",
+      "dist/mac-arm64/Hypercord.app/Contents/Resources/app.asar",
+    ]
+      .map((rel) => path.join(root, rel))
+      .find((file) => fs.existsSync(file)) || "";
+  return {
+    files,
+    bytes,
+    kib: Math.round(bytes / 1024),
+    asar,
+    asarKib: asar ? Math.round(fs.statSync(asar).size / 1024) : 0,
+  };
+}
+
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -137,6 +189,7 @@ const out = {
   samples: samples.baseline.length,
   plugins: pluginLine,
   updater: updateLine,
+  shipped: shippedWeight(),
   baseline: { rssMedian: median(rss(samples.baseline)), rssSpread: spread(rss(samples.baseline)), cpuMedian: median(cpu(samples.baseline)), cpuSpread: spread(cpu(samples.baseline).map((v) => Number(v.toFixed(2)))) },
   railOpen: { rssMedian: median(rss(samples.open)), rssSpread: spread(rss(samples.open)), cpuMedian: median(cpu(samples.open)), cpuSpread: spread(cpu(samples.open).map((v) => Number(v.toFixed(2)))) },
   railClosed: { rssMedian: median(rss(samples.closed)), rssSpread: spread(rss(samples.closed)), cpuMedian: median(cpu(samples.closed)), cpuSpread: spread(cpu(samples.closed).map((v) => Number(v.toFixed(2)))) },
@@ -161,6 +214,9 @@ log("");
 log("added RSS, rail open   " + (out.deltaOpen >= 0 ? "+" : "") + out.deltaOpen + " MB");
 log("added RSS, rail closed " + (out.deltaClosed >= 0 ? "+" : "") + out.deltaClosed + " MB");
 log("timers seen in any state: " + JSON.stringify(out.timersSeen));
+log("");
+const weight = out.shipped;
+log("shipped: " + weight.files + " file(s), " + weight.kib + " KiB" + (weight.asar ? " | packed asar " + weight.asarKib + " KiB" : " | no packed build to compare"));
 log("");
 log("written: vendor/_measure.json");
 process.exit(failed === 0 ? 0 : 1);

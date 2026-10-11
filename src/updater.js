@@ -53,7 +53,13 @@ export function createUpdater({
   const baked = path.join(String(resourcesPath || ""), "app-update.yml");
 
   function describe() {
-    return { ...state, ready: Boolean(state.downloaded) };
+    // Never the spread: this object crosses the IPC boundary into the settings
+    // pane, and `state.timer` is a Node Timeout - not structured-cloneable, so
+    // spreading it made every read of the update state fail with "An object could
+    // not be cloned" instead of showing the state. The timer is reported as the
+    // fact the pane can actually use.
+    const { timer, ...plain } = state;
+    return { ...plain, onTimer: Boolean(timer), ready: Boolean(state.downloaded) };
   }
 
   function wire() {

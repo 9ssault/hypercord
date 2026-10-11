@@ -47,10 +47,15 @@ def patch_runtime(data):
                           '          buildNumber = NativeClientInfoModule?.getConstants?.()?.Build ?? "unknown";\n'
                           '        } catch {}')
     source = replace_once(source, 'Build Number: ${ClientInfoManager.getConstants().Build}', 'Build Number: ${buildNumber}')
+    # The names injected below stay as they are - assaultAddonPage, ASSAULT_SCRIPTS,
+    # __ASSAULT_ADDONS__ - because this file, the preload that answers those pages
+    # and the loader's native half are three halves of one contract, and renaming
+    # one of them in place would break the other two silently. Only what a person
+    # reads on screen is branded Hypercord.
     source = replace_once(source, '  function initSettings() {',
                           '  function assaultAddonPage(kind) {\n'
                           '    if (globalThis.__ASSAULT_ADDONS__) return globalThis.__ASSAULT_ADDONS__.page(kind);\n'
-                          '    return { default: () => globalThis.React.createElement(globalThis.ReactNative.Text, { accessibilityRole: "alert", style: { padding: 24, backgroundColor: "#1e1f22", color: "#ffb0b8", fontSize: 16 } }, "Addons are unavailable. Restart Discord or reinstall the matching Assault loader.") };\n'
+                          '    return { default: () => globalThis.React.createElement(globalThis.ReactNative.Text, { accessibilityRole: "alert", style: { padding: 24, backgroundColor: "#000000", color: "#ffb0b8", fontSize: 16 } }, "Addons are unavailable. Restart Discord or reinstall the matching Hypercord loader.") };\n'
                           '  }\n'
                           '  function initSettings() {')
     source = replace_once(source, '          key: "BUNNY_THEMES",',
@@ -63,9 +68,9 @@ def patch_runtime(data):
     # Route both settings pages to the isolated addon managers. No legacy external
     # plugin evaluator is allowed to bypass this boundary, including auto-start.
     source = replace_once(source, '        evalPlugin(plugin) {',
-                          '        evalPlugin(plugin) { throw new Error("Legacy plugins require porting to the Assault sandbox API.");')
+                          '        evalPlugin(plugin) { throw new Error("Legacy plugins require porting to the Hypercord sandbox API.");')
     source = replace_once(source, '      if (isExternalPlugin(manifest)) {\n        try {',
-                          '      if (isExternalPlugin(manifest)) {\n        throw new Error("External plugins must use the Assault sandbox API.");\n        try {')
+                          '      if (isExternalPlugin(manifest)) {\n        throw new Error("External plugins must use the Hypercord sandbox API.");\n        try {')
     source = replace_once(source, 'render: () => Promise.resolve().then(() => (init_Plugins(), Plugins_exports))',
                           'render: () => Promise.resolve(assaultAddonPage("plugin"))')
     source = replace_once(source, 'render: () => Promise.resolve().then(() => (init_Themes(), Themes_exports))',

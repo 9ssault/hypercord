@@ -8,7 +8,7 @@ what each platform gets - stated plainly rather than promised:
 | **Windows** | `nsis` installer + portable exe, x64 and arm64 | the primary target; `electron-updater` installs the next release on quit |
 | **Linux** | `AppImage`, `deb`, `tar.gz`, x64 and arm64 | AppImage self-updates through the same feed; `deb` updates like any package |
 | **macOS** | `dmg` + `zip`, x64 and arm64 (Apple Silicon) | the `zip` is what the updater consumes; signing/notarisation needs an Apple developer identity, so an unsigned build will warn on first open |
-| **Android** | **not Electron, and not built.** Today: the client is served by the control server (`/discord`) and installed from the browser as a PWA, or wrapped as a TWA with `bubblewrap`/PWABuilder using `pwa/manifest.webmanifest`. The APK path (a manager that patches a Discord APK, the shape Revenge Manager and Aliucord Manager use) is planned in [android/README.md](android/README.md) and is explicitly **not** delivered or verified | Electron cannot run on Android. `rea` is an analysis toolkit, not a patcher, and this machine has no APK, Android SDK or JDK 25, so no APK is claimed |
+| **Android** | **not Electron, and not built.** Today: the client is served by the control server (`/discord`) and installed from the browser as a PWA, or wrapped as a TWA with `bubblewrap`/PWABuilder using `pwa/manifest.webmanifest`. The APK path (a manager that patches a Discord APK, the shape Revenge Manager and Aliucord Manager use) exists as **sources only**: `android/manager/` and `android/loader/` hold the Java, the manifest and the assets, but the tree has no Gradle wrapper, no `build.gradle`/`settings.gradle` and no `scripts/build_android.py`, so **no APK can be produced from this checkout** - the CI workflow that expects those scripts cannot run here either. Sources present is not the same as an artifact, and none is claimed | Electron cannot run on Android. `rea` is an analysis toolkit, not a patcher, and this machine has no APK, Android SDK or JDK 25, so no APK is claimed |
 | **iOS** | same served client, added to the home screen as a web app | no Electron, no sideloading story worth claiming |
 
 ## Auto-update
@@ -74,9 +74,67 @@ throwaway profile afterwards.
 If a real Discord is installed, `npm start -- --attach` patches it and starts the
 real client instead of this window (see [src/patcher.js](src/patcher.js)); the
 Electron window is then the fallback. Nothing starts at boot and nothing stays
-resident: closing the window ends Hypercord.
+resident: closing the window ends Hypercord.Cross-building macOS artifacts requires macOS (or an Apple-signed CI runner); Windows and Linux artifacts can both be produced from either. The packaging config trims what ships: `asar`, maximum compression, `en-US` only, no source maps, no TypeScript sources.
 
-Cross-building macOS artifacts requires macOS (or an Apple-signed CI runner);
-Windows and Linux artifacts can both be produced from either. The packaging
-config trims what ships: `asar`, maximum compression, `en-US` only, no source
-maps, no TypeScript sources.
+## Compatibility review
+
+Where the code is platform-specific and where it is not, read from the source.
+**This checkout is Windows and nothing in this section was executed** - every claim
+below is from reading the files named, and the places that cannot be verified here
+say so.
+
+**One platform branch, in one file.** `src/main.js` contains no `process.platform`
+test at all; its only OS-specific call is `app.getPath("userData")`, and the rail
+shortcut is `CommandOrControl+Shift+H`, which is the right key on all three. Every
+install discovery lives in `src/patcher.js` (`listInstalls`, line ~140): `win32`
+over `%LOCALAPPDATA%`, `darwin` over `/Applications` and `~/Applications` with the
+version read out of `Info.plist` and a bundle started with `open -a`, and everything
+else as Linux - `$XDG_CONFIG_HOME` or `~/.config`, the installed package roots, and
+Flatpak deployments under `/var/lib/flatpak/app` and `~/.local/share/flatpak/app`.
+Because `platform`, `env`, `home`, `exists`, `readdir` and `readFile` are all
+options, `tests/patcher/index.mjs` drives all three branches from any host.
+
+**Neutral by construction, and worth keeping that way:**
+
+* `src/updater.js` has no platform branch: whether an update is possible is decided
+  by `app.isPackaged` and by whether `electron-builder` wrote `app-update.yml`.
+* `src/passkeys.cjs` is one injected policy with no OS test. It exists because of a
+  Windows-specific dialog (Chromium raises the system passkey chooser for a
+  conditional WebAuthn request), and because it refuses only uninvited requests it
+  is harmless - and equally useful - on Linux and macOS, where the same
+  conditional-mediation request is made.
+* `scripts/measure.mjs` resolves the Electron binary per platform (`electron.exe`,
+  `Electron.app/Contents/MacOS/Electron`, `electron`); `scripts/check-packaged.mjs`
+  looks for the packed executable under `win-unpacked`, `mac`, `mac-arm64` and
+  `linux-unpacked`; `scripts/release.mjs` knows the same four `app.asar` locations
+  and special-cases only `npm.cmd` on Windows; `artifactsIn` matches
+  `exe|appimage|deb|dmg|pkg|zip|tar.gz`, so a Linux or macOS run is recognised.
+* `scripts/make-icons.mjs` writes `icon.png`, `icon.ico` and `icon.icns` from one
+  procedural drawing with no image library and no network, so the Windows and macOS
+  icons can be generated on a Linux host.
+
+**Concrete gaps, with the fix, for whoever owns the file:**
+
+1. `scripts/check-packaged.mjs:132` starts the built app with `detached: false` and
+   line 257 kills it with `process.kill(child.pid, "SIGTERM")` on POSIX (Windows gets
+   `taskkill /T`, which takes the whole tree). Electron's renderer and GPU children
+   are separate processes, so on Linux and macOS the check can leave them behind and
+   hold the throwaway profile - the 10-second retry loop only hides it. Fix: spawn
+   with `detached: true` and kill the process group on POSIX, keeping `taskkill /T`
+   for win32.
+2. `package.json` has no macOS signing configuration at all: on a macOS runner
+   `npm run dist -- --mac` yields an unsigned, un-notarisable `dmg`, and on this host
+   it fails partway through because `hdiutil` is not there. Setting
+   `build.mac.identity: null` would make a local mac build fail immediately and
+   plainly instead of at packaging time; a real release needs a developer identity,
+   `CSC_*` or notarisation credentials, none of which are in this tree.
+3. The patched-Discord path is exercised on Windows only. The `darwin` and Linux
+   branches of `listInstalls` run under the unit suite with injected paths, but no run
+   against a real macOS or Linux Discord install is recorded anywhere in this
+   repository, and Flatpak deployments vary between distros - the code already tries
+   a documented inner name and then whatever is actually in the directory. Treated as
+   unverified, not as working.
+4. macOS AppImage-equivalents do not exist, and the `deb` does not self-update: that
+   is `electron-builder`'s shape, not a bug, but it means "updates on all platforms" is
+   true for `nsis`, `portable`, `AppImage` and a signed `zip`-based macOS build, and
+   false for `deb` and `tar.gz`, which are updated by whoever installed them.

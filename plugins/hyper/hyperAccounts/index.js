@@ -23,7 +23,12 @@ export default {
 
     async function refresh() {
       if (!ctx.api) {
-        reason = "no control server configured";
+        // No server is a normal state, not a failure. The accounts this client can
+        // sign in as are the keys stored on the machine, and those live behind the
+        // shell's token store: a plugin has no way to read a secret the UI is not
+        // allowed to show, so this list stays empty and says why rather than
+        // pretending the machine has no accounts at all.
+        reason = "no control server configured (the keys stored on this machine are listed by the shell, not by this plugin)";
         return state();
       }
       const res = await ctx.api.request("/api/state");

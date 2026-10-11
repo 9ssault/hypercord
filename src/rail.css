@@ -37,7 +37,7 @@
   font-family: "gg sans", "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   color: var(--hc-text, #dbdee1);
-  background: var(--hc-bg, #1e1f22);
+  background: var(--hc-bg, #000000);
   border-left: 1px solid var(--hc-border, #2b2d31);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
   overflow-y: auto;
@@ -70,7 +70,7 @@
   border-bottom: 1px solid var(--hc-border, #2b2d31);
   position: sticky;
   top: 0;
-  background: var(--hc-bg, #1e1f22);
+  background: var(--hc-bg, #000000);
 }
 
 #hypercord-rail .hc-mark {
@@ -123,7 +123,7 @@
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--hc-bg-input, #2b2d31);
+  background: var(--hc-bg-input, #060607);
   color: var(--hc-text-muted, #949ba4);
   flex: none;
 }
@@ -141,7 +141,7 @@
 #hypercord-rail button {
   font: inherit;
   color: inherit;
-  background: var(--hc-bg-input, #2b2d31);
+  background: var(--hc-bg-input, #060607);
   border: 0;
   border-radius: 4px;
   padding: 4px 8px;
@@ -228,7 +228,7 @@
 #hypercord-rail input {
   font: inherit;
   color: var(--hc-text, #f2f3f5);
-  background: var(--hc-bg-input, #2b2d31);
+  background: var(--hc-bg-input, #060607);
   border: 1px solid var(--hc-border, #3f4147);
   border-radius: 4px;
   padding: 6px 8px;
@@ -357,7 +357,7 @@
 #hypercord-token-prompt input {
   font: inherit;
   color: var(--hc-text, #f2f3f5);
-  background: var(--hc-bg, #1e1f22);
+  background: var(--hc-bg, #000000);
   border: 1px solid var(--hc-border, #3f4147);
   border-radius: 4px;
   padding: 7px 8px;

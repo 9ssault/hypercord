@@ -87,17 +87,20 @@
     <!-- logs -------------------------------------------------------- -->
     <section class="view" data-view="logs">
       <h2>Logs</h2>
+      <p class="hint">What this client reports about itself. Nothing here is read from the control server.</p>
       <div class="row">
         <button type="button" id="hp-logsRefresh">Refresh</button>
       </div>
+      <p id="hp-logsNote" class="hint"></p>
       <pre id="hp-logsOut" class="out tall" aria-live="polite"></pre>
     </section>
 
     <!-- accounts ---------------------------------------------------- -->
     <section class="view" data-view="accounts">
       <h2>Accounts</h2>
-      <p class="hint">Each account gets its own session, so switching never mixes them.</p>
+      <p class="hint">The accounts this client can sign in as: every key stored on this machine, plus the accounts a control server holds when one is configured. A key signs this window in; an account on a server gets its own session.</p>
       <div id="hp-accountList" class="list" role="list"></div>
+      <p id="hp-accountNote" class="hint"></p>
       <h3>Updates</h3>
       <div id="hp-updateRow" class="hint">reading update state&hellip;</div>
       <div class="row">

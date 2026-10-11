@@ -13,10 +13,16 @@
 //
 // Nothing here needs an image library or the network: a small PNG encoder
 // (zlib.deflateSync + CRC32), the ICO container, and the icns container are all
-// written by hand. The drawing is procedural too - one rounded, gradient tile
-// with a bold "H" - so the logo cannot drift out of sync with a binary file
+// written by hand. The drawing is procedural too - one rounded black tile with a
+// bold white "H" - so the logo cannot drift out of sync with a binary file
 // nobody can diff, and re-running is byte-for-byte idempotent (which is why the
 // PNGs carry no timestamp).
+//
+// The mark is black on purpose, and the H is white on purpose: on a black tile a
+// dark mark would be invisible, so the contrast is carried by the letter. The rim
+// is a fixed dark grey rather than the gradient's own edge lightened, because a
+// tile that is black edge to edge would lose its silhouette on a black desktop
+// background - the rim is the only thing that says where the tile stops.
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -85,8 +91,10 @@ const H_WIDTH = 0.46;
 const H_HEIGHT = 0.47;
 const STEM = 0.125;
 const BAR = 0.125;
-const TOP = [88, 101, 242]; // #5865f2
-const BOTTOM = [139, 92, 246]; // #8b5cf6
+const TOP = [0, 0, 0]; // #000000 - the tile is black
+const BOTTOM = [9, 9, 12]; // #09090c - barely off black, so the tile has a direction
+const RIM = [42, 44, 52]; // #2a2c34 - the hairline that keeps the silhouette on black
+const MARK = [255, 255, 255]; // the H has to carry the contrast on a black tile
 const SS = 4; // supersamples per axis, which is where the anti-aliasing comes from
 
 function insideRounded(x, y) {
@@ -131,15 +139,11 @@ function sample(x, y) {
   let g = TOP[1] + (BOTTOM[1] - TOP[1]) * t;
   let b = TOP[2] + (BOTTOM[2] - TOP[2]) * t;
   if (insideH(x, y)) {
-    r = 255;
-    g = 255;
-    b = 255;
+    [r, g, b] = MARK;
   } else if (edgeDepth(x, y) < BORDER) {
-    // a hairline just inside the edge, so the tile reads as a tile on light and
-    // dark backgrounds without a heavy outline
-    r *= 0.84;
-    g *= 0.84;
-    b *= 0.84;
+    // a hairline just inside the edge, so a black tile still reads as a tile on a
+    // black background without a heavy outline
+    [r, g, b] = RIM;
   }
   return [r, g, b, 1];
 }
