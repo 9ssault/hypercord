@@ -1,0 +1,418 @@
+/* language: CSS, file: src/panes.css
+
+   The panes sheet's whole stylesheet, and every selector in it is scoped to
+   #hypercord-panes. That is not tidiness: the sheet is mounted inside the
+   Discord page, next to Discord's own stylesheet, so an unscoped `.card` or
+   `button` here would restyle the client. Scoping also means nothing is
+   inherited from Discord: colours, borders, fonts and sizes are all set here.
+
+   The colours come from the Hypercord palette, shared with src/rail.css, and
+   every `var()` carries the colour it used to be. Nothing here *defines* one of
+   those properties on purpose: a definition on the sheet element would sit
+   between a theme's `--hc-bg` set on the root element and the sheet inside it,
+   and win, so a theme could never recolour the sheet. Undefined variables are
+   what make the default look identical to before and a themed look possible:
+
+     --hc-bg          the sheet itself
+     --hc-bg-raised   panels: the bar, the settings sidebar, lists, the drawer
+     --hc-bg-input    controls: buttons, badges, fields, hover fills
+     --hc-border      every border
+     --hc-text        body text and names
+     --hc-text-muted  hints, labels, descriptions
+     --hc-text-faint  the quietest text: card metadata, field notes
+     --hc-accent      the accent: active section, primary button, Hypercord badge
+     --hc-danger      errors
+     --hc-good        the running/healthy badge
+     --hc-on-accent   text drawn on the accent, the danger and the good badge
+
+   It is a full-window overlay with its own scroll regions, so a catalogue of
+   hundreds of plugins is usable while the sheet is up, and Discord is untouched
+   underneath. z-index stays below the rail's 2147483001 so the rail keeps the
+   top of the stack. */
+
+#hypercord-panes {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: none;
+  flex-direction: column;
+  background: var(--hc-bg, #1e1f22);
+  color: var(--hc-text, #dbdee1);
+  font: 13px/1.45 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  text-align: left;
+}
+
+#hypercord-panes[data-open="true"] {
+  display: flex;
+}
+
+#hypercord-panes,
+#hypercord-panes * {
+  box-sizing: border-box;
+}
+
+#hypercord-panes .hidden {
+  display: none !important;
+}
+
+#hypercord-panes .bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--hc-bg-raised, #2b2d31);
+  border-bottom: 1px solid var(--hc-border, #3f4147);
+  flex: 0 0 auto;
+}
+
+#hypercord-panes .brand {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--hc-text, #dbdee1);
+}
+
+#hypercord-panes .status {
+  color: var(--hc-text-muted, #949ba4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+#hypercord-panes .status.bad {
+  color: var(--hc-danger, #ed4245);
+}
+
+#hypercord-panes .status.good {
+  color: var(--hc-good, #3ba55d);
+}
+
+#hypercord-panes .close {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+#hypercord-panes .layout {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+/* the section list: a settings sidebar, so it is wide enough for the longest
+   label and it names itself the way a settings screen does */
+#hypercord-panes .nav {
+  flex: 0 0 152px;
+  background: var(--hc-bg-raised, #2b2d31);
+  border-right: 1px solid var(--hc-border, #3f4147);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#hypercord-panes .nav-title {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 4px 9px 6px;
+}
+
+#hypercord-panes .nav-item {
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--hc-text-muted, #949ba4);
+  padding: 7px 9px;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+#hypercord-panes .nav-item:hover {
+  background: var(--hc-bg-input, #313338);
+  color: var(--hc-text, #dbdee1);
+}
+
+#hypercord-panes .nav-item.active {
+  background: var(--hc-accent, #5865f2);
+  color: var(--hc-on-accent, #fff);
+}
+
+#hypercord-panes #hp-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+#hypercord-panes .view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+#hypercord-panes h2 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--hc-text, #dbdee1);
+  font-weight: 700;
+}
+
+#hypercord-panes h3 {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--hc-text-muted, #949ba4);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+#hypercord-panes .hint {
+  margin: 0;
+  color: var(--hc-text-muted, #949ba4);
+}
+
+/* A standing explanation, not a transient message: the access-key view keeps it
+   above the form so somebody who has just been sent here knows what a key is. */
+#hypercord-panes .banner {
+  border: 1px solid var(--hc-border, #3f4147);
+  border-left: 3px solid var(--hc-accent, #5865f2);
+  border-radius: 6px;
+  background: var(--hc-bg-raised, #2b2d31);
+  padding: 9px 11px;
+  color: var(--hc-text-muted, #949ba4);
+  flex: 0 0 auto;
+}
+
+#hypercord-panes .banner.hidden {
+  display: none !important;
+}
+
+#hypercord-panes .row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#hypercord-panes input[type="text"],
+#hypercord-panes input[type="search"],
+#hypercord-panes input[type="password"],
+#hypercord-panes textarea {
+  background: var(--hc-bg-input, #313338);
+  color: var(--hc-text, #dbdee1);
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+  min-width: 0;
+}
+
+#hypercord-panes input[type="text"],
+#hypercord-panes input[type="search"],
+#hypercord-panes input[type="password"] {
+  flex: 1 1 180px;
+}
+
+/* a key being replaced sits inline in its row, so the row's own buttons stay put */
+#hypercord-panes .token-replace {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1 0 100%;
+  margin-top: 4px;
+}
+
+#hypercord-panes textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+#hypercord-panes button {
+  background: var(--hc-accent, #5865f2);
+  color: var(--hc-on-accent, #fff);
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 11px;
+  font: inherit;
+  cursor: pointer;
+}
+
+#hypercord-panes button.ghost {
+  background: var(--hc-bg-input, #313338);
+  color: var(--hc-text, #dbdee1);
+  border: 1px solid var(--hc-border, #3f4147);
+}
+
+#hypercord-panes button.danger {
+  background: var(--hc-danger, #ed4245);
+}
+
+#hypercord-panes button[disabled] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#hypercord-panes .list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 8px;
+  background: var(--hc-bg-raised, #2b2d31);
+}
+
+#hypercord-panes .card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--hc-border, #3f4147);
+}
+
+#hypercord-panes .card:last-child {
+  border-bottom: 0;
+}
+
+#hypercord-panes .card-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#hypercord-panes .card-title {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#hypercord-panes .card-name {
+  font-weight: 600;
+  color: var(--hc-text, #dbdee1);
+}
+
+#hypercord-panes .card-desc {
+  color: var(--hc-text-muted, #949ba4);
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .card-meta {
+  color: var(--hc-text-faint, #7d838b);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .card-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+#hypercord-panes .badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--hc-bg-input, #313338);
+  color: var(--hc-text-muted, #949ba4);
+  border: 1px solid var(--hc-border, #3f4147);
+}
+
+#hypercord-panes .badge.on {
+  color: var(--hc-on-accent, #fff);
+  background: var(--hc-good, #3ba55d);
+  border-color: var(--hc-good, #3ba55d);
+}
+
+#hypercord-panes .badge.bad {
+  color: var(--hc-on-accent, #fff);
+  background: var(--hc-danger, #ed4245);
+  border-color: var(--hc-danger, #ed4245);
+}
+
+#hypercord-panes .badge.own {
+  color: var(--hc-on-accent, #fff);
+  background: var(--hc-accent, #5865f2);
+  border-color: var(--hc-accent, #5865f2);
+}
+
+#hypercord-panes .empty {
+  padding: 12px;
+  color: var(--hc-text-muted, #949ba4);
+}
+
+#hypercord-panes .out {
+  margin: 0;
+  padding: 10px;
+  background: var(--hc-bg, #16171a);
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 8px;
+  color: var(--hc-text, #dbdee1);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 90px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+#hypercord-panes .out.tall {
+  min-height: 200px;
+}
+
+#hypercord-panes .settings {
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 8px;
+  background: var(--hc-bg-raised, #2b2d31);
+  padding: 10px;
+  flex: 0 0 auto;
+}
+
+/* The settings drawer belongs to the sheet, not to one view: both plugin tabs
+   open it, so it sits beside whichever view is showing rather than inside it. */
+#hypercord-panes #hp-pluginSettings {
+  flex: 0 0 320px;
+  max-width: 45%;
+  border: 0;
+  border-left: 1px solid var(--hc-border, #3f4147);
+  border-radius: 0;
+  overflow-y: auto;
+  margin: 0;
+}
+
+#hypercord-panes .settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+#hypercord-panes .field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#hypercord-panes .field label {
+  flex: 0 0 190px;
+  color: var(--hc-text-muted, #949ba4);
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .field input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+#hypercord-panes .field .note {
+  color: var(--hc-text-faint, #7d838b);
+  font-size: 12px;
+}

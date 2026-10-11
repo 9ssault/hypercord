@@ -1,0 +1,79 @@
+{
+ "name": "Hypercord",
+ "generatedAt": "2026-01-01T00:00:00.000Z",
+ "note": "metadata only: the plugin manager reads this, never plugin code",
+ "provenance": { "core": "Equicord", "coreCommit": "fixture", "merged": "Vencord", "mergedCommit": "fixture" },
+ "defaults": {
+  "set": "Hyper",
+  "description": "the Hypercord set, on by default",
+  "enabled": ["alpha"],
+  "present": ["alpha"]
+ },
+ "plugins": [
+  {
+   "id": "alpha",
+   "name": "alpha",
+   "description": "a fixture plugin that starts and stops cleanly",
+   "authors": ["Hypercord"],
+   "version": "1.0.0",
+   "entry": "plugins/alpha/index.js",
+   "builtin": true,
+   "deps": [],
+   "defaultOn": true,
+   "source": "hypercord",
+   "defaultOnSet": "Hyper"
+  },
+  {
+   "id": "beta",
+   "name": "beta",
+   "description": "a fixture plugin that must not start before alpha",
+   "authors": ["Hypercord"],
+   "version": "1.0.0",
+   "entry": "plugins/beta/index.js",
+   "builtin": true,
+   "deps": ["alpha"],
+   "defaultOn": false,
+   "source": "hypercord",
+   "defaultOnSet": ""
+  },
+  {
+   "id": "boom",
+   "name": "boom",
+   "description": "a fixture plugin whose start() throws",
+   "authors": ["Hypercord"],
+   "version": "1.0.0",
+   "entry": "plugins/boom/index.js",
+   "builtin": true,
+   "deps": [],
+   "defaultOn": false,
+   "source": "hypercord",
+   "defaultOnSet": ""
+  },
+  {
+   "id": "missing",
+   "name": "missing",
+   "description": "a fixture entry whose file is not vendored",
+   "authors": ["Upstream"],
+   "version": "",
+   "entry": "plugins/missing/index.js",
+   "builtin": true,
+   "deps": [],
+   "defaultOn": false,
+   "source": "upstream",
+   "defaultOnSet": ""
+  },
+  {
+   "id": "typescript",
+   "name": "typescript",
+   "description": "a fixture entry node cannot import",
+   "authors": ["Upstream"],
+   "version": "",
+   "entry": "plugins/typescript/index.ts",
+   "builtin": true,
+   "deps": [],
+   "defaultOn": false,
+   "source": "upstream",
+   "defaultOnSet": ""
+  }
+ ]
+}

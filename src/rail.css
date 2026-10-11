@@ -1,0 +1,395 @@
+/* language: CSS, file: src/rail.css
+ *
+ * The rail's own styles, and every selector starts with `#hypercord-rail` on
+ * purpose: this is injected into Discord's page, so it must be unable to change
+ * anything outside the element Hypercord owns. Nothing here is animated on a
+ * timer, and the closed rail is `display: none` - DOM that costs nothing to
+ * paint.
+ *
+ * Colours come from the Hypercord palette (`--hc-*`), and every `var()` carries
+ * the colour it used to be. Nothing in this file *defines* one of those
+ * properties: a definition here would sit between a theme's `--hc-accent` set on
+ * the root element and the rail inside it, and win. Leaving them undefined is
+ * what lets a theme recolour the rail, the token option and the settings entry by
+ * setting the variables once, and it is why a client with no theme looks exactly
+ * as it did.
+ *
+ *   --hc-bg          the deepest surface (the rail, its header, the code block)
+ *   --hc-bg-raised   panels and cards that sit on it
+ *   --hc-bg-input    controls: buttons, tags, fields, hover fills
+ *   --hc-border      every border
+ *   --hc-text        body text, and titles
+ *   --hc-text-muted  notes, hints, labels
+ *   --hc-accent      the accent: active tab, primary button, the settings rule
+ *   --hc-danger      a broken plugin, a failed action
+ *   --hc-on-accent   text drawn on the accent
+ *   --hc-rgb-accent  the accent as an `r, g, b` triplet, for rgba() washes
+ */
+
+#hypercord-rail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 300px;
+  z-index: 2147483000;
+  display: none;
+  box-sizing: border-box;
+  font-family: "gg sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--hc-text, #dbdee1);
+  background: var(--hc-bg, #1e1f22);
+  border-left: 1px solid var(--hc-border, #2b2d31);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+#hypercord-rail[data-open="true"] {
+  display: flex;
+  flex-direction: column;
+}
+
+#hypercord-rail[data-side="left"] {
+  left: 0;
+  right: auto;
+  border-left: none;
+  border-right: 1px solid var(--hc-border, #2b2d31);
+  box-shadow: 8px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+#hypercord-rail[data-side="right"] {
+  right: 0;
+  left: auto;
+}
+
+#hypercord-rail .hc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hc-border, #2b2d31);
+  position: sticky;
+  top: 0;
+  background: var(--hc-bg, #1e1f22);
+}
+
+#hypercord-rail .hc-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  /* the second stop is the mark's own violet, not a palette colour: a theme that
+     changes the accent gets a matching first stop and keeps the gradient */
+  background: linear-gradient(180deg, var(--hc-accent, #5865f2), #8b5cf6);
+  color: var(--hc-on-accent, #fff);
+  font-weight: 800;
+  line-height: 22px;
+  text-align: center;
+  flex: none;
+}
+
+#hypercord-rail .hc-title {
+  font-weight: 700;
+  color: var(--hc-text, #f2f3f5);
+  flex: 1 1 auto;
+}
+
+#hypercord-rail .hc-sub {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  padding: 8px 12px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#hypercord-rail .hc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+}
+
+#hypercord-rail .hc-row:hover {
+  background: var(--hc-bg-input, #26272b);
+}
+
+#hypercord-rail .hc-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#hypercord-rail .hc-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--hc-bg-input, #2b2d31);
+  color: var(--hc-text-muted, #949ba4);
+  flex: none;
+}
+
+#hypercord-rail .hc-tag[data-state="on"] {
+  background: var(--hc-accent, #5865f2);
+  color: var(--hc-on-accent, #fff);
+}
+
+#hypercord-rail .hc-tag[data-state="broken"] {
+  background: var(--hc-danger, #da373c);
+  color: var(--hc-on-accent, #fff);
+}
+
+#hypercord-rail button {
+  font: inherit;
+  color: inherit;
+  background: var(--hc-bg-input, #2b2d31);
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+#hypercord-rail button:hover {
+  background: var(--hc-bg-input, #383a40);
+}
+
+#hypercord-rail .hc-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--hc-border, #2b2d31);
+  margin-top: auto;
+}
+
+#hypercord-rail .hc-list {
+  padding-bottom: 6px;
+}
+
+#hypercord-rail .hc-empty {
+  color: var(--hc-text-muted, #949ba4);
+  padding: 6px 12px 12px;
+}
+
+/* ---- tabs: everything Hypercord adds gets its own, inside Discord -------- */
+
+#hypercord-rail .hc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hc-border, #2b2d31);
+}
+
+#hypercord-rail .hc-tab {
+  flex: 1 1 auto;
+  background: transparent;
+  color: var(--hc-text-muted, #b5bac1);
+  border-radius: 4px;
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+
+#hypercord-rail .hc-tab.hc-active {
+  background: var(--hc-accent, #5865f2);
+  color: var(--hc-on-accent, #fff);
+}
+
+#hypercord-rail .hc-panel {
+  display: none;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#hypercord-rail .hc-panel.hc-shown {
+  display: flex;
+}
+
+#hypercord-rail .hc-note {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 4px 12px 8px;
+}
+
+#hypercord-rail .hc-hint {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  padding: 6px 12px;
+  min-height: 14px;
+}
+
+#hypercord-rail .hc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+}
+
+#hypercord-rail input {
+  font: inherit;
+  color: var(--hc-text, #f2f3f5);
+  background: var(--hc-bg-input, #2b2d31);
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#hypercord-rail .hc-out {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: var(--hc-text, #dbdee1);
+  background: var(--hc-bg, #111214);
+  border-radius: 4px;
+  margin: 0 12px 10px;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+/* ---- the user-token prompt, where Discord's login form is ---------------- */
+
+#hypercord-token-prompt {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483001;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  font-family: "gg sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--hc-text, #dbdee1);
+}
+
+/* once the preload has measured Discord's login form, the card sits directly
+   under the email and password fields, at their width: left, width and top come
+   from that measurement, so the centring above no longer applies */
+#hypercord-token-prompt[data-anchored="true"] {
+  transform: none;
+  max-width: none;
+}
+
+#hypercord-token-prompt[data-open="true"] {
+  display: block;
+}
+
+#hypercord-token-prompt [hidden] {
+  display: none;
+}
+
+#hypercord-token-prompt .hc-card-actions button + button {
+  background: transparent;
+  color: var(--hc-text-muted, #b5bac1);
+}
+
+/* ---- the entry inside Discord's own settings ----------------------------- */
+
+/* A sibling of Discord's settings entries, not a piece of their markup: our own
+   colours and our own accent, so it reads as a Hypercord row instead of a broken
+   Discord one. The sheet it opens is where every Hypercord tab lives. */
+#hypercord-settings-entry {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 2px 0 0;
+  padding: 6px 10px;
+  text-align: left;
+  font: inherit;
+  font-weight: 600;
+  color: var(--hc-text, #f2f3f5);
+  background: transparent;
+  border: 0;
+  border-left: 3px solid var(--hc-accent, #5865f2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#hypercord-settings-entry:hover,
+#hypercord-settings-entry:focus-visible {
+  background: rgba(var(--hc-rgb-accent, 88, 101, 242), 0.16);
+  outline: none;
+}
+
+#hypercord-token-prompt .hc-card {
+  background: var(--hc-bg-raised, #313338);
+  border: 1px solid var(--hc-border, #2b2d31);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  padding: 12px;
+}
+
+#hypercord-token-prompt .hc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#hypercord-token-prompt .hc-card-title {
+  flex: 1 1 auto;
+  font-weight: 700;
+  color: var(--hc-text, #f2f3f5);
+}
+
+#hypercord-token-prompt .hc-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, var(--hc-accent, #5865f2), #8b5cf6);
+  color: var(--hc-on-accent, #fff);
+  font-weight: 800;
+  line-height: 22px;
+  text-align: center;
+  flex: none;
+}
+
+#hypercord-token-prompt .hc-note {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  line-height: 1.45;
+  margin-bottom: 8px;
+}
+
+#hypercord-token-prompt input {
+  font: inherit;
+  color: var(--hc-text, #f2f3f5);
+  background: var(--hc-bg, #1e1f22);
+  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 4px;
+  padding: 7px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+
+#hypercord-token-prompt .hc-hint {
+  color: var(--hc-text-muted, #949ba4);
+  font-size: 11px;
+  min-height: 14px;
+  margin-bottom: 6px;
+}
+
+#hypercord-token-prompt button {
+  font: inherit;
+  color: var(--hc-on-accent, #fff);
+  background: var(--hc-accent, #5865f2);
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+#hypercord-token-prompt .hc-card-head button {
+  background: transparent;
+  color: var(--hc-text-muted, #b5bac1);
+  padding: 4px 6px;
+}
+
+#hypercord-token-prompt .hc-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}

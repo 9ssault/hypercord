@@ -1,0 +1,6 @@
+{
+  "name": "hypercord-preload-test",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs"
+}

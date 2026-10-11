@@ -1,0 +1,133 @@
+{
+ "at": "2026-10-11T19:32:48.672Z",
+ "settleSeconds": 25,
+ "windowSeconds": 15,
+ "samples": 5,
+ "plugins": "{\"catalogue\":371,\"enabled\":5,\"running\":[\"hyperAccounts\",\"hyperBridge\",\"hypercordRPC\",\"hyperPanes\",\"hyperRail\"],\"broken\":{},\"defaultSet\":\"Hyper\",\"defaults\":[\"hyperBridge\",\"hyperRail\",\"hyperAccounts\",\"hyperPanes\",\"hypercordRPC\"]}",
+ "updater": "dev run, not checking",
+ "baseline": {
+  "rssMedian": 807,
+  "rssSpread": "449-1030",
+  "cpuMedian": 0.9565635732229585,
+  "cpuSpread": "0.63-2.72"
+ },
+ "railOpen": {
+  "rssMedian": 1037,
+  "rssSpread": "772-1293",
+  "cpuMedian": 1.2699607325429556,
+  "cpuSpread": "0.88-1.93"
+ },
+ "railClosed": {
+  "rssMedian": 988,
+  "rssSpread": "772-1119",
+  "cpuMedian": 0.2477932596079659,
+  "cpuSpread": "0.03-8.74"
+ },
+ "deltaOpen": 230,
+ "deltaClosed": 181,
+ "timersSeen": [
+  0
+ ],
+ "raw": [
+  {
+   "base": {
+    "rss": 449,
+    "cpu": 0.8266244310644232,
+    "timers": 0,
+    "procs": 6
+   },
+   "open": {
+    "rss": 772,
+    "cpu": 1.0495955786463127,
+    "timers": 0,
+    "procs": 6
+   },
+   "closed": {
+    "rss": 772,
+    "cpu": 0.18106505159994069,
+    "timers": 0,
+    "procs": 6
+   }
+  },
+  {
+   "base": {
+    "rss": 923,
+    "cpu": 1.6969887550163794,
+    "timers": 0,
+    "procs": 6
+   },
+   "open": {
+    "rss": 849,
+    "cpu": 1.2699607325429556,
+    "timers": 0,
+    "procs": 6
+   },
+   "closed": {
+    "rss": 821,
+    "cpu": 0.2477932596079659,
+    "timers": 0,
+    "procs": 6
+   }
+  },
+  {
+   "base": {
+    "rss": 493,
+    "cpu": 0.9565635732229585,
+    "timers": 0,
+    "procs": 6
+   },
+   "open": {
+    "rss": 1118,
+    "cpu": 1.5405524915790934,
+    "timers": 0,
+    "procs": 7
+   },
+   "closed": {
+    "rss": 1119,
+    "cpu": 8.737052813160595,
+    "timers": 0,
+    "procs": 7
+   }
+  },
+  {
+   "base": {
+    "rss": 807,
+    "cpu": 0.630809885099406,
+    "timers": 0,
+    "procs": 6
+   },
+   "open": {
+    "rss": 1293,
+    "cpu": 1.934392601369857,
+    "timers": 0,
+    "procs": 6
+   },
+   "closed": {
+    "rss": 988,
+    "cpu": 1.9782774168755612,
+    "timers": 0,
+    "procs": 6
+   }
+  },
+  {
+   "base": {
+    "rss": 1030,
+    "cpu": 2.7151037939654223,
+    "timers": 0,
+    "procs": 6
+   },
+   "open": {
+    "rss": 1037,
+    "cpu": 0.8819324762163072,
+    "timers": 0,
+    "procs": 6
+   },
+   "closed": {
+    "rss": 1034,
+    "cpu": 0.02561702413196382,
+    "timers": 0,
+    "procs": 6
+   }
+  }
+ ]
+}

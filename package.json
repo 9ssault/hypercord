@@ -1,0 +1,90 @@
+{
+  "name": "hypercord",
+  "productName": "Hypercord",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hypercord - our Discord client: an Electron shell around Discord web with the merged Vencord/Equicord plugin platform and the Hyper plugins",
+  "license": "GPL-3.0-or-later",
+  "main": "src/main.js",
+  "scripts": {
+    "vendor": "node scripts/vendor.mjs",
+    "vendor:check": "node scripts/vendor.mjs --check",
+    "start": "electron .",
+    "perf": "electron . --perf",
+    "test": "npm run test:units && npm run test:electron",
+    "test:units": "node tests/plugin-host/index.mjs && node tests/themes/index.mjs && node tests/patcher/index.mjs && node tests/tokens/index.mjs && node tests/release/index.mjs",
+    "test:electron": "npm run test:updater && npm run test:preload",
+    "test:plugins": "node tests/plugin-host/index.mjs",
+    "test:themes": "node tests/themes/index.mjs",
+    "test:patcher": "node tests/patcher/index.mjs",
+    "test:tokens": "node tests/tokens/index.mjs",
+    "test:release": "node tests/release/index.mjs",
+    "test:preload": "electron tests/preload",
+    "test:updater": "electron tests/updater",
+    "test:baseline": "electron tests/baseline --perf=25",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "check:packaged": "node scripts/check-packaged.mjs",
+    "release": "node scripts/release.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.hypercord.app",
+    "productName": "Hypercord",
+    "asar": true,
+    "compression": "maximum",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.hypercord.app/${os}/${arch}"
+      }
+    ],
+    "electronLanguages": ["en-US"],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "src/**/*",
+      "plugins/**/*",
+      "pwa/**/*",
+      "!**/*.map",
+      "!**/*.ts",
+      "!**/*.tsx"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64", "arm64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Network",
+      "target": [
+        { "target": "AppImage", "arch": ["x64", "arm64"] },
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "tar.gz", "arch": ["x64"] }
+      ]
+    },
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.social-networking",
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ]
+    }
+  }
+}

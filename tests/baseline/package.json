@@ -1,0 +1,6 @@
+{
+  "name": "hypercord-baseline",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs"
+}

@@ -1,0 +1,47 @@
+<!-- language: HTML, file: src/prompt.html
+     The user-token option, mounted into #hypercord-token-prompt by
+     src/preload.cjs and placed directly under Discord's own email and password
+     fields, so it reads as one more way in rather than a panel over the form.
+     It is optional in both directions: Discord's form is never touched, and Hide
+     puts this away for good.
+
+     Two states, and the preload decides which is shown:
+       * no token stored  -> the form, paste one and it is verified with Discord
+                             before anything is written;
+       * a token stored   -> one button to sign in with it, and a way to use a
+                             different one instead.
+
+     Markup only - src/preload.cjs wires it, and every value it fills in is set as
+     text, never as markup. -->
+<div class="hc-card">
+  <div class="hc-card-head">
+    <span class="hc-mark">H</span>
+    <span class="hc-card-title">User token</span>
+    <button type="button" data-hc="prompt-close" title="Use Discord's own login instead">Hide</button>
+  </div>
+
+  <div data-hc="prompt-stored" hidden>
+    <div class="hc-note">
+      This client has a user token stored for <span data-hc="prompt-who"></span>. Signing in with it skips
+      the form below; the email and password fields still work exactly as they always have.
+    </div>
+    <div class="hc-hint" data-hc="prompt-stored-hint"></div>
+    <div class="hc-card-actions">
+      <button type="button" data-hc="prompt-use">Sign in with this token</button>
+      <button type="button" data-hc="prompt-another">Use a different token</button>
+    </div>
+  </div>
+
+  <form data-hc="prompt-form">
+    <div class="hc-note">
+      Optional: paste a user token to sign in without the form below. It is checked with Discord first,
+      then kept with the operating system's keychain, sent to Discord and nowhere else, and never logged.
+    </div>
+    <input type="password" autocomplete="new-password" placeholder="paste your user token" data-hc="prompt-value" />
+    <input type="text" placeholder="label (optional)" data-hc="prompt-label" />
+    <div class="hc-hint" data-hc="prompt-hint"></div>
+    <div class="hc-card-actions">
+      <button type="submit" data-hc="prompt-save">Store and sign in</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,12 @@
+# dependencies and build output: reproducible from the tree, and far too big to
+# belong in history (dist/ is the packed app, the installers and the block maps)
+node_modules/
+dist/
+
+# scratch from the diagnostics and the measurement runs
+tmp-diag/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db

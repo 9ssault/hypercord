@@ -1,0 +1,2 @@
+vencord exit=0
+equicord exit=0

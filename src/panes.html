@@ -1,0 +1,140 @@
+<!-- language: HTML, file: src/panes.html
+
+     The panes sheet: everything that is configuration lives here and nowhere
+     else - the plugin catalogue, our own Hyper plugins, the themes, the
+     commands, the logs, the accounts, the access keys. It is laid out like a
+     settings screen: one section per thing down the left, its own contents on the
+     right.
+
+     This is a fragment, not a page. src/preload.cjs mounts it inside the Discord
+     window, into the container it owns (#hypercord-panes, data-hypercord="panes"),
+     and injects panes.css next to Discord's own stylesheet. There is no document
+     element of our own here: no head, no link, no script tag, and nothing that
+     assumes it owns the page. Discord's stylesheet is on the same document, which
+     is why every class below is scoped by #hypercord-panes in panes.css and every
+     id is prefixed with hp- : ids are document-wide, and "status" or "main" is
+     exactly the kind of name Discord already uses.
+
+     The only way out of the sheet is the bridge src/preload.cjs exposes as
+     window.hypercord, and nothing in here is markup built from data: every value
+     that comes back from the shell is written as text. -->
+<header class="bar">
+  <span class="brand">Hypercord settings</span>
+  <span id="hp-status" class="status" role="status" aria-live="polite"></span>
+  <button type="button" id="hp-close" class="ghost close" title="Back to Discord">Close</button>
+</header>
+
+<div class="layout">
+  <nav class="nav" aria-label="Hypercord settings">
+    <div class="nav-title">Settings</div>
+    <button type="button" class="nav-item" data-view="commands">Commands</button>
+    <button type="button" class="nav-item" data-view="plugins">Plugins</button>
+    <button type="button" class="nav-item" data-view="hyper">Hyper plugins</button>
+    <button type="button" class="nav-item" data-view="themes">Themes</button>
+    <button type="button" class="nav-item" data-view="logs">Logs</button>
+    <button type="button" class="nav-item" data-view="accounts">Accounts</button>
+    <button type="button" class="nav-item" data-view="tokens">Access keys</button>
+  </nav>
+
+  <main id="hp-main">
+    <!-- commands ---------------------------------------------------- -->
+    <section class="view" data-view="commands">
+      <h2>Commands</h2>
+      <p class="hint">Runs a command on the control server exactly as the bot's command box would.</p>
+      <form id="hp-cmdForm" class="row">
+        <input id="hp-cmdInput" type="text" autocomplete="off" spellcheck="false" placeholder="$beef @someone, or $help" />
+        <button type="submit">Run</button>
+      </form>
+      <pre id="hp-cmdOut" class="out" aria-live="polite"></pre>
+    </section>
+
+    <!-- plugins ----------------------------------------------------- -->
+    <section class="view" data-view="plugins">
+      <h2>Plugins</h2>
+      <div class="row">
+        <input id="hp-pluginSearch" type="search" autocomplete="off" spellcheck="false" placeholder="filter by name or description" />
+        <button type="button" id="hp-pluginRefresh">Refresh</button>
+      </div>
+      <p id="hp-pluginSummary" class="hint"></p>
+      <div id="hp-pluginList" class="list" role="list"></div>
+    </section>
+
+    <!-- our own plugins ---------------------------------------------- -->
+    <section class="view" data-view="hyper">
+      <h2>Hyper plugins</h2>
+      <p class="hint">Our own plugins, rather than the 366 vendored ones: they are part of Hypercord itself, so they are already here and "off" only means not started.</p>
+      <p id="hp-hyperSummary" class="hint"></p>
+      <div id="hp-hyperList" class="list" role="list"></div>
+    </section>
+
+    <!-- themes ------------------------------------------------------ -->
+    <section class="view" data-view="themes">
+      <h2>Themes</h2>
+      <p class="hint">CSS only, injected at one point. An unused theme is never read.</p>
+      <form id="hp-themeForm" class="row">
+        <input id="hp-themeSource" type="text" autocomplete="off" spellcheck="false" placeholder="a theme file path, or an https:// theme url" />
+        <input id="hp-themeName" type="text" autocomplete="off" spellcheck="false" placeholder="name (optional)" />
+        <button type="submit">Install</button>
+      </form>
+      <div id="hp-themeList" class="list" role="list"></div>
+      <h3>Quick CSS</h3>
+      <textarea id="hp-quickCss" spellcheck="false" rows="6" placeholder="/* one-off css, no install needed */"></textarea>
+      <div class="row">
+        <button type="button" id="hp-quickSave">Save quick CSS</button>
+      </div>
+    </section>
+
+    <!-- logs -------------------------------------------------------- -->
+    <section class="view" data-view="logs">
+      <h2>Logs</h2>
+      <div class="row">
+        <button type="button" id="hp-logsRefresh">Refresh</button>
+      </div>
+      <pre id="hp-logsOut" class="out tall" aria-live="polite"></pre>
+    </section>
+
+    <!-- accounts ---------------------------------------------------- -->
+    <section class="view" data-view="accounts">
+      <h2>Accounts</h2>
+      <p class="hint">Each account gets its own session, so switching never mixes them.</p>
+      <div id="hp-accountList" class="list" role="list"></div>
+      <h3>Updates</h3>
+      <div id="hp-updateRow" class="hint">reading update state&hellip;</div>
+      <div class="row">
+        <button type="button" id="hp-updateCheck">Check now</button>
+      </div>
+    </section>
+
+    <!-- access keys -------------------------------------------------- -->
+    <section class="view" data-view="tokens">
+      <h2>Access keys</h2>
+      <div id="hp-tokenBanner" class="banner">
+        A key is a Discord account token. It is encrypted on this machine with the OS keyring, never written in
+        clear, never logged, and never shown again once it is saved &mdash; only its last four characters and a
+        fingerprint are. A stored key is what lets this client sign in as that account instead of stopping at
+        Discord&rsquo;s login page.
+      </div>
+      <form id="hp-tokenForm" class="row">
+        <input id="hp-tokenAccount" type="text" autocomplete="off" spellcheck="false" placeholder="account id or name" />
+        <input id="hp-tokenLabel" type="text" autocomplete="off" spellcheck="false" placeholder="label (optional)" />
+        <input id="hp-tokenValue" type="password" autocomplete="new-password" spellcheck="false" placeholder="paste the token" />
+        <button type="submit">Store key</button>
+      </form>
+      <div id="hp-tokenList" class="list" role="list"></div>
+      <div class="row">
+        <button type="button" id="hp-tokenForget" class="danger">Forget everything</button>
+      </div>
+    </section>
+
+    <!-- the settings drawer: shared by every view that has per-plugin
+         settings, so it is not nested inside one of them -->
+    <div id="hp-pluginSettings" class="settings hidden">
+      <h3 id="hp-settingsTitle">Settings</h3>
+      <form id="hp-settingsForm" class="settings-form"></form>
+      <div class="row">
+        <button type="button" id="hp-settingsSave">Save</button>
+        <button type="button" id="hp-settingsClose" class="ghost">Close</button>
+      </div>
+    </div>
+  </main>
+</div>
