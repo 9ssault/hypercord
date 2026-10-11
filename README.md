@@ -1,10 +1,22 @@
 # Hypercord
 
-Our own Discord client, and when a real Discord is installed it *is* Discord: the
-installer patches the official desktop client to load Hypercord's loader, and the
-client you chat in is the actual Discord, not a window of ours showing the web
-app. The Electron window remains as the fallback for a machine with no Discord
-installed. On top of either, the Vencord/Equicord plugin platform (rebranded) and
+Our own Discord client, and when a real Discord is installed it *can* be Discord:
+started with `--attach`, the client patches the official desktop client to load
+Hypercord's loader (byte-exact - `app.asar` is renamed, never rewritten) and
+starts it, so the client you chat in is the actual Discord with our loader in
+front of it, not a window of ours showing the web app. Without `--attach` - and on
+a machine with no Discord installed - the Electron window is the client. The
+installer installs Hypercord and touches nothing else: patching is the client's
+job, at the one moment it can be sure it is running and can report a refusal.
+
+**This repository carries two clients.** This README, and everything under `src/`,
+`plugins/`, `vendor/`, `tests/`, `scripts/` and `build/`, is the desktop client.
+The Android client - the original Hypercord, an APK - is the tree that came with
+this repository: `android/`, `core/`, `utils/`, and its own `plugins/`, `scripts/`
+and `tests/` siblings; its README is kept verbatim in
+[docs/ANDROID-README.md](docs/ANDROID-README.md). The two were separate histories
+and are merged here, so a path that exists in both is whichever one this file
+does not describe. On top of either, the Vencord/Equicord plugin platform (rebranded) and
 the Hyper plugins that drive the selfbot's control server.
 
 ## Rules this client is built to

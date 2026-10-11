@@ -9,10 +9,12 @@
 // whether a run is declared a success.
 //
 //   node tests/release/index.mjs
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { artifactsIn, commandLine, isStale, newestInput, plan } from "../../scripts/release.mjs";
+import { fileURLToPath } from "node:url";
+import { artifactsIn, commandLine, isStale, missingTestFiles, namedTestFiles, newestInput, plan } from "../../scripts/release.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -110,6 +112,94 @@ try {
   ok("an empty dist produces nothing rather than throwing", artifactsIn(path.join(dist, "nope")).length === 0);
 } finally {
   fs.rmSync(dist, { recursive: true, force: true });
+}
+
+/* ---- preflight: the tree the gate is about to build ---------------------- */
+
+// The failure this covers is a real one: a test file the suite names was gone, the
+// suite could not run, and the release built anyway. The gate is driven here as a
+// child process, against a scratch copy of itself, because that is how it is
+// actually used - and nothing in the scratch tree can touch this project's dist/.
+const here = path.dirname(fileURLToPath(import.meta.url));
+const projectScript = path.join(here, "..", "..", "scripts", "release.mjs");
+
+/** A throwaway project that names one test it has and one it does not. */
+function scratchProject({ missing = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-gate-"));
+  fs.mkdirSync(path.join(dir, "scripts"), { recursive: true });
+  fs.copyFileSync(projectScript, path.join(dir, "scripts", "release.mjs"));
+  fs.mkdirSync(path.join(dir, "tests", "present"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "tests", "present", "index.mjs"), "console.log('ok');\n");
+  const named = ["node tests/present/index.mjs"];
+  if (missing) named.push("node tests/absent/index.mjs");
+  fs.writeFileSync(
+    path.join(dir, "package.json"),
+    JSON.stringify({ name: "scratch", version: "0.0.0", scripts: { "test:units": named.join(" && ") } }, null, 2),
+  );
+  return dir;
+}
+
+/** Run the real gate inside that scratch project. It never reaches a build. */
+function gate(dir, args = ["--dry-run"]) {
+  const done = spawnSync(process.execPath, [path.join("scripts", "release.mjs"), ...args], { cwd: dir, encoding: "utf8", timeout: 20000 });
+  return { code: done.status === null ? -1 : done.status, out: String(done.stdout || "") + String(done.stderr || "") };
+}
+
+function git(dir, args) {
+  return spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+}
+
+const parsed = scratchProject({ missing: true });
+try {
+  ok("the suite is read out of package.json, not guessed", namedTestFiles(parsed).join(",") === "tests/present/index.mjs,tests/absent/index.mjs", JSON.stringify(namedTestFiles(parsed)));
+  ok("a test the suite names and the tree does not have is reported", missingTestFiles(parsed).join(",") === "tests/absent/index.mjs", JSON.stringify(missingTestFiles(parsed)));
+
+  const run = gate(parsed);
+  ok("the gate reports its preflight", run.out.includes("# preflight"), run.out.trim().split("\n").slice(0, 2).join(" / "));
+  ok("a missing test stops the run", run.code !== 0, "exit " + run.code);
+  ok("and it says so as a check, not as a sentence in the middle of a build", /FAIL every test file the suite names exists/.test(run.out), run.out.trim().split("\n").slice(-2).join(" / "));
+  ok("naming the file that is missing", run.out.includes("tests/absent/index.mjs"), "");
+  ok("and refusing with the wording a failed pack already gets", /refusing to build installers: the suite names 1 test file\(s\) that do not exist/.test(run.out), "");
+  ok("nothing was built and nothing was planned", !run.out.includes("# release plan") && !fs.existsSync(path.join(parsed, "dist")), "");
+} finally {
+  fs.rmSync(parsed, { recursive: true, force: true });
+}
+
+const tree = scratchProject({ missing: false });
+try {
+  const started = git(tree, ["init", "-q"]);
+  const tracked = started.status === 0 && git(tree, ["add", "-A"]).status === 0 && git(tree, ["-c", "user.email=gate@example.test", "-c", "user.name=gate", "commit", "-q", "-m", "scratch"]).status === 0;
+  if (!tracked) console.log("note  git is not available here, so the dirty-tree cases cannot be driven");
+
+  const clean = gate(tree);
+  ok("a clean tree with every named test present passes preflight", clean.code === 0 && /ok   every test file the suite names exists/.test(clean.out), "exit " + clean.code + " " + clean.out.trim().split("\n").slice(-1)[0]);
+  if (tracked) {
+    ok("and the run goes on to its plan rather than refusing", clean.out.includes("# release plan") && !clean.out.includes("refusing to build installers"), "");
+    ok("and it says why the working copy is acceptable", /ok   the working copy is the committed state \| no tracked file is modified/.test(clean.out), "");
+
+    fs.appendFileSync(path.join(tree, "tests", "present", "index.mjs"), "// an edit nobody committed\n");
+    const dirty = gate(tree);
+    ok("an uncommitted edit stops the run", dirty.code !== 0, "exit " + dirty.code);
+    ok("and is reported as such", /FAIL the working copy is the committed state/.test(dirty.out), dirty.out.trim().split("\n").slice(-2).join(" / "));
+    ok("naming the file that was edited", dirty.out.includes("tests/present/index.mjs"), "");
+    ok("refusing, with the same wording a failed pack gets", /refusing to build installers: the working copy has uncommitted changes/.test(dirty.out), "");
+
+    const allowed = gate(tree, ["--dry-run", "--allow-dirty"]);
+    ok("--allow-dirty is the documented way past it", allowed.code === 0 && /allowed by --allow-dirty/.test(allowed.out), "exit " + allowed.code);
+  }
+} finally {
+  fs.rmSync(tree, { recursive: true, force: true });
+}
+
+// A source tarball with no history is not a reason to refuse: the gate is run from
+// checkouts that are not repositories at all.
+const loose = scratchProject({ missing: false });
+try {
+  const run = gate(loose);
+  ok("a tree that is not a git repository does not fail the dirty check", run.code === 0 && /ok   the working copy is the committed state/.test(run.out), "exit " + run.code);
+  ok("and it says how it knows, rather than pretending to have checked", /not a git repository, so there is nothing to compare/.test(run.out), "");
+} finally {
+  fs.rmSync(loose, { recursive: true, force: true });
 }
 
 console.log("\npassed " + passed + "  failed " + failed);

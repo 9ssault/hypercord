@@ -487,56 +487,139 @@ async function forgetAllTokens() {
  * settings layer is open, this adds one item to its sidebar, next to the real
  * ones, and it opens the manager on the last view.
  *
- * Discord's class names are generated and its tree is rebuilt as it likes, so
- * this is deliberately loose and unbothered by a miss: it looks for a tab strip
- * with real tabs in it, adds one button of our own, and if it finds nothing the
- * rail's Manager button and Ctrl+Shift+H are still there. Nothing is ever
- * inserted into the middle of Discord's own markup - the button is a sibling of
- * their settings entries, and its click goes to the shell like every other
- * button of ours.
+ * It is reachable without the rail, on purpose: somebody who only ever opens
+ * Discord's settings still has to find it. Nothing is ever inserted into the
+ * middle of Discord's own markup - the item is a sibling of their settings
+ * entries, and its click goes to the shell like every other button of ours.
  */
+
+/**
+ * The words a settings sidebar says. This is the signal that survives a release
+ * renaming every wrapper: the labels inside are user-visible text, so they change
+ * only when Discord renames a setting. Both languages the client is likely to be
+ * in are listed, because the label is what somebody reads, not a key.
+ */
+const SETTINGS_WORDS =
+  /my account|profiles?|privacy|notifications|appearance|voice|keybinds|language|advanced|authorized apps|connections|devices|mon compte|profil|confidentialit|apparence|voix|raccourcis|langue|avanc/i;
+
+/**
+ * Where to look for the settings sidebar, most specific first. Each candidate is
+ * a shape Discord has used, and the first one that yields a sidebar wins:
+ *
+ *   1. the sidebar inside the modal layer - settings is rendered in
+ *      `[class*="layers"]` and its list of sections is a `[class*="sidebar"]`;
+ *   2. a sidebar that is itself a tab strip;
+ *   3. any sidebar at all - Discord has shipped the settings list as a plain
+ *      scroll container;
+ *   4. any tab strip with several tabs in it: the previous guess, kept as the
+ *      last resort so a rename of both wrappers still finds a home.
+ */
+function settingsHostCandidates() {
+  return ['[class*="layers"] [class*="sidebar"]', '[class*="sidebar"][role="tablist"]', '[class*="sidebar"]', '[role="tablist"]'];
+}
+
+/**
+ * Is this the settings sidebar, rather than some other list with tabs in it? It
+ * has to hold several tab-like items, say something a settings screen says, and
+ * be on screen - a collapsed or hidden strip is not where somebody is looking.
+ * Deliberately no more than a few checks: this runs on each mutation batch.
+ */
+function looksLikeSettingsSidebar(node) {
+  if (!node || typeof node.querySelectorAll !== "function") return false;
+  if (node.querySelectorAll('[role="tab"], button, a[href]').length < 3) return false;
+  const box = node.getBoundingClientRect();
+  if (box.width < 120 || box.height < 60) return false;
+  return SETTINGS_WORDS.test(String(node.textContent || "").slice(0, 4000));
+}
+
 function settingsHosts() {
-  const hosts = [];
-  for (const list of document.querySelectorAll('[role="tablist"]')) {
-    if (list.querySelectorAll('[role="tab"]').length >= 3) hosts.push(list);
+  for (const selector of settingsHostCandidates()) {
+    const found = [];
+    for (const node of document.querySelectorAll(selector)) {
+      // our own entry must not make a wrapper look like a settings sidebar, and
+      // must not be picked as the place to put one
+      if (node.closest && node.closest("#hypercord-settings-entry")) continue;
+      if (looksLikeSettingsSidebar(node)) found.push(node);
+    }
+    if (found.length) return found;
   }
-  // Discord's settings sidebar is the widest tab strip on screen; picking it out
-  // by shape rather than by class name survives their rebuilds
-  return hosts;
+  return [];
+}
+
+/**
+ * The entry, built to sit among Discord's own items rather than merely near them:
+ * their element type, their role, and their class attribute, so their stylesheet
+ * lays it out and it reads as one more settings section. Our own stylesheet only
+ * adds to that. On the page it is marked with an attribute, not only with our id:
+ * `data-hypercord-settings` on the document root says what happened, which is what
+ * a check can read from the page's own world.
+ */
+function settingsEntryFor(host) {
+  const sibling = [...host.children].find((node) => node.id !== "hypercord-settings-entry") || null;
+  const likeButton = !sibling || sibling.tagName === "BUTTON";
+  const entry = document.createElement(likeButton ? "button" : "div");
+  entry.id = "hypercord-settings-entry";
+  entry.setAttribute("data-hypercord", "settings");
+  entry.setAttribute("role", (sibling && sibling.getAttribute("role")) || "tab");
+  if (likeButton) entry.type = "button";
+  else entry.setAttribute("tabindex", "0"); // a div has to bring its own keyboard reach
+  if (sibling && sibling.className) entry.className = sibling.className;
+  entry.textContent = "Hypercord";
+  entry.setAttribute("aria-label", "Hypercord settings");
+  const open = () => {
+    call("panes:open", "plugins").catch(() => {});
+  };
+  entry.addEventListener("click", open);
+  // a div with a role is not clickable by keyboard on its own
+  entry.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    open();
+  });
+  return entry;
+}
+
+/**
+ * What the page can be asked about afterwards: "added" when the entry is in a
+ * settings sidebar, "no-host" when nothing on the page looked like one. Kept on
+ * the document (the page's own world can see attributes; it cannot see anything
+ * the preload's world holds) and mirrored on the preload's window for our own
+ * debugging.
+ */
+function noteSettingsEntry(what, host) {
+  try {
+    document.documentElement.setAttribute("data-hypercord-settings", what);
+    if (host) document.documentElement.setAttribute("data-hypercord-settings-host", String(host.className || host.getAttribute("role") || host.tagName).slice(0, 80));
+    window.__hypercordSettingsEntry = what;
+  } catch {
+    /* a document that refuses attributes is not a reason to stop */
+  }
 }
 
 function ensureSettingsEntry() {
   if (OURS || !document.body) return false;
-  if (document.getElementById("hypercord-settings-entry")) return true;
-  let host = null;
-  for (const candidate of settingsHosts()) {
-    const box = candidate.getBoundingClientRect();
-    if (box.width >= 140 && box.height >= 80) host = candidate;
+  if (document.getElementById("hypercord-settings-entry")) {
+    noteSettingsEntry("added", null);
+    return true;
   }
-  if (!host) return false;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.id = "hypercord-settings-entry";
-  button.setAttribute("data-hypercord", "settings");
-  button.setAttribute("role", "tab");
-  button.textContent = "Hypercord";
-  button.addEventListener("click", () => {
-    call("panes:open", "plugins").catch(() => {});
-  });
-  host.appendChild(button);
-  return true;
+  for (const host of settingsHosts()) {
+    host.appendChild(settingsEntryFor(host));
+    noteSettingsEntry("added", host);
+    return true;
+  }
+  noteSettingsEntry("no-host", null);
+  return false;
 }
 
 /**
- * Settings open and close as a layer, and Discord rewrites its sidebar while it
- * settles, so the entry is re-added whenever the document changes - the same
- * single observer the rest of this file uses, with a lookup that costs one
- * querySelectorAll per mutation batch and writes nothing when it is already
- * there.
+ * Settings open and close as a layer, and Discord rewrites its sidebar - React
+ * throws away nodes it does not know about - so the entry is put back whenever
+ * the document changes, through the same single observer the rest of this file
+ * uses. It is one querySelectorAll per mutation batch, nothing on a timer, and
+ * nothing written at all while the entry is already in the page.
  */
 function followSettings() {
-  if (document.getElementById("hypercord-settings-entry")) return;
-  ensureSettingsEntry();
+  return ensureSettingsEntry();
 }
 
 /* ---- the user-token prompt ---------------------------------------------- */

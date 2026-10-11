@@ -172,6 +172,14 @@ try {
         sheetCss: Boolean(document.getElementById("hypercord-panes-css")),
         sheetApi: typeof window.hypercordPanes,
         sheetTabs: [...document.querySelectorAll("#hypercord-panes .nav-item")].map((n) => n.getAttribute("data-view")),
+        // The settings entry is added to Discord's own sidebar, which only exists
+        // once a client is signed in and the settings layer is open. What is always
+        // readable is the decision the preload recorded on the document: "added" or
+        // "no-host". It lives on the element, not on a page global, because a
+        // preload's window is its own world and the page cannot see it.
+        settingsEntry: document.documentElement.getAttribute("data-hypercord-settings"),
+        settingsHost: (document.documentElement.getAttribute("data-hypercord-settings-host") || "").slice(0, 80),
+        settingsItem: Boolean(document.getElementById("hypercord-settings-entry")),
         passkeys: window.__hypercordPasskeys || "(none)",
         refusals: window.__hypercordPasskeyCalls || null,
         loginForm: Boolean(document.querySelector('form[class*="auth"]')),
@@ -196,6 +204,19 @@ try {
   ok("the manager's script ran", seen.sheetApi === "object", String(seen.sheetApi));
   ok("the manager carries the tabs, access keys included", seen.sheetTabs.includes("hyper") && seen.sheetTabs.includes("tokens") && seen.sheetTabs.includes("themes"), JSON.stringify(seen.sheetTabs));
   ok("the token option is in the page", seen.prompt && seen.promptHasForm, "open " + String(seen.promptOpen));
+  // The settings entry: the decision is asserted here, the placement itself needs a
+  // signed-in client with its settings layer open, so it is reported rather than
+  // asserted when this run has no settings layer to place it in.
+  if (!seen.settingsEntry) {
+    fail("the build carries the settings-entry signal", "the document has no data-hypercord-settings attribute: this artifact predates it, so rebuild before judging the entry");
+  } else {
+    ok("the settings entry reports what it did on this page", seen.settingsEntry === "added" || seen.settingsEntry === "no-host", String(seen.settingsEntry));
+    if (seen.settingsEntry === "added") {
+      ok("and the entry is in Discord's settings sidebar", seen.settingsItem, String(seen.settingsHost));
+    } else {
+      console.log("note  no settings layer on this page (signed out), so the entry has nothing to sit in - it is added the moment settings are open");
+    }
+  }
 
   if (seen.promptOpen === "true" && seen.loginForm) {
     ok("and it is placeable under Discord's own login fields", seen.promptAnchored === "true", String(seen.promptAnchored));

@@ -1,0 +1,125 @@
+name: Android candidate and release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing source tag; must match package.json'
+        required: true
+        default: 'v2.12.0'
+        type: string
+      candidate_run_id:
+        description: 'Accepted candidate workflow run ID; leave empty to build a candidate'
+        required: false
+        type: string
+      acceptance_url:
+        description: 'HTTPS acceptance JSON in this repository release assets (required for publication)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: android-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build candidate
+        if: ${{ inputs.candidate_run_id == '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          HYPERCORD_SIGNING_PASSWORD: ${{ secrets.HYPERCORD_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$KEYSTORE_BASE64" && test -n "$HYPERCORD_SIGNING_PASSWORD"
+          export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
+          trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
+          python3 scripts/build_android.py --all-variants
+          npm test
+          npm run build
+          python3 scripts/candidate_artifacts.py collect release/candidate
+
+      - name: Upload candidate artifact
+        if: ${{ inputs.candidate_run_id == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hypercord-candidate
+          path: release/candidate/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Retrieve accepted candidate without rebuilding
+        if: ${{ inputs.candidate_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: Hypercord-candidate
+          path: release/candidate/
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify source, accepted bytes and package release
+        if: ${{ inputs.candidate_run_id != '' }}
+        env:
+          ACCEPTANCE_URL: ${{ inputs.acceptance_url }}
+        run: |
+          set -euo pipefail
+          test -n "$ACCEPTANCE_URL"
+          python3 scripts/candidate_artifacts.py restore release/candidate
+          python3 scripts/candidate_artifacts.py evidence release/acceptance.json
+          python3 scripts/pack_release_artifacts.py --output-dir release --acceptance release/acceptance.json
+          cp release/candidate/manager-release.apk release/Hypercord-Manager.apk
+          cp release/candidate/loader-release.apk release/Hypercord-Loader.apk
+          cd release
+          sha256sum -- *.apk *.zip > SHA256SUMS
+
+      - name: Publish accepted GitHub release
+        if: ${{ inputs.candidate_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            release/*.apk release/*.zip release/SHA256SUMS release/acceptance.json \
+            --verify-tag \
+            --title "Hypercord $RELEASE_TAG" \
+            --notes-file docs/release-notes.md
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/manager.p12"

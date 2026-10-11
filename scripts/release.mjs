@@ -10,6 +10,10 @@
 // So the order is the point, and it is deliberately not "build everything and
 // hope":
 //
+//   0. preflight - is the tree a coherent one at all? Every test the suite names
+//      exists, and the working copy is the committed state this build will be said
+//      to represent. A half-written tree produced a half-built release once: a test
+//      file was gone, the suite could not run, and the run built anyway;
 //   1. the vendor audit - the catalogue and the rebrand, since every plugin the
 //      client ships comes through it;
 //   2. every test suite;
@@ -31,6 +35,8 @@
 //   npm run release -- --no-fresh                   # check the signed-in profile
 //   npm run release -- --win --x64                  # extra args go to electron-builder
 //   npm run release -- --dry-run                    # print the plan, run nothing
+//   npm run release -- --allow-dirty                # build a tree with uncommitted
+//                                                   # edits, for testing on purpose
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -145,6 +151,85 @@ export function commandLine(command, args, platform = process.platform) {
   return { file: [file, ...args].map(quote).join(" "), argv: [], shell: true };
 }
 
+/* ---- preflight: is the tree a coherent one at all? ----------------------- */
+
+/**
+ * The test files the suite names, read from the `test:units` script in
+ * package.json. That script *is* the definition of the suite, so a file it names
+ * and the tree does not have is a suite that cannot run - which means a release
+ * that tested less than it says it did.
+ */
+export function namedTestFiles(dir = root) {
+  let pkg = null;
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+  } catch {
+    return [];
+  }
+  const script = String((pkg && pkg.scripts && pkg.scripts["test:units"]) || "");
+  return [...new Set(script.match(/tests\/[\w./-]+\.mjs/g) || [])];
+}
+
+/** The named tests that are not there - all of them, not just the first. */
+export function missingTestFiles(dir = root) {
+  return namedTestFiles(dir).filter((rel) => !fs.existsSync(path.join(dir, rel)));
+}
+
+/**
+ * The tracked files git reports as changed.
+ *
+ * Untracked files are left out on purpose: `dist/` is build output, it is ignored,
+ * and a gate that refuses because of its own output is a gate nobody keeps running.
+ * Not being a repository at all is not a failure either - the gate has to be usable
+ * from a source tarball with no history in it.
+ */
+export function dirtyFiles(dir = root) {
+  const done = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: dir, encoding: "utf8" });
+  if (done.error || done.status !== 0) return { ok: false, files: [], reason: String((done.error && done.error.message) || "git did not answer") };
+  const files = String(done.stdout || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^\S+\s+/, ""));
+  return { ok: true, files, reason: "" };
+}
+
+/**
+ * The checks that run before anything is built.
+ *
+ * Two facts decide whether this run may exist at all: every test the suite names
+ * is present, and the working copy is the committed state the artifact will be
+ * said to represent. `allowDirty` is the one documented way past the second, for a
+ * tree being tested on purpose; the first cannot be bypassed - a named test that
+ * does not exist is always a reason to refuse.
+ */
+export function preflight({ dir = root, allowDirty = false } = {}) {
+  const lines = [];
+  const refusals = [];
+
+  const named = namedTestFiles(dir);
+  const missing = missingTestFiles(dir);
+  if (missing.length) {
+    lines.push({ ok: false, text: "every test file the suite names exists", detail: "missing: " + missing.join(", ") });
+    refusals.push("the suite names " + missing.length + " test file(s) that do not exist: " + missing.join(", "));
+  } else {
+    lines.push({ ok: true, text: "every test file the suite names exists", detail: named.length + " file(s)" });
+  }
+
+  const git = dirtyFiles(dir);
+  if (!git.ok) {
+    lines.push({ ok: true, text: "the working copy is the committed state", detail: "not a git repository, so there is nothing to compare" });
+  } else if (!git.files.length) {
+    lines.push({ ok: true, text: "the working copy is the committed state", detail: "no tracked file is modified" });
+  } else {
+    const shown = git.files.slice(0, 5).join(", ") + (git.files.length > 5 ? " (+" + (git.files.length - 5) + " more)" : "");
+    lines.push({ ok: allowDirty, text: "the working copy is the committed state", detail: "modified: " + shown + (allowDirty ? " (allowed by --allow-dirty)" : "") });
+    if (!allowDirty) refusals.push("the working copy has uncommitted changes: " + shown);
+  }
+
+  return { ok: refusals.length === 0, lines, refusals };
+}
+
 function builderArguments() {
   const index = process.argv.indexOf("--");
   if (index === -1) return [];
@@ -152,8 +237,11 @@ function builderArguments() {
 }
 
 function run() {
-  // No bypass: there is no flag here that skips a gate. A release script whose
-  // checks can be turned off is a release script that ships unverified builds.
+  // The flags narrow the run; none of them waves a check away. --skip-tests drops
+  // the suites (for iterating on the build steps themselves), --allow-dirty accepts
+  // a working copy with uncommitted edits, and everything the artifact is judged by
+  // - preflight's test inventory, freshness, the packaged check, the installers -
+  // runs either way.
   const skipTests = process.argv.includes("--skip-tests");
   const noFresh = process.argv.includes("--no-fresh");
   const dryRun = process.argv.includes("--dry-run");
@@ -161,6 +249,19 @@ function run() {
   // an artifact counts as produced only if this run wrote it, so installers left
   // over from an earlier build cannot make a failed run look successful
   const startedAt = Date.now();
+
+  // Nothing is built until the tree is coherent: a test the suite names but the
+  // tree does not have, or edits nobody committed, is how a half-built release
+  // happened before. This runs before the dry run too, because "would this build?"
+  // is the same question.
+  const allowDirty = process.argv.includes("--allow-dirty");
+  console.log("\n# preflight");
+  const ready = preflight({ allowDirty });
+  for (const line of ready.lines) console.log((line.ok ? "ok   " : "FAIL ") + line.text + (line.detail ? " | " + line.detail : ""));
+  if (!ready.ok) {
+    console.log("\nrefusing to build installers: " + ready.refusals.join("; "));
+    return 1;
+  }
 
   if (dryRun) {
     console.log("# release plan (nothing will run)");

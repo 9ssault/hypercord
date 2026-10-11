@@ -93,6 +93,53 @@ const SETTINGS_PAGE = `<!doctype html><html><head><title>settings</title></head>
 </div></div>
 </body></html>`;
 
+// The same layer in the shapes a release can serve instead: the sidebar is in the
+// modal layer but its items are plain buttons with no tablist role anywhere, which
+// is what the entry has to survive rather than the shape it was written against.
+const SETTINGS_PLAIN_LIST = `<!doctype html><html><head><title>settings-plain</title></head><body>
+<div class="layers-7f8g"><div class="sidebar-9h0i" style="width:240px;height:340px;display:flex;flex-direction:column">
+  <button type="button">My Account</button>
+  <button type="button">Profiles</button>
+  <button type="button">Appearance</button>
+  <button type="button">Notifications</button>
+</div></div>
+</body></html>`;
+
+// And in the client's other language, with no modal wrapper and items that are not
+// buttons: the labels are the only thing left to recognise the sidebar by, and a
+// div has to be given the keyboard reach it does not come with.
+const SETTINGS_FRENCH = `<!doctype html><html><head><title>settings-fr</title></head><body>
+<div class="sidebar-lang" style="width:200px;height:300px;display:flex;flex-direction:column">
+  <div role="tab">Mon compte</div>
+  <div role="tab">Profil</div>
+  <div role="tab">Apparence</div>
+  <div role="tab">Notifications</div>
+</div>
+</body></html>`;
+
+// Two sidebars on one page, which is the trap the old lookup walked into: the
+// first one is the guild list and says nothing about settings.
+const SETTINGS_TWO_LISTS = `<!doctype html><html><head><title>settings-two</title></head><body>
+<div class="layers-guilds"><div class="sidebar-guilds" style="width:220px;height:320px;display:flex;flex-direction:column">
+  <button type="button">Channels</button>
+  <button type="button">Members</button>
+  <button type="button">Threads</button>
+  <button type="button">Events</button>
+</div></div>
+<div class="layers-5m6n"><div class="sidebar-settings" style="width:220px;height:320px;display:flex;flex-direction:column">
+  <button type="button">My Account</button>
+  <button type="button">Appearance</button>
+  <button type="button">Voice</button>
+  <button type="button">Keybinds</button>
+</div></div>
+</body></html>`;
+
+// A page that is not settings at all: the entry must not appear, and must not go
+// looking for somewhere to appear either.
+const PLAIN_PAGE = `<!doctype html><html><head><title>channels</title></head><body>
+<div class="chat-1"><button type="button">Send</button><button type="button">Gift</button></div>
+</body></html>`;
+
 // every channel the preload and the manager sheet ask for, answered the way the
 // shell answers - and recorded, because a call that never happens is the failure
 // this suite exists to catch
@@ -201,7 +248,14 @@ async function run() {
       // honest place to prove that the sheet still mounts
       "content-security-policy": "script-src 'none'; object-src 'none'",
     });
-    res.end(String(req.url || "").startsWith("/settings") ? SETTINGS_PAGE : PAGE);
+    const pages = {
+      "/settings": SETTINGS_PAGE,
+      "/settings-plain": SETTINGS_PLAIN_LIST,
+      "/settings-fr": SETTINGS_FRENCH,
+      "/settings-two": SETTINGS_TWO_LISTS,
+      "/plain": PLAIN_PAGE,
+    };
+    res.end(pages[String(req.url || "").split("?")[0]] || PAGE);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = "http://127.0.0.1:" + server.address().port + "/";
@@ -600,6 +654,134 @@ async function run() {
   ok("clicking it opens the manager inside Discord", fromSettings.open === "true" && fromSettings.visible.length === 1, JSON.stringify(fromSettings));
   ok("and it opens on a view of its own", ["plugins", "hyper", "themes", "tokens", "commands", "logs", "accounts"].includes(fromSettings.visible[0]), JSON.stringify(fromSettings.visible));
   ok("the settings page logged no error", settingsErrors.length === 0, settingsErrors.join(" | ").slice(0, 200));
+
+  // The entry is what the owner of the client could not find, because the lookup
+  // guessed one shape - "the widest tab strip on screen" - and a simulated page
+  // that matches the guess proves nothing about the live client. So it is checked
+  // against the shapes a release actually serves: a sidebar that is not a tablist,
+  // one in the client's other language whose items are not buttons, a page with two
+  // sidebars where only one is settings, and a page with none.
+  const openEntryPage = async (route) => {
+    const win = new BrowserWindow({
+      show: false,
+      webPreferences: { preload: path.join(src, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    });
+    const errors = [];
+    win.webContents.on("console-message", (_e, level, message) => {
+      if (level >= 3) errors.push(String(message));
+    });
+    await win.loadURL(origin + route.replace(/^\//, ""));
+    await wait(700);
+    return { win, errors };
+  };
+
+  const plainList = await openEntryPage("/settings-plain");
+  const plainSeen = await page(
+    plainList.win,
+    `(() => {
+    const entry = document.getElementById("hypercord-settings-entry");
+    const host = document.querySelector(".sidebar-9h0i");
+    return {
+      present: Boolean(entry),
+      signal: document.documentElement.getAttribute("data-hypercord-settings"),
+      inSidebar: Boolean(entry && host && host.contains(entry)),
+      tag: entry ? entry.tagName : "",
+      role: entry ? entry.getAttribute("role") : "",
+      focusable: entry ? entry.tabIndex >= 0 : false,
+      discordsOwn: host ? [...host.children].filter((n) => n.id !== "hypercord-settings-entry").length : 0,
+    };
+  })()`,
+  );
+  ok("a settings sidebar that is not a tablist still gets the entry", plainSeen.present && plainSeen.inSidebar, JSON.stringify(plainSeen));
+  ok("the entry is one of theirs: their element, their role", plainSeen.tag === "BUTTON" && plainSeen.role === "tab", JSON.stringify(plainSeen));
+  ok("Discord's own entries in that shape are left alone", plainSeen.discordsOwn === 4, String(plainSeen.discordsOwn));
+  ok("and the entry is reachable by keyboard", plainSeen.focusable === true);
+  ok("the page says where the entry went, so a check can read it", plainSeen.signal === "added", String(plainSeen.signal));
+
+  // a change while the layer is up: one entry, never two
+  await page(plainList.win, `(() => { document.querySelector(".sidebar-9h0i").appendChild(document.createElement("span")); return true; })()`);
+  await wait(400);
+  const settled = await page(
+    plainList.win,
+    `(() => ({
+    count: document.querySelectorAll("#hypercord-settings-entry").length,
+    signal: document.documentElement.getAttribute("data-hypercord-settings"),
+  }))()`,
+  );
+  ok("a change to the sidebar does not add a second entry", settled.count === 1 && settled.signal === "added", JSON.stringify(settled));
+
+  // and a re-render that throws our node away, which React does to nodes it does
+  // not know about: the entry has to come back on its own
+  await page(
+    plainList.win,
+    `(() => {
+    document.getElementById("hypercord-settings-entry").remove();
+    document.querySelector(".sidebar-9h0i").appendChild(document.createElement("span"));
+    return true;
+  })()`,
+  );
+  await wait(400);
+  const restored = await page(
+    plainList.win,
+    `(() => ({
+    back: Boolean(document.getElementById("hypercord-settings-entry")),
+    count: document.querySelectorAll("#hypercord-settings-entry").length,
+    signal: document.documentElement.getAttribute("data-hypercord-settings"),
+  }))()`,
+  );
+  ok("a re-render that drops the entry puts it back, exactly once", restored.back && restored.count === 1 && restored.signal === "added", JSON.stringify(restored));
+
+  const openedBefore = opened.length;
+  await page(plainList.win, `document.getElementById("hypercord-settings-entry").click(); true`);
+  await wait(250);
+  ok("clicking it opens the manager without the rail ever being touched", opened.length > openedBefore, JSON.stringify(opened.slice(-2)));
+  ok("that page logged no error", plainList.errors.length === 0, plainList.errors.join(" | ").slice(0, 200));
+
+  const french = await openEntryPage("/settings-fr");
+  const frenchSeen = await page(
+    french.win,
+    `(() => {
+    const entry = document.getElementById("hypercord-settings-entry");
+    const host = document.querySelector(".sidebar-lang");
+    return {
+      present: Boolean(entry && host && host.contains(entry)),
+      tag: entry ? entry.tagName : "",
+      tabindex: entry ? entry.getAttribute("tabindex") : "",
+      signal: document.documentElement.getAttribute("data-hypercord-settings"),
+    };
+  })()`,
+  );
+  ok("a sidebar in another language is recognised by its labels", frenchSeen.present && frenchSeen.signal === "added", JSON.stringify(frenchSeen));
+  ok("an item that is not a button brings its own keyboard reach", frenchSeen.tag === "DIV" && frenchSeen.tabindex === "0", JSON.stringify(frenchSeen));
+  ok("that page logged no error", french.errors.length === 0, french.errors.join(" | ").slice(0, 200));
+
+  const two = await openEntryPage("/settings-two");
+  const twoSeen = await page(
+    two.win,
+    `(() => {
+    const entry = document.getElementById("hypercord-settings-entry");
+    return {
+      present: Boolean(entry),
+      parent: entry && entry.parentElement ? entry.parentElement.className : "",
+      signal: document.documentElement.getAttribute("data-hypercord-settings"),
+    };
+  })()`,
+  );
+  ok("with two sidebars, the settings one is chosen rather than the first", twoSeen.present && twoSeen.parent === "sidebar-settings", JSON.stringify(twoSeen));
+
+  const none = await openEntryPage("/plain");
+  const noneSeen = await page(
+    none.win,
+    `(() => ({
+    present: Boolean(document.getElementById("hypercord-settings-entry")),
+    signal: document.documentElement.getAttribute("data-hypercord-settings"),
+  }))()`,
+  );
+  ok("a page with no settings layer gets no entry and says why", noneSeen.present === false && noneSeen.signal === "no-host", JSON.stringify(noneSeen));
+
+  for (const one of [plainList.win, french.win, two.win, none.win]) one.destroy();
+  await wait(300);
+
   settingsWindow.destroy();
   await wait(200);
   ok("and closing it leaves the client with its one window", BrowserWindow.getAllWindows().length === 1, "windows " + BrowserWindow.getAllWindows().length);
