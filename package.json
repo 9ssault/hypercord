@@ -1,9 +1,12 @@
 {
   "name": "hypercord",
   "productName": "Hypercord",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
-  "author": "Hypercord",
+  "author": {
+    "name": "Hypercord",
+    "email": "9ssault@users.noreply.github.com"
+  },
   "type": "module",
   "description": "Hypercord - our Discord client: an Electron shell around Discord web with the merged Vencord/Equicord plugin platform and the Hyper plugins",
   "license": "GPL-3.0-or-later",

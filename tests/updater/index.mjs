@@ -59,6 +59,14 @@ async function run() {
   Object.defineProperty(app, "isPackaged", { value: true, configurable: true });
   ok("the packed stubs take effect", app.isPackaged === true);
 
+  // Whether this platform's updater reaches any feed at all. On Linux the updater is
+  // electron-updater's AppImage one, and its `isUpdaterActive()` answers false unless the
+  // run is an actual AppImage (`process.env.APPIMAGE`), so a check resolves as "nothing to
+  // update" without a single request - there is no failure to observe. Windows and macOS
+  // builds do reach the feed, and it is unreachable on purpose below. Both shapes are
+  // asserted, so the no-throw contract is tested everywhere rather than skipped on one OS.
+  const reachesFeed = process.platform !== "linux" || Boolean(process.env.APPIMAGE);
+
   // a resources directory with and without the feed electron-builder writes
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-bare-"));
   const baked = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-baked-"));
@@ -87,7 +95,11 @@ async function run() {
   ok("a shipped feed: it is reported as mode built-in", builtIn.state.mode === "built-in", builtIn.state.mode);
   ok("a shipped feed: the log says how it checks", bakedLines.some((l) => l.includes("checking via built-in")), JSON.stringify(bakedLines));
   const builtInCheck = await builtIn.checkNow();
-  ok("a shipped feed: an unreachable one fails cleanly", builtInCheck.ok === false && builtInCheck.error.length > 0, JSON.stringify(builtInCheck));
+  if (reachesFeed) {
+    ok("a shipped feed: an unreachable one fails cleanly", builtInCheck.ok === false && builtInCheck.error.length > 0, JSON.stringify(builtInCheck));
+  } else {
+    ok("a shipped feed: an unreachable one is nothing to update, not a throw", builtInCheck.ok === true && builtInCheck.version === "" && builtIn.state.error === "", JSON.stringify(builtInCheck));
+  }
   ok("a shipped feed: no poll timer when everyMs is 0", builtIn.state.timer === null);
 
   /* ---- 3. an explicit feed override that cannot be reached -------------- */
@@ -98,8 +110,13 @@ async function run() {
   ok("an override: it wins and is reported as mode feed", dead.state.mode === "feed" && dead.state.feed.endsWith("/updates"), dead.state.mode);
   ok("an override: it counts as supported", dead.state.supported === true);
   const deadCheck = await dead.checkNow();
-  ok("an override: checkNow reports the failure instead of throwing", deadCheck.ok === false && deadCheck.error.length > 0, JSON.stringify(deadCheck));
-  ok("an override: the reason is recorded in state", dead.state.error.length > 0, dead.state.error);
+  if (reachesFeed) {
+    ok("an override: checkNow reports the failure instead of throwing", deadCheck.ok === false && deadCheck.error.length > 0, JSON.stringify(deadCheck));
+    ok("an override: the reason is recorded in state", dead.state.error.length > 0, dead.state.error);
+  } else {
+    ok("an override: checkNow resolves without throwing", deadCheck.ok === true && deadCheck.version === "", JSON.stringify(deadCheck));
+    ok("an override: no check was made, so nothing is recorded", dead.state.error === "", dead.state.error);
+  }
   ok("an override: the reason never contains a token field", !/token|Bearer/i.test(dead.state.error));
 
   /* ---- 4. the updater's own events -------------------------------------- */
