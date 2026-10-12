@@ -212,13 +212,16 @@ jobs:
           # failed this step outright with "command not found" - so the bound is made with
           # the shell itself: the suite runs in the background and a watchdog kills it. A
           # suite killed that way exits 137 (and 143 if it got the TERM), both classified
-          # below next to `timeout`'s own 124.
+          # below next to `timeout`'s own 124. `|| true` on the watchdog's own kill: when
+          # the watchdog has already fired it has exited, `kill` reports that, and `bash -e`
+          # would abort the step before it could classify anything - which is how a Linux
+          # timeout was reported as a bare failure instead of the skip it is.
           $DISPLAY_WRAPPER npm run test:updater > "$log" 2>&1 &
           suite=$!
           ( sleep 480; kill -9 "$suite" 2>/dev/null ) &
           watchdog=$!
           wait "$suite" || status=$?
-          kill "$watchdog" 2>/dev/null
+          kill "$watchdog" 2>/dev/null || true
           tail -40 "$log" || true
           if [ "$status" -eq 0 ]; then
             echo "the updater suite passed on $LABEL"
@@ -253,13 +256,14 @@ jobs:
           log="$RUNNER_TEMP/preload.log"
           status=0
           # Bounded the same way as the updater suite, and for the same reason: `timeout`
-          # does not exist on the macOS runners. 137/143 are the watchdog's kill.
+          # does not exist on the macOS runners. 137/143 are the watchdog's kill, and the
+          # watchdog's own `kill` gets `|| true` here too - see the updater step.
           $DISPLAY_WRAPPER npm run test:preload > "$log" 2>&1 &
           suite=$!
           ( sleep 480; kill -9 "$suite" 2>/dev/null ) &
           watchdog=$!
           wait "$suite" || status=$?
-          kill "$watchdog" 2>/dev/null
+          kill "$watchdog" 2>/dev/null || true
           tail -40 "$log" || true
           if [ "$status" -eq 0 ]; then
             echo "the preload suite passed on $LABEL"
@@ -365,7 +369,11 @@ jobs:
       # where without anyone reading three job logs. This runs after the build, so `dist`
       # exists; a log that is missing is not a failure - a runner that never reached a
       # suite reports that through the job's own result.
+      # `always()`: the suite logs are exactly what a failed suite leaves behind, and a
+      # failed step otherwise skips every later step - which is why the Linux hang had to
+      # be diagnosed from a step log that said nothing but "Killed".
       - name: Keep the suite logs with the artifacts
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           mkdir -p dist
@@ -376,6 +384,7 @@ jobs:
           ls -la dist/suite-*.log 2>/dev/null || echo "no suite log was written on ${{ matrix.label }}"
 
       - name: Upload this platform's artifacts
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.label }}

@@ -18,6 +18,14 @@
 // only after the main module has finished evaluating - a top-level await of it
 // is a deadlock, and this suite hung on exactly that before the watchdog below
 // was added.
+//
+// `package.json` beside this file carries a version on purpose. Electron reads
+// `app.getVersion()` from it, and with no version it answers "0.0" - which is not
+// valid semver, so `electron-updater` throws while `src/updater.js` is still being
+// imported. That happens before the watchdog below exists, so the main process
+// died in an error dialog nothing could dismiss: the Linux job sat there for its
+// full eight minutes and was killed. Any valid version fixes it; this one is a
+// test app's, so it says 0.0.1.
 import { app } from "electron";
 import electronUpdater from "electron-updater";
 import fs from "node:fs";
