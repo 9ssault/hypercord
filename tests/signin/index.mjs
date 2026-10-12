@@ -6,18 +6,34 @@
 // This is the piece that let "token login did not work" look like "signed in": the
 // older code wrote from the page's own world - where discord.com has no storage at
 // all - and reported success without ever looking at the result. What is asserted
-// here is the mechanism that was measured against the live page:
+// here is what has actually been observed, and what has not:
 //
-//   * the write goes through a same-origin frame, whose own `localStorage` is what
-//     the page still offers;
-//   * the value is the raw token, never the JSON-quoted form the client reads back
-//     with its quotes and Discord refuses;
-//   * a sign-in is attempted on the app route, because the login page never
-//     restores a session;
-//   * and only where the client ends up says whether it worked.
+//   * MEASURED: the write goes through a same-origin frame, whose own `localStorage`
+//     is what the page still offers, and it reads back exactly;
+//   * MEASURED: the value is the raw token, never the JSON-quoted form the client
+//     would read back with its quotes and Discord refuses;
+//   * MEASURED, and it is the correction this file now carries: the client did **not**
+//     use that token (`used=false` in signin.log), so "the client reads
+//     localStorage.token at boot" was an assumption and not a measurement. The
+//     placements are ordered by evidence, and the probe exists to answer the open
+//     question from the live page;
+//   * MEASURED: a sign-in is attempted on the app route, because the login page never
+//     restores a session, and only where the client ends up says whether it worked.
 //
 //   node tests/signin/index.mjs
-import { AUTH_PATHS, appRoute, decideSignIn, signInForms, tokenWriteScript } from "../../src/signin.js";
+import {
+  AUTH_PATHS,
+  appRoute,
+  captureSessionScript,
+  decideSignIn,
+  looksLikeAuthName,
+  looksLikeUserToken,
+  pickIndexedTarget,
+  signInCandidates,
+  signInForms,
+  storageProbeScript,
+  tokenWriteScript,
+} from "../../src/signin.js";
 
 let passed = 0;
 let failed = 0;
@@ -254,6 +270,136 @@ const rootResult = run(tokenWriteScript(frameForm), {
 });
 ok("the frame goes to the root element when the page has no body", rootResult === "ok:same-origin frame" && appendedToRoot.length === 1 && appendedToRoot[0] === rootFrame, rootResult + " | appended " + appendedToRoot.length);
 ok("and the token still lands in the frame's storage", rootStorage.peek("token") === "MTIz.abc.def", JSON.stringify(rootStorage.peek("token")));
+
+/* ---- the probe: facts about the page, and never a value ------------------ */
+
+// The probe is the instrument that replaces the assumption. It may report *which*
+// keys exist, their names, their lengths and their types - it may never report a
+// value, and a cookie's value least of all. These assertions hold it to that.
+const LIVE_TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuR2hKaw.abcdefghijklmnopqrstuvwxyz123456";
+const COOKIE_VALUE = "SHOULD-NOT-APPEAR-ANYWHERE";
+
+/** A storage with the two members the probe walks: `length`/`key(i)` and getItem. */
+function probeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    get length() {
+      return map.size;
+    },
+    key: (index) => Array.from(map.keys())[index] ?? null,
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => map.set(key, String(value)),
+    peek: (key) => (map.has(key) ? map.get(key) : null),
+  };
+}
+
+const probedPage = probeStorage({ token: LIVE_TOKEN, theme: "dark" });
+const probedFrame = probeStorage({ __sentry: "1" });
+const probeFrameNode = { style: {}, contentWindow: { localStorage: probedFrame, sessionStorage: probeStorage({}) }, remove() {} };
+const probeDocument = {
+  cookie: "__Secure-session=" + COOKIE_VALUE + "; locale=en-US",
+  createElement: () => probeFrameNode,
+  body: { appendChild: () => {} },
+  documentElement: { appendChild: () => {} },
+};
+const probeReport = JSON.parse(
+  await new Function("document", "localStorage", "sessionStorage", "indexedDB", "return " + storageProbeScript())(
+    probeDocument,
+    probedPage,
+    probeStorage({}),
+    undefined,
+  ),
+);
+const probeText = JSON.stringify(probeReport);
+const pageKeys = probeReport.page.localKeys;
+ok("the probe reports key names in the page's own storage", Array.isArray(pageKeys) && pageKeys.some((key) => key.name === "token"), JSON.stringify(pageKeys));
+ok("with lengths and types, not values", pageKeys.every((key) => typeof key.length === "number" && typeof key.auth === "boolean"), JSON.stringify(pageKeys));
+ok("a key whose name speaks of auth is marked", pageKeys.find((key) => key.name === "token").auth === true);
+ok("and an ordinary key is not", pageKeys.find((key) => key.name === "theme").auth === false);
+ok("the frame's storage is reported separately from the page's", Array.isArray(probeReport.frame.localKeys) && probeReport.frame.localKeys[0].name === "__sentry", JSON.stringify(probeReport.frame));
+ok("cookies are reported by name only", probeReport.cookies.includes("__Secure-session") && probeReport.cookies.includes("locale"), JSON.stringify(probeReport.cookies));
+ok("no value reaches the report, whatever its source", !probeText.includes(LIVE_TOKEN) && !probeText.includes(COOKIE_VALUE), probeText.slice(0, 200));
+ok("the token's length is what is reported, not the token", pageKeys.find((key) => key.name === "token").length === LIVE_TOKEN.length);
+ok("a world without indexedDB is a note, not a failure", (probeReport.notes || []).some((note) => /indexedDB/i.test(note)), JSON.stringify(probeReport.notes));
+ok("the probe script is valid JavaScript", (() => {
+  try {
+    new Function("return " + storageProbeScript());
+    return true;
+  } catch {
+    return false;
+  }
+})());
+
+/* ---- the placements, ordered by evidence --------------------------------- */
+
+const candidates = signInCandidates(LIVE_TOKEN);
+ok("three placements are offered, in a fixed order", candidates.length === 3 && candidates.map((one) => one.how).join(",") === "frame,storage,indexeddb", JSON.stringify(candidates.map((one) => one.how)));
+ok("every placement says why it is where it is", candidates.every((one) => typeof one.why === "string" && one.why.length > 30));
+ok("and says whether its effect was measured", candidates[0].verified.length > 0 && candidates[1].verified.length > 0 && candidates[2].verified === "", JSON.stringify(candidates.map((one) => one.verified)));
+ok("none of them claims the client consumed the token", candidates.every((one) => one.consumed === false));
+ok("the raw secret goes into every placement", candidates.every((one) => one.value === LIVE_TOKEN));
+ok("without a probe the indexeddb placement is not attempted and says why", Boolean(candidates[2].skipped) && /probe/.test(candidates[2].skipped), String(candidates[2].skipped));
+ok("the two placements that were measured are attempted", !candidates[0].skipped && !candidates[1].skipped);
+ok("a second call orders them the same way", signInCandidates(LIVE_TOKEN).map((one) => one.how).join(",") === candidates.map((one) => one.how).join(","));
+ok("and hands back fresh placements", signInCandidates(LIVE_TOKEN)[0] !== candidates[0]);
+
+const withProbe = signInCandidates(LIVE_TOKEN, {
+  probe: { indexeddb: [{ database: "discord", stores: [{ store: "kv", keys: [{ name: "access_token", auth: true }] }] }] },
+});
+ok("a probe result turns the indexeddb placement into a named target", withProbe[2].skipped === "" && withProbe[2].database === "discord" && withProbe[2].store === "kv" && withProbe[2].key === "access_token", JSON.stringify(withProbe[2]));
+ok("and its name says which store it will write to", /discord\/kv/.test(withProbe[2].name), withProbe[2].name);
+ok("the first auth-looking key is the one chosen", pickIndexedTarget({ indexeddb: [{ database: "db", stores: [{ store: "s", keys: [{ name: "colour", auth: false }, { name: "token", auth: true }] }] }] }).key === "token");
+ok("a store with nothing auth-looking is a fallback, not an answer", pickIndexedTarget({ indexeddb: [{ database: "db", stores: [{ store: "s", keys: [{ name: "colour", auth: false }] }] }] }).key === "token");
+ok("an empty report offers nothing", pickIndexedTarget(null) === null && pickIndexedTarget({ indexeddb: [] }) === null);
+
+ok("a placement the probe ruled out is answered as not attempted, with its reason", run(tokenWriteScript(candidates[2])).startsWith("err:not attempted:"), run(tokenWriteScript(candidates[2])));
+ok("an indexeddb write with no target refuses with a reason", (await run(tokenWriteScript({ how: "indexeddb", value: LIVE_TOKEN, database: "", store: "" }))).startsWith("err:"));
+
+/* ---- what counts as a captured session ----------------------------------- */
+
+ok("a token-shaped string is recognised", looksLikeUserToken(LIVE_TOKEN));
+ok("the quoted form is not", !looksLikeUserToken('"' + LIVE_TOKEN + '"'));
+ok("nonsense is not", ["", "abc", "a.b.c", LIVE_TOKEN.replace(/\./g, ""), "x".repeat(40), null, undefined].every((value) => !looksLikeUserToken(value)));
+ok("a string far too long to be one is not", !looksLikeUserToken("a".repeat(21) + "." + "b".repeat(21) + "." + "c".repeat(5000)));
+ok("the name rule the page and the shell share", looksLikeAuthName("access_token") && looksLikeAuthName("Session") && !looksLikeAuthName("theme"));
+
+/* ---- capture: the reliable half ------------------------------------------ */
+
+const captureFrame = probeStorage({ token: LIVE_TOKEN });
+const captureDoc = fakeDocument(captureFrame);
+const captured = JSON.parse(await run(captureSessionScript(null), { document: captureDoc, localStorage: undefined }));
+ok("capture names the place it read", captured.where === "frame storage" && captured.key === "token", JSON.stringify(captured));
+ok("and hands the raw value to the shell, which stores it", captured.value === LIVE_TOKEN);
+ok("capture does not fall through to the page when the frame answered", captureDoc.appended.length === 1);
+
+const emptyCapture = JSON.parse(await run(captureSessionScript(null), { document: fakeDocument(probeStorage({})), localStorage: undefined }));
+ok("a page with nothing to capture says so rather than guessing", emptyCapture.where === "" && emptyCapture.value === "", JSON.stringify(emptyCapture));
+
+const storeCapture = JSON.parse(await run(captureSessionScript(null), { document: fakeDocument(null), localStorage: probeStorage({ token: LIVE_TOKEN }) }));
+ok("the page's own storage is the next place tried", storeCapture.where === "page storage" && storeCapture.value === LIVE_TOKEN, JSON.stringify(storeCapture));
+
+// Capture must read only what the probe named: a place nobody reported is a place it
+// has no business opening, and the script it generates has to say exactly which.
+const namedScript = captureSessionScript({ indexeddb: [{ database: "discord", stores: [{ store: "kv", keys: [{ name: "access_token", auth: true }] }] }] });
+ok("capture is pointed at the store the probe named", namedScript.includes("indexeddb discord/kv") && namedScript.includes("access_token"));
+// The generated script carries its own target list, so the claim can be checked
+// exactly rather than read: every indexeddb target in it must be one the probe named.
+const targetList = JSON.parse(namedScript.match(/const targets = (\[[\s\S]*?\]);/)[1]);
+const indexedTargets = targetList.filter((target) => target.how === "indexeddb");
+ok("every indexeddb target it reads is one the probe named", indexedTargets.length === 1 && indexedTargets[0].database === "discord" && indexedTargets[0].store === "kv" && indexedTargets[0].key === "access_token", JSON.stringify(indexedTargets));
+ok("and the two storages are tried before any store", targetList[0].where === "frame storage" && targetList[1].where === "page storage", JSON.stringify(targetList.map((target) => target.where)));
+ok("a probe with no indexeddb leaves capture with only the two storages", (() => {
+  const bare = JSON.parse(captureSessionScript({}).match(/const targets = (\[[\s\S]*?\]);/)[1]);
+  return bare.length === 2 && bare.every((target) => target.how !== "indexeddb");
+})());
+ok("capture is a script the page can run", (() => {
+  try {
+    new Function("return " + captureSessionScript({}));
+    return true;
+  } catch {
+    return false;
+  }
+})());
 
 console.log("\npassed " + passed + "  failed " + failed);
 process.exit(failed === 0 ? 0 : 1);

@@ -81,8 +81,11 @@ jobs:
             echo "         so these APKs carry no signature and cannot update a signed install"
           fi
           python3 scripts/build_android.py --all-variants
-          npm test
-          npm run build
+          # xvfb, because two of the suites launch the real client in a window and this
+          # runner has no display: without it they fail for the display, not the code
+          xvfb-run -a npm test
+          # no `npm run build` here: package.json has no such script (the addon bundle is
+          # assembled by the Android build itself), and a missing script failed this step
           python3 scripts/candidate_artifacts.py collect release/candidate
 
       - name: Upload candidate artifact
@@ -123,12 +126,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          # named in the notes, so it has to be in this step's environment too
+          ACCEPTANCE_URL: ${{ inputs.acceptance_url }}
         run: |
+          # the notes are written here rather than read from a file in the tree: the
+          # `docs/release-notes.md` this step used to name does not exist, so publishing
+          # failed after everything had already been built and verified
+          {
+            echo "## Hypercord $RELEASE_TAG (Android)"
+            echo
+            echo "Accepted candidate, built from source at \`$RELEASE_TAG\` and verified before publication."
+            echo
+            echo "|​ Part | Detail |"
+            echo "| --- | --- |"
+            echo "| Acceptance record | \`$ACCEPTANCE_URL\` |"
+            echo "| Artifacts | \`Hypercord-Manager.apk\`, \`Hypercord-Loader.apk\`, the release zip and \`SHA256SUMS\` |"
+            echo
+            echo "An unsigned APK is labelled unsigned in the run that produced it: look for \`signing: UNSIGNED\`."
+            echo "See \`docs/ANDROID-README.md\` for installing the Manager and the Loader."
+          } > "$RUNNER_TEMP/notes.md"
           gh release create "$RELEASE_TAG" \
             release/*.apk release/*.zip release/SHA256SUMS release/acceptance.json \
             --verify-tag \
             --title "Hypercord $RELEASE_TAG" \
-            --notes-file docs/release-notes.md
+            --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: Remove signing material
         if: always()

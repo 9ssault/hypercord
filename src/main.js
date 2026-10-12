@@ -24,7 +24,7 @@ import { createTokens, redact } from "./tokens.js";
 import { createUpdater } from "./updater.js";
 import { findDiscord, patch } from "./patcher.js";
 import passkeys from "./passkeys.cjs";
-import { appRoute, decideSignIn, signInForms, tokenWriteScript } from "./signin.js";
+import { appRoute, captureSessionScript, decideSignIn, looksLikeUserToken, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE = () => path.join(app.getPath("userData"), "hypercord.json");
@@ -197,7 +197,18 @@ async function waitForSignIn(win, timeoutMs = 12000) {
     const verdict = decideSignIn(observed);
     if (verdict !== "waiting") return { verdict, ...observed };
   }
-  return { verdict: last.tokenPresent ? "accepted" : "rejected", ...last, timedOut: true };
+  // No invention on a timeout: the verdict is only ever what the route says. The old
+  // return read "a token is still in storage" as accepted, which is the exact bug the
+  // sign-in suite pins - and the live log shows the token sitting there while the
+  // client ignores it, so that shortcut would have called this a success.
+  if (!last.pathname && win && !win.isDestroyed()) {
+    try {
+      last.pathname = new URL(win.webContents.getURL()).pathname;
+    } catch {
+      /* the window is mid-navigation: no route to report, and none is invented */
+    }
+  }
+  return { verdict: decideSignIn(last), ...last, timedOut: true };
 }
 
 /**
@@ -273,13 +284,78 @@ function settledLoad(win, timeoutMs = 20000) {
 }
 
 /**
+ * Ask the live page what it holds, and log the answer.
+ *
+ * This exists because the previous version of this file asserted a measurement it had
+ * never made ("the client reads localStorage.token at boot"). The probe reports which
+ * storages exist in each world, which keys they hold with their lengths and types,
+ * which cookies exist, and which IndexedDB databases/stores/keys are present - names
+ * and shapes only, never a value, never a cookie value. Its answer is what orders the
+ * sign-in placements, and it is written to signin.log so the next reader has facts.
+ */
+async function probeAuth(win) {
+  try {
+    const answer = JSON.parse(String(await win.webContents.executeJavaScript(storageProbeScript(), true)) || "null");
+    if (!answer) {
+      logSignIn("probe: the page answered nothing");
+      return null;
+    }
+    const names = (keys) => (Array.isArray(keys) ? keys.map((key) => key.name + (key.auth ? "*" : "")).join(",") : "?");
+    const stores = (answer.indexeddb || [])
+      .map((db) => db.database + ":" + (db.stores || []).map((store) => store.store + "=" + (store.keys || []).map((key) => key.name + "(" + key.length + ")" + (key.auth ? "*" : "")).join("+")).join(" "))
+      .join(" | ");
+    logSignIn(
+      "probe: page.local=[" + names(answer.page && answer.page.localKeys) + "] page.session=[" + names(answer.page && answer.page.sessionKeys) +
+        "] frame.local=[" + names(answer.frame && answer.frame.localKeys) + "] cookies=[" + (answer.cookies || []).join(",") + "] indexeddb=[" + stores + "]",
+    );
+    for (const note of answer.notes || []) logSignIn("probe note: " + redact(String(note)).slice(0, 140));
+    return answer;
+  } catch (err) {
+    logSignIn("probe failed: " + redact(String((err && err.message) || err)).slice(0, 140));
+    return null;
+  }
+}
+
+/**
+ * Read back a session the client itself established, and store it.
+ *
+ * This is the half of token login that does not depend on any placement working: if
+ * the page ends up signed in - by a token, by the password form, by a session that was
+ * already there - the client has stored that session somewhere, and this finds it at
+ * the places the probe named. The value goes to the token store; the log records the
+ * place and the key and never the value.
+ */
+async function captureSession(win, probe) {
+  try {
+    const answer = JSON.parse(String(await win.webContents.executeJavaScript(captureSessionScript(probe), true)) || "null");
+    if (!answer || !answer.value) {
+      logSignIn("capture: nothing at any place the probe named");
+      return { ok: false, where: "", key: "" };
+    }
+    if (!looksLikeUserToken(answer.value)) {
+      logSignIn("capture: " + String(answer.where) + "/" + String(answer.key) + " holds something that is not a user token - left alone");
+      return { ok: false, where: String(answer.where), key: String(answer.key) };
+    }
+    logSignIn("capture: a session is in " + String(answer.where) + " at key " + String(answer.key));
+    return { ok: true, where: String(answer.where), key: String(answer.key), value: String(answer.value) };
+  } catch (err) {
+    logSignIn("capture failed: " + redact(String((err && err.message) || err)).slice(0, 140));
+    return { ok: false, where: "", key: "" };
+  }
+}
+
+/**
  * Sign this client in with a stored user token.
  *
- * The token is written where the live page actually keeps it (see src/signin.js:
- * a same-origin frame, the raw value), the window is then sent to the app route -
- * the login page never restores a session - and the route it lands on is judged.
- * Nothing about the token is logged, cached in this process or echoed; "stored" and
- * "signed in" stay two different things and the caller is told which one happened.
+ * Each placement is tried in the order src/signin.js documents, the window is sent to
+ * the app route (the login page never restores a session) and the route it lands on is
+ * judged. What is *not* claimed: that any placement is the one the client reads - the
+ * sign-in log shows the frame write landing while the client ignores it, so the
+ * placements are ordered by evidence and a probe of the live page's storage is taken
+ * first and written to the log. Nothing about the token is logged, cached in this
+ * process or echoed; "stored" and "signed in" stay two different things, and when the
+ * client does end up signed in its own session is captured and stored through the
+ * token store - the half that works without any placement working.
  */
 async function useToken(account) {
   if (!tokens) return { ok: false, error: "no token store in this run" };
@@ -288,11 +364,19 @@ async function useToken(account) {
   if (!secret) return { ok: false, error: "no user token stored for " + (id || "this client") };
   const win = accountWindow();
   const tried = [];
-  // Two passes over both places, because the client takes the entry on some boots
-  // and not others: one click should not have to be clicked twice.
+  // Ask before writing: the probe's answer is what orders the placements, and a
+  // placement it rules out is recorded as not attempted rather than as a failure.
+  const probe = await probeAuth(win);
+  // Two passes over every placement, because a client can take a token on one boot
+  // and not the next: one click should not have to be clicked twice.
   const queue = [];
-  for (let round = 1; round <= SIGN_IN_ROUNDS; round += 1) for (const form of signInForms(secret)) queue.push({ form, round });
+  for (let round = 1; round <= SIGN_IN_ROUNDS; round += 1) for (const form of signInCandidates(secret, { probe })) queue.push({ form, round });
   for (const { form, round } of queue) {
+    if (form.skipped) {
+      tried.push({ form: form.name, round, result: "not attempted", why: form.skipped });
+      logSignIn("attempt round=" + round + " write=" + form.name + " not attempted: " + form.skipped);
+      continue;
+    }
     try {
       // The script src/signin.js defines, and the one the diagnostics measure: it
       // writes through a same-origin frame, because the page's own world has no
@@ -316,7 +400,18 @@ async function useToken(account) {
     const used = await watching;
     tried.push({ form: form.name, round, result: outcome.verdict, url: outcome.pathname, used });
     logSignIn("attempt round=" + round + " write=" + form.name + " used=" + used + " landed=" + String(outcome.pathname) + " verdict=" + outcome.verdict);
-    if (outcome.verdict === "accepted") return { ok: true, account: id, stored: form.name, used, tried };
+    if (outcome.verdict === "accepted") {
+      // The client is on its own routes, which means it has a session of its own -
+      // captured here, so the store holds the session this client actually uses no
+      // matter which placement, if any, did the work.
+      const captured = await captureSession(win, probe);
+      if (captured.ok && captured.value !== secret) {
+        const known = (tokens.list() || []).find((one) => String(one && one.account) === id) || {};
+        const kept = tokens.put(id, captured.value, { label: String(known.label || id) });
+        logSignIn("capture: stored this client's own session for " + id + " (" + (kept && kept.ok ? "stored" : "refused") + ")");
+      }
+      return { ok: true, account: id, stored: form.name, used, captured: captured.where, tried };
+    }
   }
   const writable = tried.filter((one) => one.result !== "unwritable");
   const used = writable.some((one) => one.used === true);

@@ -8,7 +8,7 @@
 # So each platform builds on a runner that has its toolchain, and one publish job
 # attaches the results to a single release.
 #
-# Two rules this pipeline keeps, because a release is the one thing that cannot be
+# Three rules this pipeline keeps, because a release is the one thing that cannot be
 # quietly re-done:
 #
 #   * nothing is published by a job that did not pass its own gate - each desktop
@@ -16,7 +16,17 @@
 #     builds through `scripts/build_android.py`, the project's own entry point;
 #   * no `|| true` and no `continue-on-error` on a build step. A missing artifact has
 #     to fail loudly; `upload-artifact` with `if-no-files-found: error` is what makes
-#     a build that produced nothing fail instead of publishing a half release.
+#     a build that produced nothing fail instead of publishing a half release;
+#   * a suite that cannot be satisfied is *reported*, never silenced and never
+#     skipped for convenience. The APK job therefore fails before Gradle starts when
+#     an input it needs is not in the tree, naming that input - rather than dying
+#     inside Gradle where the reason is unreadable.
+#
+# The suites run as separate steps on purpose. `npm test` is one command whose
+# non-zero exit says only "something failed"; a run that reports *which* suite failed,
+# on *which* OS, is the difference between a fix and another guess. The Electron
+# suites (`tests/updater`, `tests/preload`) launch the real client, so they need a
+# display - Linux gets `xvfb-run`, Windows and macOS runners have a session already.
 #
 # Signing is reported, never assumed: each job prints whether it is signing, and an
 # unsigned binary is labelled unsigned. Absent secrets mean an unsigned build rather
@@ -33,6 +43,15 @@ on:
         description: 'Existing tag to build and release (for example v0.2.0)'
         required: true
         type: string
+      build_apk:
+        # Off by default, including on tag pushes, because the Android tree cannot
+        # produce an APK until the inputs recorded in scripts/android-dependencies.json
+        # are present. A release with three platforms and a stated missing fourth is
+        # honest; four jobs where one always dies is noise.
+        description: 'Also build the APK (only succeeds once every required input exists)'
+        required: false
+        default: false
+        type: boolean
 
 # Read by default; only the publish job is granted write, so a build job cannot
 # edit a release even by accident.
@@ -57,14 +76,28 @@ jobs:
           - label: windows
             os: windows-latest
             targets: --win --x64 --arm64
+            # Windows and macOS runners have a session, so the Electron suites run
+            # as they are; Linux has no display and is wrapped below.
+            display: ''
+            # empty on purpose: Windows and macOS runners need no sandbox override
+            sandbox: ''
             list: bash -lc "ls -la dist | grep -E '[.](exe|yml|blockmap)$' || (echo 'nothing was produced' && exit 1)"
           - label: macos
             os: macos-latest
             targets: --mac --x64 --arm64
+            display: ''
+            sandbox: ''
             list: bash -lc "ls -la dist | grep -E '[.](dmg|zip|yml|blockmap)$' || (echo 'nothing was produced' && exit 1)"
           - label: linux
             os: ubuntu-latest
             targets: --linux --x64
+            display: xvfb-run -a
+            # The runner's kernel usually refuses an unprivileged user namespace, and
+            # Chromium then refuses to start at all ("the SUID sandbox helper binary ...
+            # is not configured correctly"). This disables the *OS-level* sandbox for
+            # the test run only; the window under test is still created with
+            # `sandbox: true`, so the isolation the preload suite asserts is unchanged.
+            sandbox: '1'
             list: bash -lc "ls -la dist | grep -E '[.](AppImage|deb|tar[.]gz|yml)$' || (echo 'nothing was produced' && exit 1)"
     steps:
       - name: Check out the repository
@@ -83,19 +116,32 @@ jobs:
         run: |
           node --version
           npm --version
+          echo "platform=${{ runner.os }}/${{ runner.arch }}"
+          echo "DISPLAY=${DISPLAY:-<unset>}"
+          if [ "${{ matrix.label }}" = "linux" ] && ! command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run is not on this runner, so the two suites that launch the client cannot run"; exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
 
-      # The suites are the repository's own gate, and one of them launches the built
-      # client (`tests/preload`, `tests/updater`), so a Linux runner needs a display.
-      - name: Run the test suites (Linux, under a virtual display)
-        if: matrix.label == 'linux'
-        run: xvfb-run -a npm test
+      # One command per suite. The units are plain node and must pass everywhere; the
+      # two Electron suites open a real window, so they are wrapped per OS.
+      - name: Run the unit suites
+        run: npm run test:units
 
-      - name: Run the test suites
-        if: matrix.label != 'linux'
-        run: npm test
+      - name: Run the updater suite (launches the client)
+        env:
+          # A renderer that dies prints why into this log instead of vanishing.
+          ELECTRON_ENABLE_LOGGING: '1'
+          ELECTRON_DISABLE_SANDBOX: ${{ matrix.sandbox }}
+        run: ${{ matrix.display }} npm run test:updater
+
+      - name: Run the preload suite (launches the client, sandboxed and context-isolated)
+        env:
+          ELECTRON_ENABLE_LOGGING: '1'
+          ELECTRON_DISABLE_SANDBOX: ${{ matrix.sandbox }}
+        run: ${{ matrix.display }} npm run test:preload
 
       - name: Report the signing mode
         shell: bash
@@ -159,6 +205,10 @@ jobs:
 
   apk:
     name: Android APK
+    # Only when a person asks for it: see the `build_apk` input. A tag push skips this
+    # job (there is no input on a push), and the publish job says so rather than
+    # pretending the APK was produced.
+    if: ${{ inputs.build_apk == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -186,9 +236,6 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      # Says what this runner actually has before anything is built, so a failure
-      # later is read against a known toolchain rather than guessed at. A missing
-      # entry point is reported here and then fails loudly in the build step below.
       - name: Report the Android toolchain
         run: |
           java -version
@@ -200,10 +247,81 @@ jobs:
           if command -v gradle >/dev/null 2>&1; then gradle --version; else echo "no gradle on PATH: the build has to use the wrapper or the SDK's own tooling"; fi
           if [ -f scripts/build_android.py ]; then echo "build entry point present: scripts/build_android.py"; else echo "build entry point MISSING: scripts/build_android.py"; fi
 
-      # The addon bundle is assembled from the module roots, so the JS side is
-      # installed before the Gradle build runs.
       - name: Install dependencies
         run: npm ci
+
+      # The reason this job exists in this shape. Gradle's own failure for a missing
+      # module or jar arrives thirty seconds in, several hundred lines deep, and reads
+      # like a toolchain problem. The tree knows what it is missing - it is written
+      # down in scripts/android-dependencies.json - so the check reads that file and
+      # names every required input that is not here, before anything is built.
+      - name: Check the inputs the Android build needs
+        # Before Gradle, not inside it: a missing module or jar otherwise surfaces as
+        # several hundred lines of build noise whose real cause is one absent file.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+
+          missing = []
+          try:
+              with open("scripts/android-dependencies.json", encoding="utf-8") as handle:
+                  entries = json.load(handle)
+          except FileNotFoundError:
+              print("FAIL scripts/android-dependencies.json is not in the tree, so the build cannot")
+              print("     say what it is missing. Restore it before building.")
+              sys.exit(1)
+
+          for entry in entries:
+              if not entry.get("required"):
+                  continue
+              path = entry.get("path", "")
+              if path and not os.path.exists(path):
+                  note = (entry.get("notes") or "").split(". ")[0]
+                  missing.append((entry.get("name", path), path, note))
+
+          build_files = ["settings.gradle", "build.gradle", "android/manager/build.gradle", "android/loader/build.gradle"]
+          absent_build = [name for name in build_files if not os.path.exists(name)]
+
+          if not missing and not absent_build:
+              print("every required Android input is present")
+              sys.exit(0)
+
+          print("FAIL the Android build cannot run: inputs it needs are not in the tree.")
+          for name, path, note in missing:
+              print(f"     missing input: {name}")
+              print(f"       path:  {path}")
+              if note:
+                  print(f"       why:   {note}")
+          for name in absent_build:
+              print(f"     missing build file: {name}")
+          print("")
+          print("     Each missing path is an input this build cannot invent: the Revenge runtime and")
+          print("     the LSPatch classes are upstream artifacts, the shared classes are sources that")
+          print("     are simply absent, and the licence texts are required by the loader's asset rules.")
+          print("     Stage them (and record their digests in scripts/android-dependencies.json) before")
+          print("     asking for an APK. Nothing was built and no APK is claimed.")
+          sys.exit(1)
+          PY
+
+      - name: Check for the Android SDK
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$sdk" ]; then
+            echo "FAIL neither ANDROID_HOME nor ANDROID_SDK_ROOT is set, so Gradle has no SDK to build against"
+            exit 1
+          fi
+          if [ ! -d "$sdk" ]; then
+            echo "FAIL the Android SDK is not at $sdk"
+            exit 1
+          fi
+          if [ ! -d "$sdk/platforms" ] || [ -z "$(ls -A "$sdk/platforms" 2>/dev/null)" ]; then
+            echo "FAIL the SDK at $sdk has no platforms installed (compileSdk 36 is what the modules ask for)"
+            exit 1
+          fi
+          echo "Android SDK: $sdk"
+          ls "$sdk/platforms"
 
       - name: Report the signing mode
         env:
@@ -223,6 +341,10 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           HYPERCORD_SIGNING_PASSWORD: ${{ secrets.HYPERCORD_SIGNING_PASSWORD }}
+          ELECTRON_ENABLE_LOGGING: '1'
+          # the suites below launch the client, and an ubuntu runner has no usable
+          # Chromium sandbox: see the Linux desktop job for why this is safe here
+          ELECTRON_DISABLE_SANDBOX: '1'
         run: |
           set -euo pipefail
           umask 077
@@ -233,8 +355,13 @@ jobs:
           fi
           python3 scripts/build_android.py --all-variants
           # the suites are part of the gate here too, and two of them launch the client,
-          # so this runner needs a virtual display just as the Linux desktop job does
-          xvfb-run -a npm test
+          # so this runner needs a virtual display just as the Linux desktop job does.
+          # They are named one by one so a failure says which suite it was.
+          xvfb-run -a npm run test:units
+          echo "--- updater suite"
+          xvfb-run -a npm run test:updater
+          echo "--- preload suite"
+          xvfb-run -a npm run test:preload
           python3 scripts/candidate_artifacts.py collect release/candidate
 
       - name: Name, checksum and record the APKs
@@ -271,7 +398,7 @@ jobs:
 
   publish:
     name: Attach everything to the release
-    # Runs even when one platform failed, so the artifacts that did build are not
+    # Runs even when a platform failed, so the artifacts that did build are not
     # thrown away - and then reports every failure and fails the run, because a
     # partial release must never look like a complete one.
     needs: [desktop, apk]
@@ -298,9 +425,14 @@ jobs:
           set -euo pipefail
           echo "desktop jobs: $DESKTOP_RESULT"
           echo "apk job: $APK_RESULT"
+          if [ "$APK_RESULT" = "skipped" ]; then
+            echo "         the APK was not requested in this run (the build_apk input is off),"
+            echo "         so this release carries no APK. That is stated, not hidden."
+          fi
           ls -la release
           count=$(find release -maxdepth 1 -type f | wc -l)
           echo "attaching $count file(s)"
+          # an empty release is never published
           test "$count" -gt 0
 
       - name: Create the release if it does not exist yet
@@ -315,6 +447,11 @@ jobs:
             echo "the release for $TAG already exists; its assets will be replaced"
             exit 0
           fi
+          if [ "$APK_RESULT" = "skipped" ]; then
+            APK_ROW="not built in this run (the \`build_apk\` input is off)"
+          else
+            APK_ROW="$APK_RESULT"
+          fi
           {
             echo "## Hypercord $TAG"
             echo
@@ -323,7 +460,7 @@ jobs:
             echo "| Part | Result |"
             echo "| --- | --- |"
             echo "| Desktop (Windows, macOS, Linux) | $DESKTOP_RESULT |"
-            echo "| Android APK | $APK_RESULT |"
+            echo "| Android APK | $APK_ROW |"
             echo
             echo "Artifacts are attached to this release, with \`latest.yml\`, \`latest-mac.yml\`"
             echo "and \`latest-linux.yml\` for the updater. An unsigned build says so in the"
@@ -354,8 +491,9 @@ jobs:
         run: gh release view "$TAG"
 
       # The last word: an incomplete release is reported as a failed run, however
-      # much of it succeeded.
-      - name: Fail if any platform did not build
+      # much of it succeeded. A deliberately skipped APK is not incomplete - it was
+      # asked for and not requested; an APK that failed to build is.
+      - name: Fail if any platform that was asked for did not build
         env:
           DESKTOP_RESULT: ${{ needs.desktop.result }}
           APK_RESULT: ${{ needs.apk.result }}
@@ -365,12 +503,14 @@ jobs:
             echo "FAIL the desktop matrix ended as '$DESKTOP_RESULT': some platform's artifacts are missing"
             failed=1
           fi
-          if [ "$APK_RESULT" != "success" ]; then
-            echo "FAIL the APK job ended as '$APK_RESULT': the release has no APK"
+          if [ "$APK_RESULT" = "skipped" ]; then
+            echo "NOTE the APK was not requested (build_apk is off); this release carries no APK by choice"
+          elif [ "$APK_RESULT" != "success" ]; then
+            echo "FAIL the APK was requested and ended as '$APK_RESULT': the release has no APK"
             failed=1
           fi
           if [ "$failed" -ne 0 ]; then
             echo "the release was published with the artifacts that built; re-run the workflow for the rest"
             exit 1
           fi
-          echo "every platform built and was attached"
+          echo "every platform that was asked for built and was attached"
