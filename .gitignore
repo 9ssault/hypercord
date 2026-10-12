@@ -14,3 +14,8 @@ Thumbs.db
 # Python bytecode from the build scripts
 __pycache__/
 *.pyc
+
+# Android build inputs, staged by scripts/fetch_android_deps.py (never committed)
+android/deps/
+android/loader/src/main/assets/revenge.js
+android/loader/src/main/assets/assault-runtime.js
