@@ -14,12 +14,16 @@ export default {
     // overlay that starts open sits on top of a column Discord drew itself (the
     // server tray). The manager is reached from Discord's own settings; the rail is
     // the shortcut, not the door.
-    { key: "open", type: "boolean", default: false, description: "start with the rail open (off: the manager is in Discord's settings)" },
+    // The key is deliberately NEW (`openOnLaunch`, not `open`): every profile that
+    // ran an earlier build has `open: true` written into its plugin settings, and
+    // reading that key again would open the overlay over Discord's server tray no
+    // matter what the default says. A new key starts from its default once.
+    { key: "openOnLaunch", type: "boolean", default: false, description: "start with the rail open (off: the manager is in Discord's settings)" },
     { key: "side", type: "string", default: "right", description: "which edge the rail sits on" },
   ],
 
   start(ctx) {
-    let open = ctx.setting("open") === true;
+    let open = ctx.setting("openOnLaunch") === true;
     let side = ctx.setting("side") === "left" ? "left" : "right";
 
     function push() {
@@ -33,7 +37,7 @@ export default {
       side: () => side,
       toggle(next) {
         open = next === null || next === undefined ? !open : Boolean(next);
-        ctx.setSetting("open", open);
+        ctx.setSetting("openOnLaunch", open);
         return push();
       },
       setSide(next) {
