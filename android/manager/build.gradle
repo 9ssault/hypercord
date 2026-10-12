@@ -33,12 +33,23 @@ dependencies {
 }
 // AGP's generated-source API wires every asset consumer (including lint).
 abstract class BundleLoader extends DefaultTask {
- @InputFile abstract RegularFileProperty getLoaderApk()
+ // A directory, not a file path: AGP names a release APK `loader-release.apk` when the
+ // build signed it and `loader-release-unsigned.apk` when it did not, and the release job
+ // builds unsigned on purpose (HYPERCORD_ALLOW_UNSIGNED). Naming one of those two in the
+ // build file is how this task failed - "specifies file ... which doesn't exist" - with
+ // the loader already built next to it. Whatever it is called, it is the only APK in the
+ // variant's output directory, which is also what scripts/build_android.py asks for.
+ @InputDirectory abstract DirectoryProperty getLoaderApkDirectory()
  @OutputDirectory abstract DirectoryProperty getOutputDirectory()
  @TaskAction void bundle() {
+  def directory = loaderApkDirectory.get().asFile
+  def apks = directory.isDirectory() ? (directory.listFiles() ?: []).findAll { it.isFile() && it.name.endsWith('.apk') } : []
+  if (apks.size() != 1) {
+   throw new GradleException("expected exactly one loader APK in ${directory}, found ${apks.size()}" + (apks ? ": " + apks.collect { it.name }.join(', ') : '') + ". The loader module has to be assembled into this variant's output directory first.")
+  }
   project.copy {
-   from(loaderApk)
-   into(outputDirectory)
+   from(apks[0])
+   into(outputDirectory.get().asFile)
    rename { 'loader.apk' }
   }
  }
@@ -47,7 +58,7 @@ androidComponents {
  onVariants(selector().all()) { variant ->
   def bundleLoader = tasks.register("bundle${variant.name.capitalize()}Loader", BundleLoader) {
    dependsOn ":android:loader:assemble${variant.name.capitalize()}"
-   loaderApk = project(':android:loader').layout.buildDirectory.file("outputs/apk/${variant.name}/loader-${variant.name}.apk")
+   loaderApkDirectory = project(':android:loader').layout.buildDirectory.dir("outputs/apk/${variant.name}")
    outputDirectory = layout.buildDirectory.dir("generated/loaderAssets/${variant.name}")
   }
   variant.sources.assets.addGeneratedSourceDirectory(bundleLoader) { it.outputDirectory }
