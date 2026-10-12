@@ -50,12 +50,29 @@ def project_version() -> str:
     return str(package.get("version") or "unknown").strip() or "unknown"
 
 
+def accepted_artifacts(record) -> list:
+    """What the record says was accepted, wherever its producer put it.
+
+    A record carries its artifacts at the top level: that is the build driver's own
+    record and the evidence record written by `candidate_artifacts.py evidence`. The
+    evidence path also keeps them under `candidate`, describing where they came from,
+    so a record is read from either place rather than assuming one of them.
+    """
+    if not isinstance(record, dict):
+        return []
+    direct = record.get("artifacts")
+    if isinstance(direct, list) and direct:
+        return direct
+    nested = (record.get("candidate") or {}).get("artifacts")
+    return nested if isinstance(nested, list) else []
+
+
 def acceptance_failures(record) -> list:
     """Why this record is not one to publish from, as text."""
     problems = []
     if not isinstance(record, dict):
         return ["the acceptance record is not a JSON object"]
-    if not record.get("artifacts"):
+    if not accepted_artifacts(record):
         problems.append("the record lists no artifacts")
     failed = [item for item in record.get("checks", []) if not item.get("ok")]
     for item in failed:
@@ -118,7 +135,7 @@ def main(argv=None) -> int:
     }
 
     contents = []
-    for artifact in record.get("artifacts", []):
+    for artifact in accepted_artifacts(record):
         module = str(artifact.get("module") or "")
         published = PUBLISHED_NAMES.get(module, f"Hypercord-{module}.apk")
         path = candidate / str(artifact.get("file") or "")

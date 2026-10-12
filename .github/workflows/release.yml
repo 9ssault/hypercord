@@ -648,6 +648,20 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/manager.p12"
 
+      # The record is staged at the root of the workspace before it travels, so this
+      # artifact's files share one directory: an artifact whose files sit in two
+      # different directories is downloaded back into those directories, and a
+      # `release/` directory among the publish job's downloads is a directory in a glob
+      # that is supposed to be a list of files.
+      - name: Stage the log and the record
+        if: always()
+        run: |
+          if [ -f release/acceptance.json ]; then
+            cp release/acceptance.json acceptance.json
+          else
+            echo "no acceptance record was written in this run"
+          fi
+
       - name: Keep the Gradle log
         if: always()
         uses: actions/upload-artifact@v4
@@ -655,7 +669,7 @@ jobs:
           name: gradle-log
           path: |
             gradle-build.log
-            release/acceptance.json
+            acceptance.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -783,9 +797,26 @@ jobs:
           TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
+          # Files at the top of the download, never `release/*`: a directory that came
+          # back with the artifacts is not an asset, and handing one to `gh release
+          # upload` fails the whole step (`read release/release: is a directory`) after
+          # the files it had already sent - so a run that attached everything reported
+          # itself as having attached nothing.
+          shopt -s nullglob
+          files=( release/* )
+          upload=()
+          for candidate in "${files[@]}"; do
+            if [ -f "$candidate" ]; then upload+=("$candidate"); fi
+          done
+          if [ ${#upload[@]} -eq 0 ]; then
+            echo "FAIL nothing was downloaded to attach for $TAG"
+            exit 1
+          fi
+          echo "attaching ${#upload[@]} file(s) to $TAG:"
+          printf '  %s\n' "${upload[@]}"
           # --clobber: a re-run replaces the assets of that tag instead of failing on
           # the ones the previous run left behind
-          gh release upload "$TAG" release/* --clobber
+          gh release upload "$TAG" "${upload[@]}" --clobber
 
       - name: List the release
         env:

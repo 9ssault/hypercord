@@ -14,7 +14,9 @@ it is collected and the pin travels with it:
   evidence  - write the acceptance record that goes on the release, describing the
               bytes that were accepted and the evidence they were accepted against.
               It never claims to have built anything: if the build-time record is not
-              part of the candidate, that absence is what it records.
+              part of the candidate, that absence is what it records. The accepted
+              artifacts are listed at the record's top level, which is where the build
+              driver and the packaging step both read them from.
 
   python3 scripts/candidate_artifacts.py collect release/candidate
   python3 scripts/candidate_artifacts.py restore release/candidate
@@ -220,6 +222,13 @@ def run_evidence(args) -> int:
         "generated_at": now(),
         "commit": git_commit(),
         "accepted_from": acceptance_url or "not provided",
+        # The artifacts this record accepts, in the shape the build driver writes
+        # (see build_android.py) and the shape the packaging step reads: the evidence
+        # path replaces the build's own record, so if it did not list the artifacts
+        # at the top level there would be nothing for `pack_release_artifacts.py` to
+        # publish. The `candidate` block below is where they came from, not instead
+        # of them.
+        "artifacts": [],
         "candidate": {
             "directory": str(directory.relative_to(ROOT)).replace(os.sep, "/")
             if directory.is_relative_to(ROOT)
@@ -249,15 +258,18 @@ def run_evidence(args) -> int:
             problems = problems_for(path, build)
             if problems:
                 problem = "; ".join(problems)
-        record["candidate"]["artifacts"].append(
-            {
-                "module": entry.get("module"),
-                "file": entry.get("file"),
-                "bytes": entry.get("bytes"),
-                "sha256": entry.get("sha256"),
-                "verified": problem is None,
-            }
-        )
+        accepted = {
+            "module": entry.get("module"),
+            "file": entry.get("file"),
+            "bytes": entry.get("bytes"),
+            "sha256": entry.get("sha256"),
+            "verified": problem is None,
+        }
+        # One list of accepted artifacts, reachable from both keys: a consumer that
+        # reads the record at its top level and one that reads the candidate block
+        # describe the same bytes.
+        record["artifacts"].append(accepted)
+        record["candidate"]["artifacts"].append(accepted)
         if problem:
             failures.append(f"{entry.get('module')}: {problem}")
 

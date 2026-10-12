@@ -221,7 +221,17 @@ than letting an unsigned artifact pass as a signed one.
 The release workflow copies `release/candidate/manager-release.apk` to
 `release/Hypercord-Manager.apk`, the loader likewise, writes `SHA256SUMS` over what
 was actually produced (no APK at all is a hard failure), and attaches them with
-`release/acceptance.json`. That job is **off by default** - `workflow_dispatch`
+`release/acceptance.json`.
+
+That record is the one `candidate_artifacts.py evidence` writes, and it lists the
+accepted artifacts and their digests at the record's **top level** - the same place
+the build driver's own record puts them, and the place `pack_release_artifacts.py`
+reads them from. A record that only described them inside its `candidate` block was
+one the packaging step could not pack from: it refused with "the record lists no
+artifacts" and the APK job ended with no APK attached. Keep the top-level list, and
+keep the two shapes in step.
+
+That job is **off by default** - `workflow_dispatch`
 takes `build_apk`, and a tag push skips it - because it cannot succeed while the
 inputs below are absent, and the publish job states the skip instead of pretending
 an APK was built.
