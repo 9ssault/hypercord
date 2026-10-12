@@ -1,220 +1,98 @@
-// language: Java, file: android/shared/src/main/java/app/assault/shared/RichPresence.java
-//
-// The custom presence, as data the client can apply and as a screen the manager can show.
-//
-// The keys live here and nowhere else, because the thing that consumes them is the
-// loader's `rich-presence.js` asset: it reads these names out of the config the loader
-// injects. A rename on one side would be invisible - the dialog would still save and the
-// presence would simply never appear - so both halves point at these constants.
-//
-// What this can honestly promise: it can set one activity and a status on the client's
-// next existing gateway presence update. It does not open a second connection, does not
-// change identify credentials and does not spoof another platform. Whether the activity
-// renders at all depends on the installed Discord build, which is why the preview says so
-// rather than implying it will show.
 package app.assault.shared;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.SharedPreferences;
-import android.text.Editable;
-import android.text.InputType;
-import android.text.TextWatcher;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import org.json.JSONException;
+import android.text.InputFilter;
+import android.widget.*;
+import java.net.URI;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.json.JSONObject;
 
+/** Local rich-presence editor. Contains display settings only, never credentials. */
 public final class RichPresence {
-    public static final String DETAILS = "presenceDetails", STATE = "presenceState";
-    public static final String APPLICATION = "presenceApplicationId", TYPE = "presenceType";
-    public static final String LARGE_IMAGE = "presenceLargeImage", SMALL_IMAGE = "presenceSmallImage";
-    public static final String LARGE_TEXT = "presenceLargeText", SMALL_TEXT = "presenceSmallText";
-    public static final String BUTTON1_LABEL = "presenceButton1Label", BUTTON1_URL = "presenceButton1Url";
-    public static final String BUTTON2_LABEL = "presenceButton2Label", BUTTON2_URL = "presenceButton2Url";
-    public static final String STARTED_AT = "presenceStartedAt";
-    public static final String PARTY_SIZE = "presencePartySize", PARTY_MAX = "presencePartyMax";
-    public static final String STATUS = "presenceStatus";
-
-    /** Activity types, in the order Discord's own activity object numbers them. */
-    public static final String[] TYPES = {"Playing", "Listening", "Watching", "Competing"};
-    /** Presence statuses; invisible is a real choice here, not an absence of one. */
-    public static final String[] STATUSES = {"online", "idle", "dnd", "invisible"};
-
-    private RichPresence() {
-        // static only
+    private static final String[] TEXT_KEYS={"applicationId","name","details","state","detailsUrl","stateUrl","streamUrl","largeImage","largeText","largeUrl","smallImage","smallText","smallUrl","button1Label","button1Url","button2Label","button2Url","startTime","endTime"};
+    private static final String[] MODES={"none","elapsed","today","custom"};
+    private static final int[] TYPES={0,1,2,3,5};
+    public static JSONObject read(SharedPreferences prefs) {
+        try{return validate(new JSONObject(prefs.getString("richPresence","{}")));}
+        catch(Exception invalid){return new JSONObject();}
     }
-
-    /** The presence half of a profile, added to the object {@link AccountSettings#read} builds. */
-    public static void read(SharedPreferences preferences, JSONObject profile) throws JSONException {
-        for (String key : new String[]{DETAILS, STATE, APPLICATION, LARGE_IMAGE, SMALL_IMAGE, LARGE_TEXT, SMALL_TEXT,
-            BUTTON1_LABEL, BUTTON1_URL, BUTTON2_LABEL, BUTTON2_URL}) {
-            profile.put(key, preferences.getString(key, ""));
+    private static int limit(String key){return key.equals("applicationId")?20:key.endsWith("Label")?32:key.endsWith("Time")?16:(key.endsWith("Url")||key.endsWith("Image"))?512:128;}
+    private static boolean https(String value){
+        try{URI uri=new URI(value);return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost()!=null && uri.getUserInfo()==null && !value.matches(".*[\\s<>\"'].*");}
+        catch(Exception error){return false;}
+    }
+    public static JSONObject validate(JSONObject raw)throws Exception {
+        JSONObject checked=new JSONObject().put("enabled",raw.optBoolean("enabled",false));
+        for(String key:TEXT_KEYS){String value=raw.optString(key,"").trim();if(value.length()>limit(key))throw new IllegalArgumentException(key+" is too long");checked.put(key,value);}
+        int type=raw.optInt("type",0);if(type!=0 && type!=1 && type!=2 && type!=3 && type!=5)throw new IllegalArgumentException("Choose a supported activity type");checked.put("type",type);
+        String mode=raw.optString("timestampMode","none");if(!java.util.Arrays.asList(MODES).contains(mode))throw new IllegalArgumentException("Unknown timestamp mode");checked.put("timestampMode",mode);
+        String appId=checked.getString("applicationId");if(!appId.isEmpty() && !appId.matches("[0-9]{1,20}"))throw new IllegalArgumentException("Application ID must be numeric");
+        if(checked.getBoolean("enabled") && checked.getString("name").isEmpty())throw new IllegalArgumentException("Enter an activity name");
+        for(String key:TEXT_KEYS)if(key.endsWith("Url") && !checked.getString(key).isEmpty() && !https(checked.getString(key)))throw new IllegalArgumentException(key+" needs a complete HTTPS URL without credentials");
+        String stream=checked.getString("streamUrl");
+        if(checked.getBoolean("enabled") && type==1 && !stream.matches("(?i)https://(www\\.)?(twitch\\.tv|youtube\\.com)/.+"))throw new IllegalArgumentException("Streaming needs a Twitch or YouTube HTTPS URL");
+        for(String size:new String[]{"large","small"}){
+            String image=checked.getString(size+"Image");
+            if(!image.isEmpty() && !image.matches("[A-Za-z0-9_.-]{1,128}") && !https(image))throw new IllegalArgumentException("Use an image asset ID, key or HTTPS URL");
+            if(!image.isEmpty() && !image.matches("[0-9]{1,20}") && appId.isEmpty())throw new IllegalArgumentException("An application ID is required to resolve image keys or URLs");
         }
-        profile.put(TYPE, preferences.getString(TYPE, TYPES[0]))
-               .put(STATUS, preferences.getString(STATUS, STATUSES[0]))
-               .put(STARTED_AT, preferences.getLong(STARTED_AT, 0L))
-               .put(PARTY_SIZE, preferences.getInt(PARTY_SIZE, 0))
-               .put(PARTY_MAX, preferences.getInt(PARTY_MAX, 0));
+        for(int i=1;i<=2;i++)if(checked.getString("button"+i+"Label").isEmpty()!=checked.getString("button"+i+"Url").isEmpty())throw new IllegalArgumentException("Each button needs both a label and HTTPS URL");
+        long start=timestamp(checked.getString("startTime")),end=timestamp(checked.getString("endTime"));
+        if(mode.equals("custom") && start>0 && end>0 && end<=start)throw new IllegalArgumentException("End time must be after start time");
+        int current=raw.optInt("partySize",0),max=raw.optInt("partyMax",0);
+        if(current<0 || max<0 || max>9999 || current>max || ((current==0)!=(max==0)))throw new IllegalArgumentException("Party needs 1 ≤ size ≤ maximum ≤ 9999, or both zero");
+        return checked.put("partySize",current).put("partyMax",max);
     }
-
-    /**
-     * The builder. Values are checked before they are saved rather than after they fail:
-     * an application id that is not numeric, half a button, a party larger than its
-     * maximum, an unknown type or status, and a link that is not a link are all refused
-     * with the reason in the preview - because a presence Discord ignored cannot be
-     * reported back by the client.
-     */
-    public static void show(Activity activity, SharedPreferences preferences, Runnable onSaved) {
-        LinearLayout form = new LinearLayout(activity);
-        form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(32, 16, 32, 16);
-        ScrollView scroll = new ScrollView(activity);
-        scroll.addView(form);
-
-        EditText details = field(activity, form, "Details (line 1)", preferences.getString(DETAILS, ""), false);
-        EditText state = field(activity, form, "State (line 2)", preferences.getString(STATE, ""), false);
-        EditText application = field(activity, form, "Application id (digits; blank clears the activity)", preferences.getString(APPLICATION, ""), true);
-        EditText type = field(activity, form, "Type: Playing, Listening, Watching, Competing", preferences.getString(TYPE, TYPES[0]), false);
-        EditText largeImage = field(activity, form, "Large image key or link", preferences.getString(LARGE_IMAGE, ""), false);
-        EditText smallImage = field(activity, form, "Small image key or link", preferences.getString(SMALL_IMAGE, ""), false);
-        EditText largeText = field(activity, form, "Large image text", preferences.getString(LARGE_TEXT, ""), false);
-        EditText smallText = field(activity, form, "Small image text", preferences.getString(SMALL_TEXT, ""), false);
-        EditText button1Label = field(activity, form, "Button 1 label", preferences.getString(BUTTON1_LABEL, ""), false);
-        EditText button1Url = field(activity, form, "Button 1 link", preferences.getString(BUTTON1_URL, ""), false);
-        EditText button2Label = field(activity, form, "Button 2 label", preferences.getString(BUTTON2_LABEL, ""), false);
-        EditText button2Url = field(activity, form, "Button 2 link", preferences.getString(BUTTON2_URL, ""), false);
-        EditText startedAt = field(activity, form, "Started at (epoch millis; blank clears)", count(preferences.getLong(STARTED_AT, 0L)), true);
-        EditText partySize = field(activity, form, "Party size", count(preferences.getInt(PARTY_SIZE, 0)), true);
-        EditText partyMax = field(activity, form, "Party maximum", count(preferences.getInt(PARTY_MAX, 0)), true);
-        EditText status = field(activity, form, "Status: online, idle, dnd, invisible", preferences.getString(STATUS, STATUSES[0]), false);
-
-        TextView preview = new TextView(activity);
-        preview.setPadding(0, 16, 0, 0);
-        form.addView(preview);
-        Runnable update = () -> preview.setText(summary(value(details), value(state), value(application),
-            canonical(value(type), TYPES), value(button1Label), value(button1Url), value(button2Label), value(button2Url),
-            canonical(value(status), STATUSES)));
-        for (EditText each : new EditText[]{details, state, application, type, button1Label, button1Url, button2Label, button2Url, status}) {
-            each.addTextChangedListener(new Rewrite(update));
-        }
-        update.run();
-
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-            .setTitle("Rich presence builder")
-            .setView(scroll)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Save", null)
-            .create();
-        dialog.setOnShowListener(shown -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(clicked -> {
-            String detailsValue = value(details), stateValue = value(state), applicationValue = value(application);
-            String typeValue = canonical(value(type), TYPES), statusValue = canonical(value(status), STATUSES);
-            String firstLabel = value(button1Label), firstUrl = value(button1Url);
-            String secondLabel = value(button2Label), secondUrl = value(button2Url);
-            Long startedValue = number(value(startedAt)), sizeValue = number(value(partySize)), maxValue = number(value(partyMax));
-            String problem =
-                applicationValue != null && !applicationValue.matches("\\d{5,25}") ? "An application id is digits only (5 to 25 of them), or blank to clear the activity." :
-                typeValue == null ? "Type must be Playing, Listening, Watching or Competing." :
-                statusValue == null ? "Status must be online, idle, dnd or invisible." :
-                startedValue == null ? "Started at must be epoch milliseconds, or blank." :
-                sizeValue == null || maxValue == null ? "Party size and maximum must be whole numbers, or blank." :
-                maxValue < sizeValue ? "The party maximum cannot be smaller than the party size." :
-                (firstLabel.isEmpty() != firstUrl.isEmpty()) ? "Button 1 needs both a label and a link, or neither." :
-                (secondLabel.isEmpty() != secondUrl.isEmpty()) ? "Button 2 needs both a label and a link, or neither." :
-                !isLink(firstUrl) || !isLink(secondUrl) ? "A button link must start with http:// or https://." : null;
-            if (problem != null) {
-                preview.setText(problem);
-                return;
-            }
-            preferences.edit()
-                .putString(DETAILS, detailsValue).putString(STATE, stateValue)
-                .putString(APPLICATION, applicationValue).putString(TYPE, typeValue)
-                .putString(LARGE_IMAGE, value(largeImage)).putString(SMALL_IMAGE, value(smallImage))
-                .putString(LARGE_TEXT, value(largeText)).putString(SMALL_TEXT, value(smallText))
-                .putString(BUTTON1_LABEL, firstLabel).putString(BUTTON1_URL, firstUrl)
-                .putString(BUTTON2_LABEL, secondLabel).putString(BUTTON2_URL, secondUrl)
-                .putString(STATUS, statusValue)
-                .putLong(STARTED_AT, startedValue).putInt(PARTY_SIZE, sizeValue.intValue()).putInt(PARTY_MAX, maxValue.intValue())
-                .apply();
-            dialog.dismiss();
-            if (onSaved != null) onSaved.run();
-        }));
-        dialog.show();
+    private static long timestamp(String value){
+        if(value.isEmpty())return 0;
+        try{long parsed=Long.parseLong(value);if(parsed>0 && parsed<=8640000000000000L)return parsed;}catch(NumberFormatException ignored){}
+        throw new IllegalArgumentException("Timestamps must be positive Unix milliseconds");
     }
-
-    /**
-     * What the profile will look like, and the one thing a person cannot see from the form:
-     * an activity with no application id has nothing to attach itself to, so no other
-     * device will show it.
-     */
-    private static String summary(String details, String state, String application, String type,
-            String firstLabel, String firstUrl, String secondLabel, String secondUrl, String status) {
-        // `type` is null while a half-typed or unknown type sits in the field, and the
-        // preview must still render: the save path is where that becomes a refusal.
-        String line = (type == null ? "Activity" : type) + (details.isEmpty() ? "" : ": " + details) + (state.isEmpty() ? "" : " - " + state);
-        String buttons = (firstLabel.isEmpty() ? "" : "  [" + firstLabel + "]") + (secondLabel.isEmpty() ? "" : "  [" + secondLabel + "]");
-        String where = status == null ? "" : "  status " + status;
-        return application.isEmpty()
-            ? "Preview: " + line + buttons + where + "\nNo application id: the activity will not appear on other devices until one is set."
-            : "Preview: " + line + buttons + where + "\nApplication " + application + "; shown on other devices after the next presence update.";
+    public static void show(Activity activity,SharedPreferences prefs,Runnable saved){
+        JSONObject initial=read(prefs);Map<String,EditText> fields=new LinkedHashMap<>();
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        int pad=Math.round(16*activity.getResources().getDisplayMetrics().density);panel.setPadding(pad,pad,pad,pad);
+        note(activity,panel,"Build your activity card. This uses the existing client connection. Enable activity sharing in Discord. Images, links and buttons depend on Discord support; inspect your profile from another account. Saving an enabled card selects the presence profile. Restart the client to apply.");
+        Switch enabled=new Switch(activity);enabled.setText("Enable rich presence");enabled.setChecked(initial.optBoolean("enabled",false));panel.addView(enabled);
+        Spinner type=spinner(activity,panel,"Activity type",new String[]{"Playing","Streaming","Listening","Watching","Competing"},java.util.Arrays.binarySearch(TYPES,initial.optInt("type",0)));
+        String[][] labels={{"applicationId","Discord application ID"},{"name","Activity name"},{"details","Details"},{"state","State"},{"detailsUrl","Details link (HTTPS)"},{"stateUrl","State link (HTTPS)"},{"streamUrl","Streaming URL (Twitch / YouTube)"},{"largeImage","Large image asset ID, key or HTTPS URL"},{"largeText","Large image hover text"},{"largeUrl","Large image click URL"},{"smallImage","Small image asset ID, key or HTTPS URL"},{"smallText","Small image hover text"},{"smallUrl","Small image click URL"},{"button1Label","Button 1 label"},{"button1Url","Button 1 URL"},{"button2Label","Button 2 label"},{"button2Url","Button 2 URL"}};
+        for(String[] row:labels)fields.put(row[0],input(activity,panel,row[1],initial.optString(row[0],""),limit(row[0])));
+        Spinner time=spinner(activity,panel,"Timestamp mode",new String[]{"No timestamp","Elapsed since client start","Elapsed since local midnight","Custom Unix milliseconds"},java.util.Arrays.asList(MODES).indexOf(initial.optString("timestampMode","none")));
+        fields.put("startTime",input(activity,panel,"Custom start (Unix milliseconds)",initial.optString("startTime",""),16));
+        fields.put("endTime",input(activity,panel,"Custom end (Unix milliseconds)",initial.optString("endTime",""),16));
+        Button now=new Button(activity);now.setText("Use current time as start");panel.addView(now);now.setOnClickListener(v->{fields.get("startTime").setText(String.valueOf(System.currentTimeMillis()));time.setSelection(3);});
+        EditText party=input(activity,panel,"Party size (0 disables)",String.valueOf(initial.optInt("partySize",0)),4);
+        EditText maximum=input(activity,panel,"Party maximum (0 disables)",String.valueOf(initial.optInt("partyMax",0)),4);
+        party.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);maximum.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        note(activity,panel,"Image keys/URLs need an application ID and a compatible client asset resolver. Numeric asset IDs can be used directly. A preview describes configured data; it does not prove remote visibility.");
+        ScrollView scroll=new ScrollView(activity);scroll.addView(panel);
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Hypercord rich presence").setView(scroll).setNegativeButton("Cancel",null).setNeutralButton("Preview",null).setPositiveButton("Save",null).create();
+        interface ReadForm{JSONObject get()throws Exception;}
+        ReadForm read=()->{JSONObject raw=new JSONObject().put("enabled",enabled.isChecked()).put("type",TYPES[type.getSelectedItemPosition()]).put("timestampMode",MODES[time.getSelectedItemPosition()]).put("partySize",party.getText().toString().trim().isEmpty()?0:Integer.parseInt(party.getText().toString().trim())).put("partyMax",maximum.getText().toString().trim().isEmpty()?0:Integer.parseInt(maximum.getText().toString().trim()));for(var field:fields.entrySet())raw.put(field.getKey(),field.getValue().getText().toString());return validate(raw);};
+        dialog.setOnShowListener(ignored->{
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{JSONObject checked=read.get();var editor=prefs.edit().putString("richPresence",checked.toString());if(checked.getBoolean("enabled"))editor.putString("accountProfile","presence");editor.apply();dialog.dismiss();if(saved!=null)saved.run();}catch(Exception error){Toast.makeText(activity,error.getMessage(),Toast.LENGTH_LONG).show();}});
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->{try{JSONObject value=read.get();new AlertDialog.Builder(activity).setTitle(value.optString("name","Activity preview")).setView(preview(activity,value)).setPositiveButton("Done",null).setNeutralButton("Copy configuration",(d,w)->{try{activity.getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("Hypercord rich presence",value.toString()));Toast.makeText(activity,"Display configuration copied",Toast.LENGTH_SHORT).show();}catch(RuntimeException error){Toast.makeText(activity,"Clipboard unavailable",Toast.LENGTH_SHORT).show();}}).show();}catch(Exception error){Toast.makeText(activity,error.getMessage(),Toast.LENGTH_LONG).show();}});
+        });dialog.show();
     }
-
-    private static boolean isLink(String value) {
-        return value.isEmpty() || value.startsWith("http://") || value.startsWith("https://");
+    private static android.view.View preview(Activity activity,JSONObject value){
+        LinearLayout card=new LinearLayout(activity);card.setOrientation(LinearLayout.VERTICAL);
+        int pad=Math.round(20*activity.getResources().getDisplayMetrics().density);card.setPadding(pad,pad,pad,pad);
+        String[] names={"Playing","Streaming","Listening","Watching","Competing"};int type=java.util.Arrays.binarySearch(TYPES,value.optInt("type",0));
+        note(activity,card,names[Math.max(0,type)]+" · "+value.optString("name",""));
+        for(String key:new String[]{"details","state"})if(!value.optString(key,"").isEmpty())note(activity,card,value.optString(key));
+        for(String size:new String[]{"large","small"})if(!value.optString(size+"Image","").isEmpty())note(activity,card,size+" artwork: "+value.optString(size+"Image")+"\n"+value.optString(size+"Text",""));
+        if(value.optInt("partyMax",0)>0)note(activity,card,"Party: "+value.optInt("partySize")+" / "+value.optInt("partyMax"));
+        note(activity,card,"Timestamp: "+value.optString("timestampMode","none"));
+        for(int i=1;i<=2;i++)if(!value.optString("button"+i+"Label","").isEmpty())note(activity,card,"["+value.optString("button"+i+"Label")+"]\n"+value.optString("button"+i+"Url"));
+        note(activity,card,"Local configuration preview. Artwork is resolved in the client; remote rendering may differ.");
+        ScrollView scroll=new ScrollView(activity);scroll.addView(card);return scroll;
     }
-
-    /** The stored spelling of a value in a fixed list, or null when it is not in it. */
-    private static String canonical(String value, String[] allowed) {
-        for (String each : allowed) if (each.equalsIgnoreCase(value)) return each;
-        return null;
-    }
-
-    private static String value(EditText field) {
-        return field.getText().toString().trim();
-    }
-
-    private static Long number(String value) {
-        if (value.isEmpty()) return 0L;
-        try {
-            long parsed = Long.parseLong(value);
-            return parsed < 0 ? null : parsed;
-        } catch (NumberFormatException notANumber) {
-            return null;
-        }
-    }
-
-    private static String count(long value) {
-        return value > 0 ? Long.toString(value) : "";
-    }
-
-    private static EditText field(Activity activity, LinearLayout form, String label, String value, boolean numeric) {
-        TextView caption = new TextView(activity);
-        caption.setText(label);
-        form.addView(caption);
-        EditText input = new EditText(activity);
-        input.setText(value);
-        // Numeric fields say so in the keyboard, but the value is still validated on save:
-        // a hardware keyboard can enter anything.
-        if (numeric) input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        form.addView(input);
-        return input;
-    }
-
-    /** Re-renders the preview as fields change; nothing else is written while typing. */
-    private static final class Rewrite implements TextWatcher {
-        private final Runnable update;
-
-        Rewrite(Runnable update) {
-            this.update = update;
-        }
-
-        @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
-        @Override public void onTextChanged(CharSequence text, int start, int before, int count) { }
-
-        @Override public void afterTextChanged(Editable text) {
-            update.run();
-        }
-    }
+    private static void note(Activity activity,LinearLayout panel,String value){TextView label=new TextView(activity);label.setText(value);label.setPadding(0,12,0,8);panel.addView(label);}
+    private static EditText input(Activity activity,LinearLayout panel,String label,String value,int max){note(activity,panel,label);EditText field=new EditText(activity);field.setSingleLine(true);field.setContentDescription(label);field.setFilters(new InputFilter[]{new InputFilter.LengthFilter(max)});field.setText(value);panel.addView(field);return field;}
+    private static Spinner spinner(Activity activity,LinearLayout panel,String label,String[] labels,int selected){note(activity,panel,label);Spinner field=new Spinner(activity);field.setContentDescription(label);field.setAdapter(new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels));field.setSelection(Math.max(0,selected));panel.addView(field);return field;}
 }

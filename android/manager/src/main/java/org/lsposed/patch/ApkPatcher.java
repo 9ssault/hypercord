@@ -1,7 +1,5 @@
 // Derived from JingMatrix/LSPatch v1.2, GPL-3.0. See android/THIRD_PARTY.md.
 // Hypercord changes: alignment, launcher XML, split identity/version consistency and code-less bootstrap handling.
-// The manager's package id (`app.assault.manager`, written below) is left alone: the id is what the patched
-// client's provider authority and the loader call back through, so it moves only with those two.
 package org.lsposed.patch;
 
 import static org.lsposed.lspatch.share.Constants.CONFIG_ASSET_PATH;
@@ -514,22 +512,7 @@ public final class ApkPatcher {
             new ManifestEditor(in, os, property).processManifest();
         }
         os.flush();
-        pxb.android.axml.AxmlWriter writer = new pxb.android.axml.AxmlWriter();
-        new pxb.android.axml.AxmlReader(os.toByteArray()).accept(new pxb.android.axml.AxmlVisitor(writer) {
-            @Override public pxb.android.axml.NodeVisitor child(String ns, String name) {
-                pxb.android.axml.NodeVisitor node = super.child(ns, name);
-                if (!"manifest".equals(name)) return node;
-                return new pxb.android.axml.NodeVisitor(node) {
-                    @Override public void end() {
-                        pxb.android.axml.NodeVisitor queries = super.child(null, "queries");
-                        pxb.android.axml.NodeVisitor manager = queries.child(null, "package");
-                        manager.attr("http://schemas.android.com/apk/res/android", "name", 0x01010003, 3, "app.assault.manager");
-                        manager.end(); queries.end(); super.end();
-                    }
-                };
-            }
-        });
-        return writer.toByteArray();
+        return os.toByteArray();
     }
 
     /**

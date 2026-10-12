@@ -6,22 +6,23 @@
 // before it is installed, because themes have no hooks and no remote assets).
 //
 // The values are the same ones the desktop client's built-in theme uses (AMOLED_CSS
-// in src/themes.js), so the two clients look like one product. Pure black is kept
-// for the surfaces behind content, and the raised and recessed surfaces sit a hair
-// above it - a sheet that is exactly the colour of the page under it has no edge,
-// which is how an AMOLED theme becomes unreadable rather than dark. Text is left
-// light rather than dimmed for the same reason: the background is the theme.
+// in src/themes.js), so the two clients look like one product. Every surface is
+// true black: the raised and recessed surfaces used to sit a hair above it so two
+// surfaces had an edge between them, and the result was a theme that looked dark
+// grey rather than black - the edges come from Discord's own 1px borders and the
+// white-alpha hover fills instead. Text is left light for the same reason: the
+// background is the theme.
 export default {
   id: "example.amoled",
   kind: "theme",
   name: "AMOLED Black",
   version: "1.0.0",
-  description: "True black for every surface behind content, with the raised surfaces a hair above it.",
+  description: "True black on every surface, with edges drawn by Discord's own borders rather than by a lifted grey.",
   colors: {
     BACKGROUND_PRIMARY: "#000000",
-    BACKGROUND_SECONDARY: "#060607",
+    BACKGROUND_SECONDARY: "#000000",
     BACKGROUND_TERTIARY: "#000000",
-    BACKGROUND_ACCENT: "#0a0a0c",
+    BACKGROUND_ACCENT: "#000000",
     TEXT_NORMAL: "#f2f3f5",
     TEXT_MUTED: "#a3a6aa",
     TEXT_LINK: "#7aa2ff",

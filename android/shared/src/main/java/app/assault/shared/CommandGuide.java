@@ -1,84 +1,63 @@
-// language: Java, file: android/shared/src/main/java/app/assault/shared/CommandGuide.java
-//
-// The command guide, as a searchable list in the app rather than a web page.
-//
-// It documents the *families* of local commands this build ships and says what each one
-// does. It deliberately does not print invented syntax: the authoritative list is the one
-// the client's own controls publish (AS -> Account controls), which is generated from the
-// handlers that actually exist, and a guide that guessed an argument name would be worse
-// than no guide. What is here is what the product documentation states, with the same
-// exclusions: no token fleets, no multi-account voice, no targeted messaging, no fabricated
-// quest progress and no group renaming, because none of those are in the client.
 package app.assault.shared;
 
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ListView;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.util.Locale;
 
+/** Offline command reference shared by Manager and the injected native controls. */
 public final class CommandGuide {
-    /** The families, each with what it does and whether a profile has to be on for it. */
     private static final String[][] COMMANDS = {
-        {"/assault", "The local entry point. With no argument it lists the families below."},
-        {"search", "Search the channels this account can already read. Nothing is fetched that the client does not already have."},
-        {"capture", "Keep messages as they arrive for the bound retention window (maxMessages, retentionMinutes)."},
-        {"export", "Write a capture out as JSON, or as a self-contained page you can open offline."},
-        {"privacy", "The redaction filters: authors, tokens and the reporting of edits and deletions."},
-        {"reactions", "React with your own account to the message you replied to. One reaction per command."},
-        {"presence", "Apply or clear the activity built in the manager's presence builder."},
-        {"commands", "The commands the client is currently answering, with their arguments, from the client itself."}
+        {"$help · $status · $id", "Show commands, hook availability, your user ID and the current channel ID locally."},
+        {"$stop · $start", "Pause/resume own-message reactions and custom presence. Local tools still work. Logout pauses automation."},
+        {"$prefix !", "Change the command prefix for this session. Use Hypercord → Account controls for a saved default."},
+        {"$react on · $react off", "Opt in/out of reactions to your own new messages. Never reacts to another author's message."},
+        {"$react emoji 🔥", "Choose a Unicode reaction emoji for this session."},
+        {"$react interval 30", "Set 10–300 seconds between reactions. Server retry delays are also respected."},
+        {"$react channels 123,456 · $react channels all", "Limit reactions to up to 20 channel IDs. Use $id in a channel to find its ID."},
+        {"$activity playing My game", "Presence profile only. Also accepts listening, watching and competing; applies on the next existing gateway presence update."},
+        {"$activity clear · $activity reset", "Clear keeps Discord activities unchanged; reset restores your saved activity profile."},
+        {"$status_override idle", "Presence profile only: online, idle, dnd, invisible, clear or reset. Does not open another gateway connection."},
+        {"$rpc status · $rpc preview · $rpc refresh", "Inspect the saved rich-presence card or refresh image resolution. Configure artwork, links, buttons, timestamps and party size in Hypercord → Rich presence."},
+        {"$rpc details Some text · $rpc state Some text", "Change rich-presence details/state for this session. rpc clear disables its override; rpc reset re-enables it."},
+        {"$search words", "Search retained messages in the current channel. /assault search with scope:all searches all captured channels."},
+        {"$channels · $mentions · $stats", "List captured channels, current-channel mentions, or capture and hook diagnostics."},
+        {"$export history [channel IDs]", "Fetch server history for all known channels plus supplied closed DM IDs. Then Hypercord → Save history archive. Inspect manifest.json for omissions; attachment bytes are not downloaded."},
+        {"$export status · $export cancel", "Show history progress, or cancel and clear the cached archive. /assault export-history also works with profiles off; query accepts extra channel IDs."},
+        {"$export html · $export json", "Prepare the current channel transcript, then choose Hypercord → Save HTML/JSON transcript."},
+        {"$export deleted · $export all", "Export retained deleted messages in this channel, or HTML for all captured channels."},
+        {"$clear · $clear all", "Clear current-channel or all retained messages. Also discards cached transcripts."},
+        {"$capture off · $capture on", "Off clears session capture and cached exports; on resumes capture. Restart restores the saved setting."},
+        {"$privacy", "Show session privacy settings. Toggle with typing, analytics, crashes or tokens followed by on/off."},
+        {"$privacy typing on", "Suppress matching JavaScript typing requests. Does not cover every native request path."},
+        {"$privacy tokens on", "Block recognized Discord tokens/private-key text in supported outgoing text messages. Best-effort; inspect messages before sending."},
+        {"/hypercord", "Available even with the account profile off: export, export-all, export-deleted, export-json, search, channels, mentions, ghost-pings, capture, privacy, clear, clear-all, status, help."}
     };
-
-    private CommandGuide() {
-        // static only
-    }
-
-    /** The guide, filtered as you type. */
     public static void show(Activity activity) {
-        LinearLayout page = new LinearLayout(activity);
-        page.setOrientation(LinearLayout.VERTICAL);
-        page.setPadding(32, 24, 32, 8);
-
-        EditText filter = new EditText(activity);
-        filter.setHint("Filter commands");
-        page.addView(filter);
-
-        ListView list = new ListView(activity);
-        page.addView(list);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(activity, android.R.layout.simple_list_item_1, entries(""));
-        list.setAdapter(adapter);
-        filter.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence text, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence text, int start, int before, int count) { }
-
-            @Override public void afterTextChanged(Editable text) {
-                adapter.clear();
-                adapter.addAll(entries(text.toString().trim().toLowerCase(java.util.Locale.ROOT)));
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        int pad=Math.round(16*activity.getResources().getDisplayMetrics().density);panel.setPadding(pad,pad,pad,pad);
+        TextView intro=new TextView(activity);intro.setText("Enable an account profile and restart for prefix commands. Examples use the default $. Recognized commands stay local; unknown commands are sent normally. Session changes reset on restart.");panel.addView(intro);
+        EditText query=new EditText(activity);query.setSingleLine(true);query.setHint("Search commands");query.setContentDescription("Search commands");panel.addView(query);
+        LinearLayout results=new LinearLayout(activity);results.setOrientation(LinearLayout.VERTICAL);
+        ScrollView scroll=new ScrollView(activity);scroll.addView(results);
+        panel.addView(scroll,new LinearLayout.LayoutParams(-1,Math.round(Math.min(360,activity.getResources().getDisplayMetrics().heightPixels/activity.getResources().getDisplayMetrics().density*0.45f)*activity.getResources().getDisplayMetrics().density)));
+        Runnable render=()->{
+            results.removeAllViews();String term=query.getText().toString().toLowerCase(Locale.ROOT);int count=0;
+            for(String[] command:COMMANDS)if((command[0]+" "+command[1]).toLowerCase(Locale.ROOT).contains(term)){
+                TextView row=new TextView(activity);row.setText(command[0]+"\n"+command[1]);row.setTextIsSelectable(true);row.setPadding(0,pad,0,pad);results.addView(row);count++;
             }
+            if(count==0){TextView empty=new TextView(activity);empty.setText("No matching commands.");results.addView(empty);}
+        };
+        query.addTextChangedListener(new TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){render.run();}
+            public void afterTextChanged(Editable value){}
         });
-
-        new AlertDialog.Builder(activity)
-            .setTitle("Local command guide")
-            .setMessage("These are the local commands this build answers, and what each one does. The exact arguments are "
-                + "published by the client itself under AS -> Account controls -> commands, which cannot drift from the "
-                + "handlers that exist. Nothing here reaches a server, and remote or bulk account features are not part of it.")
-            .setView(page)
-            .setPositiveButton("Close", null)
-            .show();
-    }
-
-    /** One line per matching family; an empty filter matches everything. */
-    private static java.util.List<String> entries(String needle) {
-        java.util.List<String> lines = new java.util.ArrayList<>();
-        for (String[] command : COMMANDS) {
-            String line = command[0] + " - " + command[1];
-            if (needle.isEmpty() || line.toLowerCase(java.util.Locale.ROOT).contains(needle)) lines.add(line);
-        }
-        if (lines.isEmpty()) lines.add("Nothing matches that filter.");
-        return lines;
+        render.run();new AlertDialog.Builder(activity).setTitle("Hypercord command guide").setView(panel).setPositiveButton("Done",null).show();
     }
 }

@@ -54,13 +54,15 @@ on:
         required: true
         type: string
       build_apk:
-        # Off by default, including on tag pushes, because the Android tree cannot
-        # produce an APK until the inputs recorded in scripts/android-dependencies.json
-        # are present. A release with three platforms and a stated missing fourth is
-        # honest; four jobs where one always dies is noise.
-        description: 'Also build the APK (only succeeds once every required input exists)'
+        # ON by default, including on tag pushes: a release page carrying no APK is the
+        # failure the owner reported, and the APK is a shipped platform like the other
+        # three. The pinned inputs it needs are staged by scripts/fetch_android_deps.py
+        # and the plugin/theme bundle by `npm run build:addons`, both of which run in the
+        # job before Gradle. Set this to false only for a deliberately desktop-only
+        # release; the publish job states that choice instead of hiding it.
+        description: 'Build the APK as well (off only for a deliberately desktop-only release)'
         required: false
-        default: false
+        default: true
         type: boolean
 
 # Read by default; only the publish job is granted write, so a build job cannot
@@ -300,10 +302,10 @@ jobs:
 
   apk:
     name: Android APK
-    # Only when a person asks for it: see the `build_apk` input. A tag push skips this
-    # job (there is no input on a push), and the publish job says so rather than
-    # pretending the APK was produced.
-    if: ${{ inputs.build_apk == true }}
+    # Runs on a tag push (there is no input on a push, so the job must not depend on one)
+    # and on a dispatch unless the APK was explicitly turned off. The publish job still
+    # distinguishes "not requested" from "asked for and failed".
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk != false }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -350,6 +352,41 @@ jobs:
       # like a toolchain problem. The tree knows what it is missing - it is written
       # down in scripts/android-dependencies.json - so the check reads that file and
       # names every required input that is not here, before anything is built.
+      # Before the inputs check, and before Gradle: the check reads
+      # scripts/android-dependencies.json and refuses when a pinned input is missing, and
+      # staging those inputs is exactly what this step does. `npm run build:addons` writes
+      # the asset that carries Hypercord's own plugins and themes into the APK - without it
+      # the loader ships the placeholder and scripts/build_android.py refuses to build, so a
+      # skipped build step cannot look like a successful one.
+      - name: Stage the pinned Android inputs and build the bundled addons
+        run: |
+          set -euo pipefail
+          npm run build:addons
+          python3 scripts/fetch_android_deps.py
+
+      # compileSdk 36 is what both modules ask for, and a runner image that has only an
+      # older platform fails the build inside Gradle with a message about the SDK.
+      - name: Make sure the SDK has the platform this build compiles against
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -d "$sdk/platforms/android-36" ]; then
+            echo "platforms/android-36 is present"
+            exit 0
+          fi
+          manager="$(command -v sdkmanager || true)"
+          if [ -z "$manager" ] && [ -x "$sdk/cmdline-tools/latest/bin/sdkmanager" ]; then
+            manager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -z "$manager" ]; then
+            echo "FAIL sdkmanager is not available, so platforms;android-36 cannot be installed"
+            exit 1
+          fi
+          yes | "$manager" --licenses >/dev/null 2>&1 || true
+          "$manager" --install "platforms;android-36" "build-tools;36.0.0"
+          [ -d "$sdk/platforms/android-36" ] || { echo "FAIL platforms;android-36 is still missing"; exit 1; }
+          echo "installed platforms;android-36"
+
       - name: Check the inputs the Android build needs
         # Before Gradle, not inside it: a missing module or jar otherwise surfaces as
         # several hundred lines of build noise whose real cause is one absent file.
@@ -443,10 +480,24 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          # The version the APK claims comes from the tag, so the APK and the release page
+          # cannot disagree; both modules read these, and the manager compares the embedded
+          # loader's versionCode against its own, so the two must match each other.
+          TAG="${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}"
+          export HYPERCORD_ANDROID_VERSION="${TAG#v}"
+          export HYPERCORD_ANDROID_VERSION_CODE="$(date -u +%Y%m%d)"
+          # Prefer the repository's wrapper: it pins the Gradle the modules were ported
+          # with. build_android.py resolves ./gradlew itself when it is executable.
+          if [ -x ./gradlew ]; then export GRADLE_CMD="$PWD/gradlew"; fi
           if [ -n "${KEYSTORE_BASE64}" ]; then
             export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
             trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
+          else
+            # An unsigned APK still installs; it simply cannot update over one signed with a
+            # different key. Asking for it explicitly is what keeps "we meant to sign this"
+            # distinguishable from "the keystore secret is missing".
+            export HYPERCORD_ALLOW_UNSIGNED=1
           fi
           python3 scripts/build_android.py --all-variants
           # the suites are part of the gate here too, and two of them launch the client,

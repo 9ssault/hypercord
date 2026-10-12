@@ -10,16 +10,18 @@ import importlib.util,tempfile,zipfile
 from pathlib import Path
 spec=importlib.util.spec_from_file_location('build_android','scripts/build_android.py')
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-assets={'licenses/Acorn-MIT.txt':b'notice','addons.js':b'addons','xposed_init':b'app.assault.loader.AssaultLoader','assault-runtime.js':b'runtime','assault.js':b'capture','account-controls.js':b'controls','rich-presence.js':b'presence','history-export.js':b'history','html-export.js':b'html','licenses/Revenge-BSD-3-Clause.txt':b'notice'}
+assets={'addons.js':b'addons','xposed_init':b'app.assault.loader.AssaultLoader','assault-runtime.js':b'runtime','assault.js':b'capture','account-controls.js':b'controls','rich-presence.js':b'presence','history-export.js':b'history','html-export.js':b'html','licenses/Revenge-BSD-3-Clause.txt':b'notice'}
 with tempfile.TemporaryDirectory() as tmp:
- for case in ['valid','missing','empty','entrypoint','duplicate','oversized','missing-license']:
+ for case in ['valid','missing','empty','entrypoint','duplicate','oversized','missing-license','unexpected-licence','placeholder-addons']:
   values=dict(assets)
-  if case=='missing-license':del values['licenses/Acorn-MIT.txt']
+  if case=='missing-license':del values['licenses/Revenge-BSD-3-Clause.txt']
   if case=='missing':del values['assault-runtime.js']
   if case=='empty':values['assault.js']=b''
   if case=='entrypoint':values['xposed_init']=b'wrong.Class'
   if case=='duplicate':values['revenge.js']=b'extra runtime'
   if case=='oversized':values['assault-runtime.js']=b'x'*(16*1024*1024+1)
+  if case=='unexpected-licence':values['licenses/LSPatch-GPL-3.0.txt']=b'a licence the loader does not ship'
+  if case=='placeholder-addons':values['addons.js']=b'HYPERCORD-ADDONS-PLACEHOLDER'
   apk=Path(tmp)/'loader.apk'
   with zipfile.ZipFile(apk,'w',zipfile.ZIP_DEFLATED) as z:
    for name,data in values.items():z.writestr('assets/'+name,data)

@@ -48,9 +48,11 @@ export function sanitizeCss(text) {
 /**
  * The built-in theme this client ships with: full AMOLED black.
  *
- * True black on every surface Discord paints behind content, and a hair off black
- * for the few that have to stay distinguishable - two black surfaces with nothing
- * between them is how an AMOLED theme makes a client unusable. Text colours are
+ * True black on every surface Discord paints, with no surface lifted a hair above
+ * another: the lifted greys this used to carry are why the client read as dark grey
+ * instead of black. Edges come from Discord's own 1px borders and from the
+ * white-alpha hover, selected and accent fills kept at the bottom of this block -
+ * removing those would leave nothing to see when a row is hovered. Text colours are
  * left alone: the point is the background, and overriding text here would fight
  * every accessibility setting the person already has.
  */
@@ -60,18 +62,18 @@ export const AMOLED_CSS = `/* Hypercord's built-in theme: full AMOLED black. */
 :root {
   --background-primary: #000000;
   --background-secondary: #000000;
-  --background-secondary-alt: #060607;
+  --background-secondary-alt: #000000;
   --background-tertiary: #000000;
-  --background-accent: #0a0a0c;
-  --background-floating: #060607;
+  --background-accent: #000000;
+  --background-floating: #000000;
   --background-mobile-primary: #000000;
-  --background-mobile-secondary: #060607;
-  --channeltextarea-background: #0a0a0c;
-  --input-background: #0a0a0c;
+  --background-mobile-secondary: #000000;
+  --channeltextarea-background: #000000;
+  --input-background: #000000;
   --modal-background: #000000;
-  --modal-footer-background: #060607;
-  --deprecated-card-bg: #060607;
-  --deprecated-quickswitcher-input-background: #0a0a0c;
+  --modal-footer-background: #000000;
+  --deprecated-card-bg: #000000;
+  --deprecated-quickswitcher-input-background: #000000;
   --background-modifier-hover: rgba(255, 255, 255, 0.03);
   --background-modifier-active: rgba(255, 255, 255, 0.05);
   --background-modifier-selected: rgba(255, 255, 255, 0.07);

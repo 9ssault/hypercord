@@ -59,7 +59,6 @@ public class ManagerActivity extends Activity {
             Intent launch = getPackageManager().getLaunchIntentForPackage(ClientEngine.CLIENT);
             if (launch == null) message("Install the client first."); else {try {startActivity(launch);}catch(RuntimeException e){message("Android could not open the client.");}}
         });
-        button(page, "Code runner setup", false, v -> ScriptSetup.show(this));
         LinearLayout controls = card(page);
         text(controls, "Account controls", 21, WHITE, true);
         text(controls, "Choose a built-in profile for the signed-in client: local commands, own-message reactions or custom presence. No account token is needed.", 14, MUTED, false);
@@ -70,7 +69,7 @@ public class ManagerActivity extends Activity {
             Intent launch=getPackageManager().getLaunchIntentForPackage(ClientEngine.CLIENT);
             if(launch==null){message("Install the client first.");return;}
             launch.putExtra(AccountSettings.EXTRA,AccountSettings.read(getSharedPreferences("manager",0)).toString());
-            try{startActivity(launch);}catch(RuntimeException e){message("Could not open the client. Use AS → Account controls inside the client.");}
+            try{startActivity(launch);}catch(RuntimeException e){message("Could not open the client. Use Hypercord → Account controls inside the client.");}
         });
         LinearLayout updates = card(page);
         text(updates, "Updates, handled", 21, WHITE, true);
@@ -109,7 +108,7 @@ public class ManagerActivity extends Activity {
             try { startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:com.discord"))); }
             catch (RuntimeException e) { message("The client is not installed."); }
         });
-        button(about,"Open-source notices",false,v->new AlertDialog.Builder(this).setTitle("Open-source notices").setMessage("LSPatch: GPL-3.0\nRevenge runtime: BSD-3-Clause (Hypercord display branding)\nXposed API: Apache-2.0\n\nSource and full licenses: github.com/hypercharacterization/assault").setPositiveButton("OK",null).show());
+        button(about,"Open-source notices",false,v->new AlertDialog.Builder(this).setTitle("Open-source notices").setMessage("LSPatch: GPL-3.0\nRevenge runtime: BSD-3-Clause (Hypercord display branding)\nXposed API: Apache-2.0\n\nSource and full licenses: github.com/9ssault/hypercord").setPositiveButton("OK",null).show());
         schedule(this); checkUpdates(false);
     }
     private void render() {

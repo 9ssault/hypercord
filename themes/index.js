@@ -40,15 +40,17 @@ const HEX = /^#[0-9a-f]{6}$/i;
  * It is the same palette as the desktop client's built-in theme (AMOLED_CSS in
  * src/themes.js) and as themes/examples/amoled.txt, kept here so the Android side
  * has one source of truth for it instead of four hard-coded defaults drifting
- * apart. True black for the surfaces behind content, a hair above black where two
- * surfaces meet and would otherwise have no edge between them; the text tokens
- * stay light, because the background is the theme.
+ * apart. Every surface token is now true black: the raised and recessed values used
+ * to sit a hair above black so two surfaces had an edge between them, and what that
+ * produced was a client that read as dark grey rather than black - the edges come
+ * from Discord's own 1px borders and the white-alpha hover fills instead. The text
+ * tokens stay light, because the background is the theme.
  */
 export const DEFAULT_THEME_COLORS = Object.freeze({
   BACKGROUND_PRIMARY: '#000000',
-  BACKGROUND_SECONDARY: '#060607',
+  BACKGROUND_SECONDARY: '#000000',
   BACKGROUND_TERTIARY: '#000000',
-  BACKGROUND_ACCENT: '#0a0a0c',
+  BACKGROUND_ACCENT: '#000000',
   TEXT_NORMAL: '#f2f3f5',
   TEXT_MUTED: '#a3a6aa',
   TEXT_LINK: '#7aa2ff',

@@ -193,7 +193,12 @@ function transform(module) {
       for (const one of pairs) lines.push(`${match[1]}__export(${JSON.stringify(one.name)}, ${one.local});`);
       return;
     }
-    if (/^\s*export\b/.test(line)) fail(module.file, 1, "an export form this bundler does not know", line);
+    // `export` is also a legal *member* name: core/scripts.js defines a class method called
+    // `export()`, which is not an export statement at all and must pass through untouched.
+    // Every real export form is handled above, so this guard fires only for text that is
+    // genuinely statement-shaped - the keyword followed by whitespace, an opening brace or
+    // the end of the line - and not for a call, which is a method definition.
+    if (/^\s*export(?:\s|$|\{)/.test(line)) fail(module.file, 1, "an export form this bundler does not know", line);
     lines.push(line);
   });
 

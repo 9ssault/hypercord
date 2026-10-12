@@ -4,16 +4,32 @@
  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+ <!-- The code runner: only Termux holds this permission, and only a component that
+      declares it can be reached by an app that holds it. Without the declaration on
+      ScriptProvider below, nothing the user installs alongside this app could reach
+      the runner, and without this permission the provider would be world-callable. -->
  <uses-permission android:name="com.termux.permission.RUN_COMMAND"/>
+ <!-- Two packages, for two reasons: `com.discord` is the client this app prepares and
+      installs, and package visibility is what lets it see that package at all under
+      Android 11+. `com.termux` is the runner host ScriptProvider is written for. -->
  <queries><package android:name="com.discord"/><package android:name="com.termux"/></queries>
  <application android:label="Hypercord Manager" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:enableOnBackInvokedCallback="true">
   <activity android:name=".ManagerActivity" android:exported="true">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-   <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="assault" android:host="updates"/></intent-filter>
+   <!-- The deep link the release notes point at: hypercord://updates opens the manager's
+        update screen. Upstream used assault://; the scheme here is the one
+        InstallReceiver and ManagerUpdater read. -->
+   <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="hypercord" android:host="updates"/></intent-filter>
   </activity>
-  <provider android:name=".ScriptProvider" android:authorities="app.assault.manager.scripts" android:exported="true"/>
-  <receiver android:name=".ScriptResultReceiver" android:exported="false"/>
+  <!-- The receiver an install result comes back to, and the job that checks for a client
+       update. -->
   <receiver android:name=".InstallReceiver" android:exported="false"/>
   <service android:name=".UpdateJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true"/>
+  <!-- The code runner's two halves. These are Hypercord's own classes (they are not in
+       upstream) and the loader's AddonDocuments.runner calls exactly this authority:
+       `content://app.assault.manager.scripts` - the authority string keeps the app.assault
+       prefix because the application id does, and the loader's Java passes it literally. -->
+  <provider android:name=".ScriptProvider" android:authorities="app.assault.manager.scripts" android:exported="true" android:permission="com.termux.permission.RUN_COMMAND"/>
+  <receiver android:name=".ScriptResultReceiver" android:exported="false"/>
  </application>
 </manifest>

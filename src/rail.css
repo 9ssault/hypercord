@@ -24,6 +24,10 @@
  *   --hc-danger      a broken plugin, a failed action
  *   --hc-on-accent   text drawn on the accent
  *   --hc-rgb-accent  the accent as an `r, g, b` triplet, for rgba() washes
+ *   --hc-mark-bg     the brand tile behind the mark (black by default)
+ *   --hc-mark-text   the mark drawn on that tile (white by default, because a black
+ *                    mark on a black tile is invisible)
+ *   --hc-mark-rim    the hairline that keeps a black tile visible on a black page
  */
 
 #hypercord-rail {
@@ -89,7 +93,10 @@
 #hypercord-settings-entry[data-hypercord="settings"] {
   position: relative;
 }
-#hypercord-settings-entry[data-hypercord="settings"]::before {
+/* matched by the attribute, not by the id: once Hypercord owns more than one entry
+   in Discord's settings list, an id selector would draw the accent bar on the first
+   one and leave the rest looking like Discord's own items */
+[data-hypercord="settings"]::before {
   content: "";
   position: absolute;
   left: 0;
@@ -115,12 +122,18 @@
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  /* the second stop is the mark's own violet, not a palette colour: a theme that
-     changes the accent gets a matching first stop and keeps the gradient */
-  background: linear-gradient(180deg, var(--hc-accent, #5865f2), #8b5cf6);
-  color: var(--hc-on-accent, #fff);
+  /* The brand is black now, and the mark on it is white - a black mark on a black
+     tile is invisible, which is the one thing to avoid. The rim carries the
+     silhouette on a black page, which is what the owner's screenshot showed it
+     losing. None of the three reads a palette variable: the tile turning violet
+     with the theme was the old bug, so the logo is deliberately not themeable. */
+  background: var(--hc-mark-bg, #000000);
+  border: 1px solid var(--hc-mark-rim, #2a2c34);
+  color: var(--hc-mark-text, #ffffff);
+  box-sizing: border-box;
   font-weight: 800;
-  line-height: 22px;
+  /* 20px, not 22: `border-box` plus the 1px rim leaves 20px of tile to centre in */
+  line-height: 20px;
   text-align: center;
   flex: none;
 }
@@ -373,14 +386,18 @@
   color: var(--hc-text, #f2f3f5);
 }
 
+/* the same mark as the rail's, and the same three variables: see the rule above for
+   why the tile is black, the mark white and the rim what keeps it visible */
 #hypercord-token-prompt .hc-mark {
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: linear-gradient(180deg, var(--hc-accent, #5865f2), #8b5cf6);
-  color: var(--hc-on-accent, #fff);
+  background: var(--hc-mark-bg, #000000);
+  border: 1px solid var(--hc-mark-rim, #2a2c34);
+  color: var(--hc-mark-text, #ffffff);
+  box-sizing: border-box;
   font-weight: 800;
-  line-height: 22px;
+  line-height: 20px;
   text-align: center;
   flex: none;
 }

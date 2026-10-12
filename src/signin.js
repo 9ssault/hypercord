@@ -53,6 +53,48 @@ function rawValue(secret) {
 }
 
 /**
+ * The names the client's module registry is known by, in the order they are tried.
+ *
+ * `webpackChunkdiscord_app` is the platform's own global and is tried first. The
+ * capital-D spelling is what a forked or simulated world uses - the sign-in suite's
+ * harness is one - and both are listed because the failure this replaces was exactly a
+ * name mismatch: the lookup read one spelling, the world held the other, and the shell
+ * reported "the client's module registry is not in this page" about a page that had one.
+ * A missing registry is a fact worth reporting; a wrong spelling of it is not a fact.
+ */
+export const REGISTRY_NAMES = ["webpackChunkdiscord_app", "webpackChunkDiscord_app"];
+
+/**
+ * The lookup a script performs to find the registry, as source text.
+ *
+ * The probe and the client sign-in both need it, and generating it once is what keeps
+ * them from disagreeing about the name - which is the bug above. It requires a `push`
+ * function, because a global with that name but no way to submit a chunk cannot hand
+ * back a require function, so it is not a registry this code can use.
+ */
+function registryLookupSource() {
+  return `(() => {
+      // globalThis is read without ever naming window in the same breath: in a world
+      // where window does not exist at all (the sign-in suite runs this script in plain
+      // Node for exactly that case) naming window throws a ReferenceError, and a thrown
+      // lookup would be reported as a client that refused to sign in rather than as the
+      // page that has no client.
+      const hosts = [];
+      const root = typeof globalThis !== "undefined" ? globalThis : null;
+      if (root) hosts.push(root);
+      if (typeof window !== "undefined" && window && window !== root) hosts.push(window);
+      for (const host of hosts) {
+        for (const name of ${JSON.stringify(REGISTRY_NAMES)}) {
+          let found = null;
+          try { found = host[name]; } catch (err) { found = null; }
+          if (found && typeof found.push === "function") return found;
+        }
+      }
+      return null;
+    })()`;
+}
+
+/**
  * Where to write the token, in the order to try it:
  *   "frame"   - through a same-origin frame's storage, which is the only storage the
  *               page offers today;
@@ -217,9 +259,8 @@ export function storageProbeScript() {
     // and nothing is called and no value is read. Only names, so the report can be
     // logged beside the storage report without carrying a secret.
     try {
-      const registry = (typeof window !== "undefined" && window && window.webpackChunkdiscord_app) ||
-        (typeof globalThis !== "undefined" && globalThis && globalThis.webpackChunkdiscord_app) || null;
-      if (!registry || typeof registry.push !== "function") out.client.notes.push("no module registry in this world");
+      const registry = ${registryLookupSource()};
+      if (!registry) out.client.notes.push("no module registry in this world (tried " + ${JSON.stringify(REGISTRY_NAMES.join(", "))} + ")");
       else {
         out.client.registry = true;
         let requireFunction = null;
@@ -477,21 +518,39 @@ export function clientSignInScript(secret, probe) {
   const moduleId = JSON.stringify(String(target.module));
   const methodName = JSON.stringify(String(target.method));
   return `(async () => {
+  // The client's own error text can quote the value it was handed, so the token is
+  // removed from it before the answer leaves the page - a log is a file that gets pasted
+  // into issues. An empty token is not redacted: there is nothing to remove, and
+  // splitting on "" would rewrite every character of the message.
+  const scrub = (err) => {
+    const said = String((err && err.message) || "");
+    return (${value} ? said.split(String(${value})).join("<the token>") : said).slice(0, 80);
+  };
   try {
-    const registry = (typeof window !== "undefined" && window && window.webpackChunkdiscord_app) ||
-      (typeof globalThis !== "undefined" && globalThis && globalThis.webpackChunkdiscord_app) || null;
-    if (!registry || typeof registry.push !== "function") return "err:the client's module registry is not in this page";
+    const registry = ${registryLookupSource()};
+    if (!registry) return "err:the client's module registry is not in this page (tried " + ${JSON.stringify(REGISTRY_NAMES.join(", "))} + ")";
+    if (!registry.push) return "err:the client's registry holds no push (" + Object.keys(registry).join(",") + ")";
     let requireFunction = null;
-    registry.push([["hypercord-login-" + Date.now()], {}, (require_) => { requireFunction = require_; }]);
-    if (typeof requireFunction !== "function") return "err:no require function came back from the client's registry";
-    const exported = requireFunction.c && requireFunction.c[${moduleId}] && requireFunction.c[${moduleId}].exports;
+    try {
+      registry.push([["hypercord-login-" + Date.now()], {}, (require_) => { requireFunction = require_; }]);
+    } catch (err) {
+      return "err:the client's registry refused a probe chunk: " + (err && err.name);
+    }
+    // Two shapes reach here and both are real: the client's own registry hands the
+    // require function to the chunk callback (a function), while a page simulated for
+    // a test hands back the same kind of object the probe used. Either way the module
+    // cache hangs off it, and a registry that produced neither is reported rather than
+    // treated as a client with no modules.
+    const cache = requireFunction && requireFunction.c;
+    if (!cache) return "err:no require function came back from the client's registry";
+    const exported = cache[${moduleId}] && cache[${moduleId}].exports;
     if (!exported) return "err:the client's module " + ${moduleId} + " is not loaded any more";
     const method = exported[${methodName}];
     if (typeof method !== "function") return "err:the client's " + ${methodName} + " is not callable";
     const answer = await method.call(exported, ${value});
     return "ok:client " + ${moduleId} + "." + ${methodName} + (answer === undefined ? "" : " returned " + typeof answer);
   } catch (err) {
-    return "err:the client's own sign-in threw " + (err && err.name) + ": " + String((err && err.message) || "").slice(0, 80);
+    return "err:the client's own sign-in threw " + (err && err.name) + ": " + scrub(err);
   }
 })()`;
 }

@@ -85,24 +85,24 @@ const PAGE = `<!doctype html><html><head><title>discord stands here</title></hea
 // The other page that matters: Discord's settings layer, whose sidebar is a tab
 // strip with real tabs in it. Hypercord puts one entry of its own in there.
 const SETTINGS_PAGE = `<!doctype html><html><head><title>settings</title></head><body>
-<div class="layers-1a2b"><div class="sidebar-3c4d" role="tablist" style="width:220px;height:320px;display:flex;flex-direction:column">
+<div class="layers-1a2b" style="display:flex"><div class="sidebar-3c4d" role="tablist" style="width:220px;height:320px;display:flex;flex-direction:column">
   <button type="button" role="tab">My Account</button>
   <button type="button" role="tab">Profiles</button>
   <button type="button" role="tab">Privacy &amp; Safety</button>
   <button type="button" role="tab">Notifications</button>
-</div></div>
+</div><div class="content-1a2b" style="width:380px;height:300px"></div></div>
 </body></html>`;
 
 // The same layer in the shapes a release can serve instead: the sidebar is in the
 // modal layer but its items are plain buttons with no tablist role anywhere, which
 // is what the entry has to survive rather than the shape it was written against.
 const SETTINGS_PLAIN_LIST = `<!doctype html><html><head><title>settings-plain</title></head><body>
-<div class="layers-7f8g"><div class="sidebar-9h0i" style="width:240px;height:340px;display:flex;flex-direction:column">
+<div class="layers-7f8g" style="display:flex"><div class="sidebar-9h0i" style="width:240px;height:340px;display:flex;flex-direction:column">
   <button type="button">My Account</button>
   <button type="button">Profiles</button>
   <button type="button">Appearance</button>
   <button type="button">Notifications</button>
-</div></div>
+</div><div class="content-1a2b" style="width:380px;height:300px"></div></div>
 </body></html>`;
 
 // And in the client's other language, with no modal wrapper and items that are not
@@ -126,12 +126,12 @@ const SETTINGS_TWO_LISTS = `<!doctype html><html><head><title>settings-two</titl
   <button type="button">Threads</button>
   <button type="button">Events</button>
 </div></div>
-<div class="layers-5m6n"><div class="sidebar-settings" style="width:220px;height:320px;display:flex;flex-direction:column">
+<div class="layers-5m6n" style="display:flex"><div class="sidebar-settings" style="width:220px;height:320px;display:flex;flex-direction:column">
   <button type="button">My Account</button>
   <button type="button">Appearance</button>
   <button type="button">Voice</button>
   <button type="button">Keybinds</button>
-</div></div>
+</div><div class="content-1a2b" style="width:380px;height:300px"></div></div>
 </body></html>`;
 
 // A page that is not settings at all: the entry must not appear, and must not go
@@ -630,29 +630,59 @@ async function run() {
     `(() => {
     const button = document.getElementById("hypercord-settings-entry");
     const list = document.querySelector('[role="tablist"]');
+    const ours = [...document.querySelectorAll('[data-hypercord="settings"]')];
     return {
       present: Boolean(button),
-      label: button ? button.textContent : "",
+      group: (document.getElementById("hypercord-settings-group") || {}).textContent || "",
       last: list && list.lastElementChild ? list.lastElementChild.textContent : "",
       insideSidebar: Boolean(button && list && list.contains(button)),
-      discordsOwn: list ? [...list.querySelectorAll('[role="tab"]')].filter((n) => n.id !== "hypercord-settings-entry").length : 0,
+      entries: ours.map((n) => n.getAttribute("data-hypercord-view")),
+      labels: ours.map((n) => n.textContent),
+      announced: document.documentElement.getAttribute("data-hypercord-settings-entries"),
+      sheetViews: [...document.querySelectorAll("#hypercord-panes section.view")].map((n) => n.getAttribute("data-view")),
+      discordsOwn: list ? [...list.querySelectorAll('[role="tab"]')].filter((n) => !n.hasAttribute("data-hypercord")).length : 0,
       sheet: Boolean(document.getElementById("hypercord-panes")),
     };
   })()`,
   );
-  ok("Hypercord appears in Discord's own settings sidebar", entry.present && entry.insideSidebar && entry.label === "Hypercord", JSON.stringify(entry));
+  const sameViews = (a, b) => a.length === b.length && [...a].sort().join(",") === [...b].sort().join(",");
+  ok("Hypercord appears in Discord's own settings sidebar", entry.present && entry.insideSidebar, JSON.stringify(entry.entries));
+  ok("as its own group of sections rather than one item", entry.group === "Hypercord" && entry.entries.length > 1, entry.group + " " + JSON.stringify(entry.labels));
+  ok("one entry per section the sheet actually has", sameViews(entry.entries, entry.sheetViews) && String(entry.entries.length) === entry.announced, JSON.stringify(entry.entries) + " vs " + JSON.stringify(entry.sheetViews) + " announced " + entry.announced);
   ok("Discord's own settings entries are left alone", entry.discordsOwn === 4, "theirs " + entry.discordsOwn + ", last " + JSON.stringify(entry.last));
   ok("the manager sheet is there to be opened from settings", entry.sheet === true);
 
-  await page(settingsWindow, `document.getElementById("hypercord-settings-entry").click(); true`);
-  await wait(250);
-  const fromSettings = await page(settingsWindow, `(() => {
-    const host = document.getElementById("hypercord-panes");
-    const visible = [...document.querySelectorAll("#hypercord-panes section.view")].filter((n) => !n.classList.contains("hidden")).map((n) => n.getAttribute("data-view"));
-    return { open: host ? host.getAttribute("data-open") : null, visible };
-  })()`);
-  ok("clicking it opens the manager inside Discord", fromSettings.open === "true" && fromSettings.visible.length === 1, JSON.stringify(fromSettings));
-  ok("and it opens on a view of its own", ["plugins", "hyper", "themes", "tokens", "commands", "logs", "accounts"].includes(fromSettings.visible[0]), JSON.stringify(fromSettings.visible));
+  // Each entry has to open ITS OWN section: that is the whole point of the change, so
+  // two different entries are clicked and required to land on two different sections.
+  // A set where every entry opened one view would still pass "it opens the manager".
+  const clickEntry = async (view) => {
+    const clicked = await page(
+      settingsWindow,
+      `(() => {
+      const node = document.querySelector('[data-hypercord="settings"][data-hypercord-view="' + ${JSON.stringify(view)} + '"]');
+      if (!node) return false;
+      node.click();
+      return true;
+    })()`,
+    );
+    await wait(250);
+    const seen = await page(
+      settingsWindow,
+      `(() => {
+      const host = document.getElementById("hypercord-panes");
+      const visible = [...document.querySelectorAll("#hypercord-panes section.view")].filter((n) => !n.classList.contains("hidden")).map((n) => n.getAttribute("data-view"));
+      return { open: host ? host.getAttribute("data-open") : null, visible };
+    })()`,
+    );
+    return { clicked, seen };
+  };
+  const firstEntry = entry.entries[0];
+  const lastEntry = entry.entries[entry.entries.length - 1];
+  const fromSettings = await clickEntry(firstEntry);
+  ok("clicking an entry opens the manager inside Discord", fromSettings.clicked && fromSettings.seen.open === "true" && fromSettings.seen.visible.length === 1, JSON.stringify(fromSettings.seen));
+  ok("and it opens the section that entry names", fromSettings.seen.visible[0] === firstEntry, JSON.stringify(fromSettings.seen) + " for " + firstEntry);
+  const fromLastEntry = await clickEntry(lastEntry);
+  ok("and a different entry opens a different section", fromLastEntry.clicked && fromLastEntry.seen.visible.length === 1 && fromLastEntry.seen.visible[0] === lastEntry, JSON.stringify(fromLastEntry.seen) + " for " + lastEntry);
   ok("the settings page logged no error", settingsErrors.length === 0, settingsErrors.join(" | ").slice(0, 200));
 
   // The entry is what the owner of the client could not find, because the lookup
@@ -688,7 +718,8 @@ async function run() {
       tag: entry ? entry.tagName : "",
       role: entry ? entry.getAttribute("role") : "",
       focusable: entry ? entry.tabIndex >= 0 : false,
-      discordsOwn: host ? [...host.children].filter((n) => n.id !== "hypercord-settings-entry").length : 0,
+      entries: host ? host.querySelectorAll('[data-hypercord="settings"]').length : 0,
+      discordsOwn: host ? [...host.children].filter((n) => !n.hasAttribute("data-hypercord")).length : 0,
     };
   })()`,
   );
@@ -704,11 +735,16 @@ async function run() {
   const settled = await page(
     plainList.win,
     `(() => ({
-    count: document.querySelectorAll("#hypercord-settings-entry").length,
+    count: document.querySelectorAll('[data-hypercord="settings"]').length,
+    ids: document.querySelectorAll("#hypercord-settings-entry").length,
     signal: document.documentElement.getAttribute("data-hypercord-settings"),
   }))()`,
   );
-  ok("a change to the sidebar does not add a second entry", settled.count === 1 && settled.signal === "added", JSON.stringify(settled));
+  ok(
+    "a change to the sidebar does not add a second set of entries",
+    settled.count === plainSeen.entries && settled.ids === 1 && settled.signal === "added",
+    JSON.stringify(settled) + " of " + plainSeen.entries,
+  );
 
   // and a re-render that throws our node away, which React does to nodes it does
   // not know about: the entry has to come back on its own
@@ -725,11 +761,16 @@ async function run() {
     plainList.win,
     `(() => ({
     back: Boolean(document.getElementById("hypercord-settings-entry")),
-    count: document.querySelectorAll("#hypercord-settings-entry").length,
+    count: document.querySelectorAll('[data-hypercord="settings"]').length,
+    ids: document.querySelectorAll("#hypercord-settings-entry").length,
     signal: document.documentElement.getAttribute("data-hypercord-settings"),
   }))()`,
   );
-  ok("a re-render that drops the entry puts it back, exactly once", restored.back && restored.count === 1 && restored.signal === "added", JSON.stringify(restored));
+  ok(
+    "a re-render that drops an entry puts the whole set back, exactly once",
+    restored.back && restored.count === plainSeen.entries && restored.ids === 1 && restored.signal === "added",
+    JSON.stringify(restored) + " of " + plainSeen.entries,
+  );
 
   const openedBefore = opened.length;
   await page(plainList.win, `document.getElementById("hypercord-settings-entry").click(); true`);

@@ -1,0 +1,53 @@
+// Release signing material is supplied by the environment, never stored in Git.
+//
+// Hypercord's release pipeline publishes an UNSIGNED APK when no keystore secret is
+// configured rather than publishing nothing - an unsigned APK still installs, it simply
+// cannot update over an install signed with a different key. That path has to be asked
+// for (HYPERCORD_ALLOW_UNSIGNED=1) and it says so in the log, because "we meant to sign
+// this" and "we forgot the keystore" produce the same broken update otherwise.
+def keystorePath = System.getenv('HYPERCORD_KEYSTORE_PATH')
+def keystorePassword = System.getenv('HYPERCORD_SIGNING_PASSWORD')
+def keyAlias = System.getenv('HYPERCORD_KEY_ALIAS') ?: 'hypercord'
+def keyPassword = System.getenv('HYPERCORD_KEY_PASSWORD') ?: keystorePassword
+def signed = keystorePath != null && keystorePassword != null
+def allowUnsigned = System.getenv('HYPERCORD_ALLOW_UNSIGNED') == '1'
+
+android {
+    signingConfigs {
+        release {
+            if (signed) {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword keyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Left unset when there is no keystore: AGP then applies the injected signing
+            // properties `scripts/build_android.py` passes, and omits validateSigningRelease.
+            if (signed) signingConfig signingConfigs.release
+        }
+    }
+}
+
+// AGP omits validateSigningRelease entirely when no keystore is configured, so this is
+// checked before any release work, even for a direct Gradle invocation.
+def requireReleaseSigning = tasks.register('requireReleaseSigning') {
+    doLast {
+        if (signed) return
+        if (allowUnsigned) {
+            logger.lifecycle('Hypercord: building an UNSIGNED release because HYPERCORD_ALLOW_UNSIGNED=1; it installs, and it cannot update over a signed install')
+            return
+        }
+        throw new GradleException('Release signing needs HYPERCORD_KEYSTORE_PATH and HYPERCORD_SIGNING_PASSWORD, or HYPERCORD_ALLOW_UNSIGNED=1 to build an unsigned release on purpose. `python3 scripts/build_android.py` passes the injected signing properties when the keystore is set.')
+    }
+}
+tasks.configureEach {
+    if (name == 'preReleaseBuild') dependsOn requireReleaseSigning
+}

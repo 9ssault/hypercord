@@ -75,6 +75,11 @@ MODULES = ("manager", "loader")
 LOADER_ENTRYPOINT = "app.assault.loader.AssaultLoader"
 MAX_ASSET_BYTES = 16 * 1024 * 1024  # 16 MiB: the runtime bundle, not a media file
 ASSET_PREFIX = "assets/"
+
+# The marker scripts/build_addons.mjs leaves behind when it has not run. An APK built from
+# that placeholder installs, reports nothing wrong and carries no plugins and no themes -
+# the failure the owner reported - so it is refused here, on the artifact.
+ADDONS_PLACEHOLDER = "HYPERCORD-ADDONS-PLACEHOLDER"
 REQUIRED_LOADER_ASSETS = (
     "addons.js",
     "assault.js",
@@ -84,7 +89,6 @@ REQUIRED_LOADER_ASSETS = (
     "html-export.js",
     "assault-runtime.js",
     "xposed_init",
-    "licenses/Acorn-MIT.txt",
     "licenses/Revenge-BSD-3-Clause.txt",
 )
 
@@ -138,6 +142,13 @@ def loader_asset_problems(apk_path) -> list:
                 f"{name} is {len(data)} bytes; the loader bundle limit is "
                 f"{MAX_ASSET_BYTES} bytes ({MAX_ASSET_BYTES // (1024 * 1024)} MiB)"
             )
+    # The placeholder is a valid, non-empty asset, so nothing else here notices it.
+    addons = assets.get("addons.js")
+    if addons and ADDONS_PLACEHOLDER.encode("utf-8") in addons:
+        problems.append(
+            "addons.js is still the placeholder, so this APK carries no plugins and no "
+            "themes: run `npm run build:addons` and build again"
+        )
     for name in sorted(assets):
         if name not in REQUIRED_LOADER_ASSETS:
             problems.append(
@@ -285,11 +296,31 @@ def dependency_gaps(entries) -> list:
 # ---------------------------------------------------------------------------
 
 
-def gradle_command(module: str, variant: str, keystore: dict = None) -> list:
+def default_gradle() -> str:
+    """The Gradle to drive the build with.
+
+    The repository's own wrapper wins over a system Gradle, because the wrapper pins the
+    distribution the modules were written against
+    (gradle/wrapper/gradle-wrapper.properties) and a runner with an older or newer Gradle
+    would change the build. `GRADLE_CMD` still takes precedence, for an image that provides
+    Gradle itself, and a tree with no wrapper falls back to whatever `gradle` is on PATH so
+    the script still says something useful.
+    """
+    explicit = os.environ.get("GRADLE_CMD", "").strip()
+    if explicit:
+        return explicit
+    wrapper = ROOT / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    return str(wrapper) if wrapper.is_file() else "gradle"
+
+
+def gradle_command(module: str, variant: str, keystore: dict = None, gradle: str = "gradle") -> list:
     """The Gradle invocation for one module variant.
 
     The keystore is passed as the injected-signing properties rather than baked into
-    a `build.gradle`, so no signing material is ever a tracked file.
+    a `build.gradle`, so no signing material is ever a tracked file. `gradle` is the
+    executable the caller resolved (the repository's own wrapper by default, see
+    `default_gradle`): hard-coding `gradle` here is what left the wrapper in the tree
+    while every run used whatever happened to be on PATH.
     """
     # Run from the repository root against the root settings.gradle, which declares
     # `:android:manager` and `:android:loader`. The previous form was `--project-dir
@@ -298,7 +329,7 @@ def gradle_command(module: str, variant: str, keystore: dict = None) -> list:
     # project - the first real run died on it. find_built_apk still looks under
     # android/<module>/build/outputs/apk/<variant>, which is where this puts them.
     task = f":android:{module}:assemble{variant.capitalize()}"
-    command = ["gradle", "--console=plain", task]
+    command = [gradle, "--console=plain", task]
     if keystore:
         command += [
             f"-Pandroid.injected.signing.store.file={keystore['store_file']}",
@@ -375,16 +406,30 @@ def find_built_apk(module: str, variant: str) -> Path:
 def preflight(modules, gradle="gradle") -> list:
     """Everything that makes the build impossible, before Gradle is even started."""
     blockers = []
-    if not (ANDROID_DIR / "settings.gradle").is_file() and not (
-        ANDROID_DIR / "settings.gradle.kts"
-    ).is_file():
+    # The Gradle project is rooted at the REPOSITORY ROOT, not inside android/: the root
+    # settings.gradle declares ':android:loader' and ':android:manager', the modules live in
+    # android/<name>, and the APKs therefore land in android/<module>/build/outputs/apk/<variant>,
+    # which is where find_built_apk looks. Checking android/settings.gradle would be checking
+    # for a file this build deliberately does not have.
+    root_settings = ROOT / "settings.gradle"
+    if not root_settings.is_file() and not (ROOT / "settings.gradle.kts").is_file():
         blockers.append(
-            "android/settings.gradle is missing, so there is no Gradle build to run "
-            "(this is the gap docs/ANDROID-README.md records: the Java sources are here "
-            "but the Gradle project is not)"
+            "settings.gradle is missing at the repository root, so there is no Gradle "
+            "project to run (it declares ':android:loader' and ':android:manager')"
         )
-    if shutil.which(gradle) is None:
-        blockers.append(f"{gradle} is not on PATH")
+    elif root_settings.is_file():
+        declared = root_settings.read_text(encoding="utf-8", errors="replace")
+        for module in modules:
+            if f"':android:{module}'" not in declared and f'":android:{module}"' not in declared:
+                blockers.append(
+                    f"settings.gradle does not include ':android:{module}', so Gradle "
+                    "would not know the module exists"
+                )
+    if shutil.which(gradle) is None and not Path(gradle).is_file():
+        blockers.append(
+            f"{gradle} cannot be run: no Gradle of that name on PATH and no file there. "
+            "The repository ships ./gradlew, which downloads the pinned distribution."
+        )
     if shutil.which("java") is None:
         blockers.append("java is not on PATH (JDK 17 or newer is required)")
     for module in modules:
@@ -397,9 +442,9 @@ def preflight(modules, gradle="gradle") -> list:
     return blockers
 
 
-def build_variant(module: str, variant: str, output: Path, keystore: dict) -> dict:
+def build_variant(module: str, variant: str, output: Path, keystore: dict, gradle: str = "gradle") -> dict:
     """Run Gradle for one module and accept the APK only after looking at it."""
-    command = gradle_command(module, variant, keystore)
+    command = gradle_command(module, variant, keystore, gradle)
     print("# " + redacted(command))
     done = subprocess.run(command, cwd=str(ROOT))
     code = done.returncode
@@ -467,7 +512,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--output-dir", default=str(DEFAULT_OUTPUT), help="where the candidate APKs go"
     )
-    parser.add_argument("--gradle", default=os.environ.get("GRADLE_CMD", "gradle"))
+    parser.add_argument("--gradle", default=default_gradle())
     parser.add_argument(
         "--acceptance", default=str(ACCEPTANCE), help="where the record is written"
     )
@@ -507,7 +552,7 @@ def main(argv=None) -> int:
     if args.dry_run:
         print("# plan")
         for module in modules:
-            print("  " + redacted(gradle_command(module, args.variant, {})))
+            print("  " + redacted(gradle_command(module, args.variant, {}, args.gradle)))
         print(f"  the APKs would be written to {output}")
         return 0
 
@@ -566,7 +611,7 @@ def main(argv=None) -> int:
     output.mkdir(parents=True, exist_ok=True)
     for module in modules:
         try:
-            artifact = build_variant(module, args.variant, output, keystore)
+            artifact = build_variant(module, args.variant, output, keystore, args.gradle)
         except BuildError as error:
             print("FAIL " + str(error))
             record["checks"].append(

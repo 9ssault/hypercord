@@ -1,122 +1,96 @@
-// language: Java, file: android/shared/src/main/java/app/assault/shared/AccountSettings.java
-//
-// The account profile, described once for both apps.
-//
-// Two halves read this and they are not in the same process: the manager builds the JSON
-// and puts it in an Intent extra, and the loader reads its own copy out of the client's
-// preferences when Discord starts. The keys are spelled here, in one file, because the
-// failure mode of two spellings is silent - a profile that saves correctly and is then
-// ignored, with nothing in either app to say why.
-//
-// `read` takes a SharedPreferences rather than naming one: the manager passes its own
-// ("manager") and the loader passes the client's ("assault"), and both hold the same
-// keys. Nothing here reads a token, and nothing here writes: the manager's screen writes
-// the chosen profile, the client's own controls write the details.
 package app.assault.shared;
 
-import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.*;
 import android.content.SharedPreferences;
-import org.json.JSONException;
+import android.text.InputFilter;
+import android.widget.*;
 import org.json.JSONObject;
+import java.util.Arrays;
 
+/** Built-in profiles only. Configuration never contains account credentials or executable scripts. */
 public final class AccountSettings {
-    /** The Intent extra the manager puts the profile JSON in and the client reads it out of. */
-    public static final String EXTRA = "app.assault.shared.profile";
-
-    /** The three profiles, as they are stored and as the picker lists them. */
-    public static final String OFF = "off", LOCAL = "local", PRESENCE = "presence";
-
-    /** The key the chosen profile is stored under, and the one `read` always sets. */
-    public static final String MODE = "mode";
-
-    /**
-     * Every switch a profile carries, in the order the client's own controls list them.
-     * The loader writes exactly this list from the client's preferences, so a key added
-     * here without a preference of the same name would be read as its default.
-     */
-    public static final String[] FLAGS = {
-        "antiDelete", "antiEdit", "noTrack", "captureEnabled", "captureAttachments",
-        "redactAuthors", "blockCrashReports", "silentTyping", "maskTokens", "ghostPingAlert"
-    };
-
-    /**
-     * The six that are on in a profile that has never been configured. They are the
-     * privacy-preserving half (nothing kept off the wire, nothing reported, tokens and
-     * authors masked): a first run should be private before it is convenient, and every
-     * one of these is still a switch the person can turn off.
-     */
-    private static final String[] ON_AT_START = {
-        "noTrack", "captureEnabled", "captureAttachments", "blockCrashReports", "maskTokens", "ghostPingAlert"
-    };
-
-    private AccountSettings() {
-        // static only
-    }
-
-    /** The stored profile, or {@link #OFF} for a value this build does not recognise. */
-    public static String mode(SharedPreferences preferences) {
-        String stored = preferences.getString(MODE, OFF);
-        return LOCAL.equals(stored) || PRESENCE.equals(stored) ? stored : OFF;
-    }
-
-    /** Does this switch start on? Used only for a key that has never been written. */
-    public static boolean onAtStart(String key) {
-        for (String each : ON_AT_START) if (each.equals(key)) return true;
-        return false;
-    }
-
-    /**
-     * The whole profile as JSON: what the manager hands the client through
-     * {@link #EXTRA}, and what the loader merges into `globalThis.__ASSAULT_CONFIG__`.
-     * The presence half is added by {@link RichPresence#read} so the two files stay the
-     * only place these keys are written.
-     */
-    public static JSONObject read(SharedPreferences preferences) {
-        JSONObject profile = new JSONObject();
+    public static final String EXTRA = "app.assault.ACCOUNT_SETTINGS";
+    private static final String[] PROFILES = {"off", "controls", "presence"};
+    private static final int[] ACTIVITY_TYPES = {0, 2, 3, 5};
+    private static final String[] STATUSES = {"unchanged", "online", "idle", "dnd", "invisible"};
+    public static JSONObject read(SharedPreferences prefs) {
         try {
-            profile.put(MODE, mode(preferences));
-            for (String key : FLAGS) profile.put(key, preferences.getBoolean(key, onAtStart(key)));
-            // The bounded numbers: how much is kept, and for how long. 0 minutes means
-            // "until the client is closed", which is what a first run does.
-            profile.put("maxMessages", preferences.getInt("maxMessages", 500))
-                   .put("maxEdits", preferences.getInt("maxEdits", 20))
-                   .put("memoryKiB", preferences.getInt("memoryKiB", 4096))
-                   .put("retentionMinutes", preferences.getInt("retentionMinutes", 0));
-            RichPresence.read(preferences, profile);
-        } catch (JSONException impossible) {
-            // put() only rejects a null or non-finite value and every value above is a
-            // primitive or a string from this file, so this cannot fire. If it ever did,
-            // the caller still gets the keys that made it rather than an exception on a
-            // path that must not fail at startup.
-        }
-        return profile;
+            return validate(new JSONObject().put("accountProfile", prefs.getString("accountProfile", "off"))
+                .put("commandPrefix", prefs.getString("commandPrefix", "$"))
+                .put("selfReaction", prefs.getBoolean("selfReaction", false))
+                .put("reactionEmoji", prefs.getString("reactionEmoji", "🔥"))
+                .put("reactionIntervalSeconds", prefs.getInt("reactionIntervalSeconds", 10))
+                .put("reactionChannels", prefs.getString("reactionChannels", ""))
+                .put("activityType", prefs.getInt("activityType", 0))
+                .put("presenceStatus", prefs.getString("presenceStatus", "unchanged"))
+                .put("activityName", prefs.getString("activityName", "")).put("richPresence",RichPresence.read(prefs)));
+        } catch (Exception invalid) { return new JSONObject(); }
     }
-
-    /**
-     * The manager's picker. It chooses which profile the client runs and nothing else,
-     * because the details belong to the client's own controls screen; the profile starts
-     * {@link #OFF}, so applying one is always a deliberate act.
-     */
-    public static void show(Activity activity, SharedPreferences preferences, Runnable onSaved) {
-        final String[] profiles = {OFF, LOCAL, PRESENCE};
-        final String[] labels = {
-            "Off - the client runs exactly as installed",
-            "Local controls - commands, own-message reactions, captures",
-            "Controls + custom presence"
-        };
-        String current = mode(preferences);
-        int selected = OFF.equals(current) ? 0 : PRESENCE.equals(current) ? 2 : 1;
-        new AlertDialog.Builder(activity)
-            .setTitle("Account profile")
-            .setMessage("What the client adds to the account already signed in. No account token is used, and the details "
-                + "(captures, filters, presence fields) are edited inside the client under AS -> Account controls.")
-            .setSingleChoiceItems(labels, selected, (list, which) -> {
-                preferences.edit().putString(MODE, profiles[which]).apply();
-                list.dismiss();
-                if (onSaved != null) onSaved.run();
-            })
-            .setNegativeButton("Close", null)
-            .show();
+    public static JSONObject validate(JSONObject raw) throws Exception {
+        String profile=raw.optString("accountProfile","off"), prefix=raw.optString("commandPrefix","$");
+        String status=raw.optString("presenceStatus","unchanged"), emoji=raw.optString("reactionEmoji","🔥").trim();
+        if(!Arrays.asList(PROFILES).contains(profile) || !Arrays.asList(STATUSES).contains(status)) throw new IllegalArgumentException("Unknown profile or status");
+        if(!prefix.matches("[^\\s/@]{1,3}")) throw new IllegalArgumentException("Prefix needs 1–3 characters without spaces, / or @");
+        if(emoji.isEmpty() || emoji.length()>32 || emoji.matches(".*[<>\\s].*")) throw new IllegalArgumentException("Enter a Unicode emoji without spaces");
+        String activity=raw.optString("activityName","").trim();
+        if(activity.length()>128) throw new IllegalArgumentException("Activity is limited to 128 characters");
+        int interval=raw.optInt("reactionIntervalSeconds",10), activityType=raw.optInt("activityType",0);
+        if(interval<10 || interval>300) throw new IllegalArgumentException("Reaction interval must be 10–300 seconds");
+        if(activityType!=0 && activityType!=2 && activityType!=3 && activityType!=5) throw new IllegalArgumentException("Unknown activity type");
+        String channels=raw.optString("reactionChannels","").trim();
+        if(channels.equals("all"))channels="";
+        if(!channels.isEmpty()) {
+            String[] ids=channels.split(",",-1);
+            if(ids.length>20)throw new IllegalArgumentException("Use at most 20 reaction channel IDs");
+            for(int i=0;i<ids.length;i++){ids[i]=ids[i].trim();if(!ids[i].matches("[0-9]{1,20}"))throw new IllegalArgumentException("Channel IDs must be numbers separated by commas");}
+            channels=String.join(",",ids);
+        }
+        return new JSONObject().put("accountProfile",profile).put("commandPrefix",prefix)
+            .put("selfReaction",raw.optBoolean("selfReaction",false)).put("reactionEmoji",emoji)
+            .put("presenceStatus",status).put("activityName",activity).put("activityType",activityType)
+            .put("reactionIntervalSeconds",interval).put("reactionChannels",channels).put("richPresence",RichPresence.validate(raw.optJSONObject("richPresence")==null?new JSONObject():raw.getJSONObject("richPresence")));
+    }
+    public static void save(SharedPreferences prefs, JSONObject value) throws Exception {
+        if(!value.has("richPresence"))value.put("richPresence",RichPresence.read(prefs));
+        JSONObject checked=validate(value);
+        SharedPreferences.Editor editor=prefs.edit();
+        for(String key:new String[]{"accountProfile","commandPrefix","reactionEmoji","presenceStatus","activityName","reactionChannels"}) editor.putString(key,checked.getString(key));
+        editor.putString("richPresence",checked.getJSONObject("richPresence").toString());
+        editor.putInt("reactionIntervalSeconds",checked.getInt("reactionIntervalSeconds")).putInt("activityType",checked.getInt("activityType"));
+        editor.putBoolean("selfReaction",checked.getBoolean("selfReaction")).apply();
+    }
+    public static void show(Activity activity, SharedPreferences prefs, Runnable saved) {
+        LinearLayout panel=new LinearLayout(activity);panel.setOrientation(LinearLayout.VERTICAL);
+        int pad=Math.round(16*activity.getResources().getDisplayMetrics().density);panel.setPadding(pad,pad,pad,pad);
+        JSONObject current=read(prefs);
+        label(activity,panel,"Built-in account controls run in your signed-in client. Changes apply after restarting the client. Start/stop and prefix commands are local; no chat message is sent.");
+        Spinner profile=select(activity,panel,"Profile",new String[]{"Off","Local controls + own-message reactions","Controls + custom presence"},PROFILES,current.optString("accountProfile","off"));
+        EditText prefix=input(activity,panel,"Command prefix",current.optString("commandPrefix","$"),3);
+        Switch react=new Switch(activity);react.setText("React to my own new messages (at most once per 10 seconds)");react.setChecked(current.optBoolean("selfReaction",false));panel.addView(react);
+        EditText emoji=input(activity,panel,"Reaction emoji",current.optString("reactionEmoji","🔥"),32);
+        EditText interval=input(activity,panel,"Minimum reaction interval (10–300 seconds)",String.valueOf(current.optInt("reactionIntervalSeconds",10)),3);
+        interval.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        EditText channels=input(activity,panel,"Reaction channel IDs (comma-separated; blank means all)",current.optString("reactionChannels",""),419);
+        Spinner type=select(activity,panel,"Activity type",new String[]{"Playing","Listening","Watching","Competing"},new String[]{"0","2","3","5"},String.valueOf(current.optInt("activityType",0)));
+        Spinner status=select(activity,panel,"Presence status",new String[]{"Use Discord status","Online","Idle","Do not disturb","Invisible"},STATUSES,current.optString("presenceStatus","unchanged"));
+        EditText name=input(activity,panel,"Activity name (blank keeps Discord activities)",current.optString("activityName",""),128);
+        label(activity,panel,"Presence profile applies on Discord's next gateway presence update. Logout/account switch pauses controls. /assault remains available for capture, HTML export and status. Runtime availability depends on the installed Discord version.");
+        ScrollView scroll=new ScrollView(activity);scroll.addView(panel);
+        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("Hypercord account controls").setView(scroll).setNegativeButton("Cancel",null).setPositiveButton("Save",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            try {
+                save(prefs,new JSONObject().put("accountProfile",PROFILES[profile.getSelectedItemPosition()]).put("commandPrefix",prefix.getText().toString())
+                    .put("selfReaction",react.isChecked()).put("reactionEmoji",emoji.getText().toString()).put("presenceStatus",STATUSES[status.getSelectedItemPosition()]).put("activityName",name.getText().toString()).put("activityType",ACTIVITY_TYPES[type.getSelectedItemPosition()])
+                    .put("reactionIntervalSeconds",Integer.parseInt(interval.getText().toString())).put("reactionChannels",channels.getText().toString()));
+                dialog.dismiss();if(saved!=null)saved.run();
+            } catch(Exception error) {Toast.makeText(activity,error.getMessage(),Toast.LENGTH_LONG).show();}
+        }));
+        dialog.show();
+    }
+    private static void label(Activity activity,LinearLayout panel,String text){TextView view=new TextView(activity);view.setText(text);view.setPadding(0,12,0,8);panel.addView(view);}
+    private static EditText input(Activity activity,LinearLayout panel,String label,String value,int max){label(activity,panel,label);EditText input=new EditText(activity);input.setSingleLine(true);input.setFilters(new InputFilter[]{new InputFilter.LengthFilter(max)});input.setText(value);panel.addView(input);return input;}
+    private static Spinner select(Activity activity,LinearLayout panel,String label,String[] labels,String[] values,String current){
+        label(activity,panel,label);Spinner spinner=new Spinner(activity);spinner.setAdapter(new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,labels));
+        for(int i=0;i<values.length;i++)if(values[i].equals(current))spinner.setSelection(i);panel.addView(spinner);return spinner;
     }
 }

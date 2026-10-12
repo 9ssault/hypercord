@@ -10,3 +10,7 @@ tmp-diag/
 # OS noise
 .DS_Store
 Thumbs.db
+
+# Python bytecode from the build scripts
+__pycache__/
+*.pyc

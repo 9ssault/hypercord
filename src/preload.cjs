@@ -82,6 +82,9 @@ ipcRenderer.on("push", (_event, kind, payload) => {
       placeRail(host);
     }
   }
+  // The pane tells us which sections it actually has, so an entry can never point at
+  // one it has lost since this page was built.
+  if (key === "panes:views" && !OURS) adoptSettingsViews(payload);
   if (key === "tokens:changed" && !OURS) refreshPrompt();
   for (const cb of listeners.get(key) || []) {
     try {
@@ -625,9 +628,10 @@ function settingsHosts() {
   for (const selector of settingsHostCandidates()) {
     const found = [];
     for (const node of document.querySelectorAll(selector)) {
-      // our own entry must not make a wrapper look like a settings sidebar, and
-      // must not be picked as the place to put one
-      if (node.closest && node.closest("#hypercord-settings-entry")) continue;
+      // our own nodes must not make a wrapper look like a settings sidebar, and must
+      // not be picked as the place to put one - there is more than one of them now, so
+      // they are matched by attribute rather than by the first entry's id
+      if (node.closest && node.closest("[data-hypercord]")) continue;
       if (looksLikeSettingsSidebar(node)) found.push(node);
     }
     if (found.length) return found;
@@ -710,8 +714,10 @@ function watchSettingsLeaving(host) {
   host.addEventListener(
     "click",
     (event) => {
-      const node = event.target && event.target.closest ? event.target.closest("[id]") : null;
-      if (node && (node.id === "hypercord-settings-entry" || node.id === "hypercord-settings-separator")) return;
+      // a click on anything of ours keeps the sheet open: every entry is ours now, and
+      // matching them by one id would close the sheet the click had just opened
+      const ours = event.target && event.target.closest ? event.target.closest("[data-hypercord]") : null;
+      if (ours) return;
       closeOurs();
     },
     true,
@@ -722,18 +728,101 @@ function watchSettingsLeaving(host) {
   });
 }
 
-function settingsEntryFor(host) {
-  const sibling = [...host.children].find((node) => node.id !== "hypercord-settings-entry") || null;
+/* ---- Hypercord's own sections in Discord's settings --------------------- */
+
+/**
+ * The sections this client adds to Discord's settings sidebar, one entry each.
+ *
+ * The view names and the labels are the sheet's own (`src/panes.html` and the list
+ * `plugins/hyper/hyperPanes/index.js` announces): an entry that opens a section the
+ * sheet does not have would be a tab that lies, which is why the pane's announcement
+ * replaces this table the moment it arrives.
+ */
+const SETTINGS_SECTIONS = [
+  { view: "commands", label: "Commands" },
+  { view: "plugins", label: "Plugins" },
+  { view: "hyper", label: "Hyper plugins" },
+  { view: "beef", label: "Beef" },
+  { view: "themes", label: "Themes" },
+  { view: "logs", label: "Logs" },
+  { view: "accounts", label: "Accounts" },
+  { view: "tokens", label: "Access keys" },
+];
+
+/**
+ * What the pane said it has, in its order. Empty until the announcement arrives.
+ *
+ * `beef` is in the table above and not in the fallback below on purpose: the pane in
+ * this tree has seven sections, and an entry for a section the sheet does not have is
+ * worse than no entry - it opens somebody else's page under the wrong name. When the
+ * pane gains that section it says so, and the entry appears on its own.
+ */
+let SETTINGS_PANE_VIEWS = [];
+
+function settingsViews() {
+  if (SETTINGS_PANE_VIEWS.length) return SETTINGS_PANE_VIEWS.slice();
+  return SETTINGS_SECTIONS.filter((section) => section.view !== "beef").map((section) => section.view);
+}
+
+/**
+ * Adopt the pane's own section list: announced when the plugin starts and whenever it
+ * is asked what it has, so a section that is removed takes its entry with it.
+ */
+function adoptSettingsViews(payload) {
+  const list = Array.isArray(payload) ? payload.map((one) => String(one)).filter(Boolean) : [];
+  if (!list.length) return;
+  if (list.length === SETTINGS_PANE_VIEWS.length && list.every((one, index) => one === SETTINGS_PANE_VIEWS[index])) return;
+  SETTINGS_PANE_VIEWS = list;
+  ensureSettingsEntry();
+}
+
+/** The label an entry wears: the sheet's own name for the section, never a key. */
+function settingsLabel(view) {
+  const known = SETTINGS_SECTIONS.find((section) => section.view === view);
+  if (known) return known.label;
+  const text = String(view || "");
+  return text ? text[0].toUpperCase() + text.slice(1) : "Settings";
+}
+
+/**
+ * A decorative heading above our entries, so they read as Hypercord's own part of
+ * settings rather than as unrelated sections that happen to sit at the bottom. It
+ * carries no role and no tab behaviour: Discord's own entries keep their own count
+ * and none of their nodes is touched.
+ */
+function settingsGroupLabel() {
+  const group = document.createElement("div");
+  group.id = "hypercord-settings-group";
+  group.setAttribute("data-hypercord", "settings-group");
+  group.setAttribute("aria-hidden", "true");
+  group.textContent = "Hypercord";
+  return group;
+}
+
+/**
+ * One entry, built to sit among Discord's own items rather than merely near them:
+ * their element type, their role and their class attribute, so their stylesheet lays
+ * it out and it reads as one more settings section.
+ *
+ * The model element is taken from one of DISCORD's children, never from one of ours:
+ * copying our own first entry would hand every entry after it our id and our data
+ * attributes, and a set of entries that share one view is exactly the bug this shape
+ * avoids. Only the first keeps `hypercord-settings-entry`; the rest are found by
+ * their `data-hypercord-view`.
+ */
+function settingsEntryFor(host, view, first) {
+  const sibling = [...host.children].find((node) => !node.hasAttribute("data-hypercord")) || null;
   const likeButton = !sibling || sibling.tagName === "BUTTON";
   const entry = document.createElement(likeButton ? "button" : "div");
-  entry.id = "hypercord-settings-entry";
+  if (first) entry.id = "hypercord-settings-entry";
   entry.setAttribute("data-hypercord", "settings");
+  entry.setAttribute("data-hypercord-view", view);
   entry.setAttribute("role", (sibling && sibling.getAttribute("role")) || "tab");
   if (likeButton) entry.type = "button";
   else entry.setAttribute("tabindex", "0"); // a div has to bring its own keyboard reach
   if (sibling && sibling.className) entry.className = sibling.className;
-  entry.textContent = "Hypercord";
-  entry.setAttribute("aria-label", "Hypercord settings");
+  entry.textContent = settingsLabel(view);
+  entry.setAttribute("aria-label", "Hypercord " + settingsLabel(view) + " settings");
   // Measured before anything is shown: the sheet becomes the settings content column,
   // and when that column cannot be found it is not opened at all - the one thing this
   // must never do is put a panel over the client, and reporting "no-region" is how
@@ -743,7 +832,7 @@ function settingsEntryFor(host) {
       noteSettingsEntry("no-region", host);
       return;
     }
-    call("panes:open", "plugins").catch(() => {});
+    call("panes:open", view).catch(() => {});
   };
   watchSettingsLeaving(host);
   entry.addEventListener("click", open);
@@ -763,48 +852,69 @@ function settingsEntryFor(host) {
  * the preload's world holds) and mirrored on the preload's window for our own
  * debugging.
  */
-function noteSettingsEntry(what, host) {
+function noteSettingsEntry(what, host, entries) {
   try {
     document.documentElement.setAttribute("data-hypercord-settings", what);
     if (host) document.documentElement.setAttribute("data-hypercord-settings-host", String(host.className || host.getAttribute("role") || host.tagName).slice(0, 80));
+    if (typeof entries === "number") document.documentElement.setAttribute("data-hypercord-settings-entries", String(entries));
     window.__hypercordSettingsEntry = what;
   } catch {
     /* a document that refuses attributes is not a reason to stop */
   }
 }
 
+/**
+ * One entry per section, reconciled rather than merely added.
+ *
+ * The set is rebuilt whenever it does not match the pane's sections, and only nodes
+ * carrying our own attributes are ever removed - Discord's entries are not ours to
+ * touch. That is what keeps "one entry per section" true through a React re-render
+ * (which throws away nodes it does not know), a section list that changes, and a
+ * sidebar rebuilt while settings is open; it is also why a second set cannot appear.
+ */
 function ensureSettingsEntry() {
   if (OURS || !document.body) return false;
-  if (document.getElementById("hypercord-settings-entry")) {
-    noteSettingsEntry("added", null);
+  const wanted = settingsViews();
+  const current = [...document.querySelectorAll('[data-hypercord="settings"]')];
+  const host = current.length && current[0].parentElement ? current[0].parentElement : null;
+  const settled =
+    Boolean(host) &&
+    looksLikeSettingsSidebar(host) &&
+    current.length === wanted.length &&
+    current.every((node, index) => node.getAttribute("data-hypercord-view") === wanted[index]);
+  if (settled) {
+    noteSettingsEntry("added", host, wanted.length);
     return true;
   }
-  for (const host of settingsHosts()) {
-    // A section of its own, not one more item in Discord's list: a separator above
-    // it, so the entry reads as Hypercord's own part of settings. The separator is
-    // ours - it carries no role and no tab behaviour, so Discord's own entries are
-    // still their own count and none of their nodes is touched.
-    if (!document.getElementById("hypercord-settings-separator")) {
-      const rule = document.createElement("div");
-      rule.id = "hypercord-settings-separator";
-      rule.setAttribute("data-hypercord", "settings-separator");
-      rule.setAttribute("aria-hidden", "true");
-      host.appendChild(rule);
-    }
-    host.appendChild(settingsEntryFor(host));
-    noteSettingsEntry("added", host);
+  // only our own nodes go first: a set that has to change is rebuilt whole, so no
+  // entry can be left pointing at a section the sheet has since lost
+  for (const node of [...document.querySelectorAll("[data-hypercord]")]) {
+    const kind = node.getAttribute("data-hypercord");
+    if (kind === "settings" || kind === "settings-separator" || kind === "settings-group") node.remove();
+  }
+  for (const found of settingsHosts()) {
+    // A section of its own, not one more item in Discord's list: a heading and a
+    // separator above the entries, so they read as Hypercord's own part of settings.
+    const rule = document.createElement("div");
+    rule.id = "hypercord-settings-separator";
+    rule.setAttribute("data-hypercord", "settings-separator");
+    rule.setAttribute("aria-hidden", "true");
+    found.appendChild(rule);
+    found.appendChild(settingsGroupLabel());
+    wanted.forEach((view, index) => found.appendChild(settingsEntryFor(found, view, index === 0)));
+    noteSettingsEntry("added", found, wanted.length);
     return true;
   }
-  noteSettingsEntry("no-host", null);
+  noteSettingsEntry("no-host", null, 0);
   return false;
 }
 
 /**
  * Settings open and close as a layer, and Discord rewrites its sidebar - React
- * throws away nodes it does not know about - so the entry is put back whenever
+ * throws away nodes it does not know about - so the entries are put back whenever
  * the document changes, through the same single observer the rest of this file
  * uses. It is one querySelectorAll per mutation batch, nothing on a timer, and
- * nothing written at all while the entry is already in the page.
+ * nothing written at all while the set already matches the pane's sections.
  */
 function followSettings() {
   const present = ensureSettingsEntry();
