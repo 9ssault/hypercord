@@ -1,0 +1,15 @@
+// language: Groovy, file: build.gradle
+//
+// The root build declares the Android Gradle Plugin once and configures nothing else:
+// each module says how it is built, so there is one place to look for a module's
+// settings and one place for the tool version.
+//
+// Version choice, stated because a mismatched AGP/Gradle pair fails before it compiles
+// anything: `docs/ANDROID-README.md` and `.github/workflows/android-release.yml` both
+// ask for JDK 21 and Android SDK 36, and compileSdk 36 is what needs AGP 8.9 or newer.
+// AGP 8.9.0 pairs with Gradle 8.11.1, which is what `gradle/wrapper/gradle-wrapper.properties`
+// pins. If the installed SDK has no android-36 platform, lower compileSdk and targetSdk
+// in *both* module files together - lowering one of them alone changes behaviour silently.
+plugins {
+    id 'com.android.application' version '8.9.0' apply false
+}

@@ -54,8 +54,9 @@ APK with our modifications, in the shape the projects above already use:
 
 * the Hyper plugins would be generated from the same
   `plugins/hyper/` sources and the same `scripts/vendor.mjs` catalogue, so one
-  plugin definition serves both platforms - no such Android folder exists yet, and
-  this file is the only thing under `android/`;
+  plugin definition serves both platforms - the two app modules below exist, but no
+  plugin source has been adapted for Android any more than the desktop ones were
+  before `src/loader.cjs`;
 * the manager is a small Android app (Kotlin) that fetches or accepts a Discord
   APK, verifies its version, injects the bundle,
 * signs the result with a keystore the user controls, and installs it;
@@ -64,10 +65,11 @@ APK with our modifications, in the shape the projects above already use:
 
 ## What is not done, and cannot be verified from here
 
-- No APK is built, and none is claimed. This machine has no Discord APK, no
-  Android SDK, no `apktool`, no `apksigner` and no JDK 25, so a build script
-  written now would be untested code that fails on first contact with an APK -
-  worse than no script.
+- No APK is built, and none is claimed. There is now a Gradle build (see below),
+  but it cannot produce one yet: the sources are incomplete and the toolchain is not
+  on the machine that wrote the build. The exact missing pieces are listed in the
+  next section, because "no APK" is not useful and "missing InstallReceiver.java,
+  app.assault.shared, res/, four jars" is.
 - `rea` is available as an MCP server and its analysis commands are the only part
   of this we can use today: given an APK, `analyze-apk` is how we would learn
   which Discord version and which bundle layout we are dealing with.
@@ -75,6 +77,63 @@ APK with our modifications, in the shape the projects above already use:
   plain JS module, and its registration API) is **not verified** here. Until an
   APK and a loader are in hand, our plugin sources must be assumed to need an
   adapter, exactly as the desktop ones needed `src/loader.cjs`.
+
+## The build that now exists, and what it still needs
+
+The Gradle build is authored and checked in: `settings.gradle`, `build.gradle` and
+`gradle.properties` at the repository root, a module build for each app under
+`android/manager/` and `android/loader/`, and ProGuard rules beside each of them.
+It is pinned to Android Gradle Plugin 8.9.0 with Gradle 8.11.1, `compileSdk` and
+`targetSdk` 36 (what the release workflow and this document ask for), `minSdk` 26
+(`java.util.Base64` and the install-unknown-apps screen are API 26), Java 21, and a
+release signing config that reads `HYPERCORD_KEYSTORE_PATH` /
+`HYPERCORD_SIGNING_PASSWORD` - the same two variables `.github/workflows/android-release.yml`
+exports - while still producing an unsigned release APK when they are absent, which is
+the behaviour that workflow depends on.
+
+There is no `gradle-wrapper.jar`: it is a binary nobody can write by hand, so
+`./gradlew` reports a missing main class until somebody runs `gradle wrapper
+--gradle-version 8.11.1` once on a machine with Gradle and commits the jar, the
+scripts and the properties together.
+
+**What the build still cannot do, and why - each item is a build failure, and the
+message Gradle prints does not name the missing file:**
+
+1. `app.assault.shared` - `AccountSettings`, `CommandGuide` and `RichPresence` are
+   imported by `ManagerActivity` and by `AssaultLoader`, and no file in this
+   repository defines the package. The module is deliberately *not* declared in
+   `settings.gradle`, so the failure stays "package app.assault.shared does not
+exist" instead of becoming an error about an empty project.
+2. `ClientEngine`, `ReleaseSource` and `ManagerUpdater` - referenced throughout
+   `ManagerActivity` and defined nowhere either. This is the app's own engine,
+   release feed and updater; the APK cannot be assembled without them.
+3. `InstallReceiver` and `UpdateJob` - declared in
+   `android/manager/src/main/AndroidManifest.xml` and absent from the tree.
+4. `res/` - there is no `src/main/res` at all, and the manifest asks for
+   `@mipmap/ic_launcher` and `@xml/data_extraction_rules`. Nothing here draws from
+   XML (every screen is built programmatically), so those two resources are all that
+   must exist.
+5. Four jars under `android/manager/libs/`: apkzlib (the `com.android.tools.build.apkzlib.*`
+   signing and zip classes), ManifestEditor (`com.wind.meditor.*`), and LSPatch's own
+   `share` and `patch` modules (`org.lsposed.lspatch.share.*`, `org.lsposed.patch.util.*`).
+   Those class names are what `ApkPatcher` imports; the coordinates are not published
+   under them, so the build declares file dependencies and leaves the four lines
+   commented until the jars exist rather than guessing a version.
+6. `android/loader/src/main/AndroidManifest.xml` - an application module without a
+   manifest does not build, and the loader has none. It needs the package and the
+   Xposed entry-point meta-data, nothing more.
+7. `android/loader/src/main/assets/` - the ten files the release verification
+   requires, generated by `scripts/build_android.py`: `xposed_init` (whose content is
+   `app.assault.loader.AssaultLoader`), `assault-runtime.js`, `assault.js`,
+   `addons.js`, `account-controls.js`, `rich-presence.js`, `history-export.js`,
+   `html-export.js`, and the two licence texts (`licenses/Acorn-MIT.txt`,
+   `licenses/Revenge-BSD-3-Clause.txt`).
+
+With those in place, `bash ./gradlew :android:manager:assembleRelease
+:android:loader:assembleRelease` produces the two APKs the release workflow copies as
+`Hypercord-Manager.apk` and `Hypercord-Loader.apk`. `scripts/build_android.py` is
+expected to find the wrapper when the jar is present and the `gradle` on the PATH
+otherwise, so CI needs no wrapper jar of its own.
 
 ## The one honest claim
 

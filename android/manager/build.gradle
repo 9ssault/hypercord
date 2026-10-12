@@ -1,0 +1,147 @@
+// language: Groovy, file: android/manager/build.gradle
+//
+// The manager: the app that prepares a patched Discord client and installs it.
+//
+// Read the "does not compile yet" note at the bottom before running this. The file is
+// written to express what the sources actually need; several of those things are not in
+// the repository, and no build file can supply them.
+plugins {
+    id 'com.android.application'
+}
+
+// The version is not invented here. `ManagerActivity` prints BuildConfig.VERSION_NAME in
+// its diagnostics and the release workflow tags a source tag, so the real version comes
+// from whoever builds it; with nothing set the APK says so instead of claiming a number
+// this file made up.
+def androidVersion = System.getenv('HYPERCORD_ANDROID_VERSION') ?: '0.0.0-untagged'
+def androidVersionCode = (System.getenv('HYPERCORD_ANDROID_VERSION_CODE') ?: '1') as int
+
+// Signing, from the environment, the same two variables the release workflow exports.
+// Absent variables are not an error: the workflow deliberately builds an unsigned APK
+// when there is no keystore, because an unsigned APK is worse than a signed one and far
+// better than none - and the workflow states which one it produced.
+def keystorePath = System.getenv('HYPERCORD_KEYSTORE_PATH')
+def keystorePassword = System.getenv('HYPERCORD_SIGNING_PASSWORD')
+def keyAlias = System.getenv('HYPERCORD_KEY_ALIAS') ?: 'manager'
+
+android {
+    // The Java sources live in app.assault.manager, and the manifest declares no package,
+    // so the namespace has to be stated here or R and BuildConfig land in the wrong place.
+    namespace 'app.assault.manager'
+    compileSdk 36
+
+    defaultConfig {
+        // The manifest's own identifiers: the package id is what an installed client
+        // updates against, so it is not a branding decision.
+        applicationId 'app.assault.manager'
+        // 26 because the sources use java.util.Base64 (API 26) and the manager opens the
+        // "install unknown apps" screen (API 26). Nothing here needs anything older.
+        minSdk 26
+        targetSdk 36
+        versionCode androidVersionCode
+        versionName androidVersion
+        // ManagerActivity reads BuildConfig.VERSION_NAME; AGP 8 leaves buildConfig off
+        // by default, and without this line the only symptom is an unresolved symbol.
+        buildConfigField 'String', 'HYPERCORD_DISPLAY_BRAND', '"Hypercord"'
+    }
+
+    buildFeatures {
+        buildConfig true
+        // No view XML: every screen in this module is built programmatically, which is
+        // also why there is no `res/layout` to add.
+        viewBinding false
+    }
+
+    compileOptions {
+        // Java 21: the release workflow installs JDK 21 and the Android docs ask for it.
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    if (keystorePath && keystorePassword) {
+        signingConfigs {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword System.getenv('HYPERCORD_KEY_PASSWORD') ?: keystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystorePath && keystorePassword) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // No minification in debug: the manager is driven by reflection over its own
+            // widgets in a few places, and chasing obfuscated names in logcat is a waste.
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        // A missing resource (see below) is already an error in the manifest merger, which
+        // names the file and the attribute; lint's duplicate summary adds nothing.
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*.kotlin_module', 'META-INF/DEPENDENCIES']
+        }
+    }
+}
+
+dependencies {
+    // From the platform, so no coordinate: the sources import org.json.JSONObject, which
+    // Android provides.
+    //
+    // Resolvable today, real coordinates:
+    implementation 'com.google.code.gson:gson:2.11.0'            // com.google.gson.Gson in ApkPatcher
+    implementation 'commons-io:commons-io:2.16.1'                 // org.apache.commons.io.FilenameUtils in ApkPatcher
+
+    // NOT resolvable today, and deliberately not given coordinates I cannot verify. Each
+    // of these is a jar the repository does not contain, so the build fails at dependency
+    // resolution - which is the honest failure, because the classes they provide are
+    // required by ApkPatcher and cannot be written here:
+    //   libs/apkzlib.jar          com.android.tools.build.apkzlib.{sign,zip}.*  (SigningExtension,
+    //                             SigningOptions, AlignmentRules, NestedZip, StoredEntry, ZFile, ZFileOptions)
+    //   libs/ManifestEditor.jar   com.wind.meditor.{core,property,utils}.*      (ManifestEditor,
+    //                             AttributeItem, ModificationProperty, NodeValue)
+    //   libs/lspatch-share.jar    org.lsposed.lspatch.share.*                    (Constants, LSPConfig, PatchConfig)
+    //   libs/lspatch-patch.jar    org.lsposed.patch.util.*                       (ApkSignatureHelper, Logger, ManifestParser)
+    // Source for the first two: apkzlib ships with the Android build tools, and
+    // ManifestEditor is the WindySha project the imports name. The LSPatch classes are
+    // that project's own modules and are not published to Maven Central under these
+    // packages. Put the real jars in `android/manager/libs/` and uncomment the four lines.
+    // implementation files('libs/apkzlib.jar')
+    // implementation files('libs/ManifestEditor.jar')
+    // implementation files('libs/lspatch-share.jar')
+    // implementation files('libs/lspatch-patch.jar')
+}
+
+// What this module does not have, in one place, because each item is a build failure with
+// a message that does not say which file is missing:
+//
+//  1. app.assault.shared (AccountSettings, CommandGuide, RichPresence) - imported by
+//     ManagerActivity and defined nowhere in this repository. See settings.gradle.
+//  2. ClientEngine, ReleaseSource, ManagerUpdater - referenced throughout
+//     ManagerActivity and defined nowhere either. This is the one that cannot be
+//     worked around: they are this app's own engine, download list and updater.
+//  3. app.assault.manager.InstallReceiver and app.assault.manager.UpdateJob - named in
+//     AndroidManifest.xml and absent from the tree, so the merged manifest points at
+//     classes that do not exist.
+//  4. res/ - there is no `src/main/res` at all. The manifest asks for
+//     @mipmap/ic_launcher and @xml/data_extraction_rules, and the merger fails on the
+//     first missing one. Nothing here draws from XML, so those are the two resources
+//     that must exist (an adaptive icon and the Android 12+ backup rules file).
+//  5. The four jars listed above.
+//
+// Until those exist, `assembleRelease` cannot produce manager-release.apk, whatever this
+// file says - and the workflow that copies release/candidate/manager-release.apk would
+// fail at its first step, not at the copy.

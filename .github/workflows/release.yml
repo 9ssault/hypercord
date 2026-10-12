@@ -1,0 +1,376 @@
+# Every platform, from runners that have the toolchain for it.
+#
+# Why this file exists: two of the four artifacts simply cannot be produced on a
+# Windows machine - electron-builder refuses to build for macOS anywhere but macOS
+# (`Build for macOS is supported only on macOS`), and the APK needs a JDK and the
+# Android SDK. Building on a developer box therefore produced a release that
+# *looked* complete and was missing the two artifacts the phone and Mac users need.
+# So each platform builds on a runner that has its toolchain, and one publish job
+# attaches the results to a single release.
+#
+# Two rules this pipeline keeps, because a release is the one thing that cannot be
+# quietly re-done:
+#
+#   * nothing is published by a job that did not pass its own gate - each desktop
+#     job runs the repository's suites before it packs anything, and the APK job
+#     builds through `scripts/build_android.py`, the project's own entry point;
+#   * no `|| true` and no `continue-on-error` on a build step. A missing artifact has
+#     to fail loudly; `upload-artifact` with `if-no-files-found: error` is what makes
+#     a build that produced nothing fail instead of publishing a half release.
+#
+# Signing is reported, never assumed: each job prints whether it is signing, and an
+# unsigned binary is labelled unsigned. Absent secrets mean an unsigned build rather
+# than a silent failure - an unsigned APK still installs, it simply cannot update over
+# a signed one, and the job log says so either way.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and release (for example v0.2.0)'
+        required: true
+        type: string
+
+# Read by default; only the publish job is granted write, so a build job cannot
+# edit a release even by accident.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      # One OS failing must not hide the other two: the artifacts that did build are
+      # still worth attaching, and the publish job reports which ones are missing.
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows
+            os: windows-latest
+            targets: --win --x64 --arm64
+            list: bash -lc "ls -la dist | grep -E '[.](exe|yml|blockmap)$' || (echo 'nothing was produced' && exit 1)"
+          - label: macos
+            os: macos-latest
+            targets: --mac --x64 --arm64
+            list: bash -lc "ls -la dist | grep -E '[.](dmg|zip|yml|blockmap)$' || (echo 'nothing was produced' && exit 1)"
+          - label: linux
+            os: ubuntu-latest
+            targets: --linux --x64
+            list: bash -lc "ls -la dist | grep -E '[.](AppImage|deb|tar[.]gz|yml)$' || (echo 'nothing was produced' && exit 1)"
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Report the toolchain
+        shell: bash
+        run: |
+          node --version
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The suites are the repository's own gate, and one of them launches the built
+      # client (`tests/preload`, `tests/updater`), so a Linux runner needs a display.
+      - name: Run the test suites (Linux, under a virtual display)
+        if: matrix.label == 'linux'
+        run: xvfb-run -a npm test
+
+      - name: Run the test suites
+        if: matrix.label != 'linux'
+        run: npm test
+
+      - name: Report the signing mode
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "signing: a certificate is configured (CSC_LINK is set)"
+          else
+            echo "signing: UNSIGNED - no CSC_LINK secret, so this build carries no certificate"
+            echo "         Windows SmartScreen and macOS Gatekeeper will warn about it"
+          fi
+          if [ "${{ matrix.label }}" = "macos" ]; then
+            if [ -n "$APPLE_ID" ]; then
+              echo "notarisation: APPLE_ID is set, so electron-builder can notarise"
+            else
+              echo "notarisation: none - the mac artifacts will be unsigned and un-notarised"
+            fi
+          fi
+
+      # --publish never: this job produces files, it never edits a release. Attaching
+      # them is the publish job's one job.
+      - name: Build the installers
+        shell: bash
+        # CSC_IDENTITY_AUTO_DISCOVERY is off when no certificate is configured: an
+        # identity discovered in a runner's keychain is how a build ends up signed
+        # with something nobody chose.
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK == '' && 'false' || 'true' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist -- ${{ matrix.targets }} --publish never
+
+      - name: List what was produced
+        shell: bash
+        run: ${{ matrix.list }}
+
+      - name: Upload this platform's artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.label }}
+          # the installers and the update feed files; `dist/*-unpacked` is packaging
+          # litter, and the publish job fetches the release list from these names
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.tar.gz
+            dist/*.blockmap
+            dist/latest.yml
+            dist/latest-mac.yml
+            dist/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 21, not 17: the Android documentation and the Android Gradle Plugin this
+      # tree targets require it, and the two files disagreed.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # Says what this runner actually has before anything is built, so a failure
+      # later is read against a known toolchain rather than guessed at. A missing
+      # entry point is reported here and then fails loudly in the build step below.
+      - name: Report the Android toolchain
+        run: |
+          java -version
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
+          for dir in "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" "${ANDROID_HOME:-/usr/local/lib/android/sdk}/platforms"; do
+            if [ -d "$dir" ]; then echo "--- $dir"; ls "$dir"; else echo "missing: $dir"; fi
+          done
+          if command -v gradle >/dev/null 2>&1; then gradle --version; else echo "no gradle on PATH: the build has to use the wrapper or the SDK's own tooling"; fi
+          if [ -f scripts/build_android.py ]; then echo "build entry point present: scripts/build_android.py"; else echo "build entry point MISSING: scripts/build_android.py"; fi
+
+      # The addon bundle is assembled from the module roots, so the JS side is
+      # installed before the Gradle build runs.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Report the signing mode
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          HYPERCORD_SIGNING_PASSWORD: ${{ secrets.HYPERCORD_SIGNING_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$HYPERCORD_SIGNING_PASSWORD" ]; then
+            echo "signing: a keystore is configured (KEYSTORE_BASE64 is set)"
+          else
+            echo "signing: UNSIGNED - KEYSTORE_BASE64 and HYPERCORD_SIGNING_PASSWORD are not both set,"
+            echo "         so the APKs cannot be signed and Android will refuse to update over a signed install"
+          fi
+
+      # The keystore is written to the runner's temporary directory, never into the
+      # checkout, and is removed even when the build fails.
+      - name: Build the APKs
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          HYPERCORD_SIGNING_PASSWORD: ${{ secrets.HYPERCORD_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -n "${KEYSTORE_BASE64}" ]; then
+            export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
+            trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
+          fi
+          python3 scripts/build_android.py --all-variants
+          # the suites are part of the gate here too, and two of them launch the client,
+          # so this runner needs a virtual display just as the Linux desktop job does
+          xvfb-run -a npm test
+          python3 scripts/candidate_artifacts.py collect release/candidate
+
+      - name: Name, checksum and record the APKs
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp release/candidate/manager-release.apk release/Hypercord-Manager.apk
+          cp release/candidate/loader-release.apk release/Hypercord-Loader.apk
+          python3 scripts/candidate_artifacts.py evidence release/acceptance.json
+          python3 scripts/pack_release_artifacts.py --output-dir release --acceptance release/acceptance.json
+          cd release
+          # whatever packaging produced, checksummed - but no APK at all is a failure,
+          # not an empty SHA256SUMS file
+          shopt -s nullglob
+          produced=( *.apk *.zip )
+          if [ ${#produced[@]} -eq 0 ]; then echo "no APK was produced"; exit 1; fi
+          sha256sum -- "${produced[@]}" > SHA256SUMS
+
+      - name: Remove the signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/manager.p12"
+
+      - name: Upload the APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: |
+            release/*.apk
+            release/*.zip
+            release/SHA256SUMS
+            release/acceptance.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Attach everything to the release
+    # Runs even when one platform failed, so the artifacts that did build are not
+    # thrown away - and then reports every failure and fails the run, because a
+    # partial release must never look like a complete one.
+    needs: [desktop, apk]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Download every build's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Report what is being attached
+        env:
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          APK_RESULT: ${{ needs.apk.result }}
+        run: |
+          set -euo pipefail
+          echo "desktop jobs: $DESKTOP_RESULT"
+          echo "apk job: $APK_RESULT"
+          ls -la release
+          count=$(find release -maxdepth 1 -type f | wc -l)
+          echo "attaching $count file(s)"
+          test "$count" -gt 0
+
+      - name: Create the release if it does not exist yet
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          APK_RESULT: ${{ needs.apk.result }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "the release for $TAG already exists; its assets will be replaced"
+            exit 0
+          fi
+          {
+            echo "## Hypercord $TAG"
+            echo
+            echo "Built by \`.github/workflows/release.yml\` on the tag \`$TAG\`."
+            echo
+            echo "| Part | Result |"
+            echo "| --- | --- |"
+            echo "| Desktop (Windows, macOS, Linux) | $DESKTOP_RESULT |"
+            echo "| Android APK | $APK_RESULT |"
+            echo
+            echo "Artifacts are attached to this release, with \`latest.yml\`, \`latest-mac.yml\`"
+            echo "and \`latest-linux.yml\` for the updater. An unsigned build says so in the"
+            echo "job that produced it: look for \`signing: UNSIGNED\` in the run's log."
+            echo
+            echo "See \`README.md\` for setup on each platform and \`docs/ANDROID-README.md\`"
+            echo "for the phone client."
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" \
+            --title "Hypercord $TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag
+
+      - name: Attach the artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # --clobber: a re-run replaces the assets of that tag instead of failing on
+          # the ones the previous run left behind
+          gh release upload "$TAG" release/* --clobber
+
+      - name: List the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: gh release view "$TAG"
+
+      # The last word: an incomplete release is reported as a failed run, however
+      # much of it succeeded.
+      - name: Fail if any platform did not build
+        env:
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          APK_RESULT: ${{ needs.apk.result }}
+        run: |
+          failed=0
+          if [ "$DESKTOP_RESULT" != "success" ]; then
+            echo "FAIL the desktop matrix ended as '$DESKTOP_RESULT': some platform's artifacts are missing"
+            failed=1
+          fi
+          if [ "$APK_RESULT" != "success" ]; then
+            echo "FAIL the APK job ended as '$APK_RESULT': the release has no APK"
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "the release was published with the artifacts that built; re-run the workflow for the rest"
+            exit 1
+          fi
+          echo "every platform built and was attached"

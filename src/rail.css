@@ -30,7 +30,12 @@
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 300px;
+  /* the width and the edge are set from the page: --hc-rail-width is clamped so the
+     rail cannot be wider than the room beside Discord's own columns, and the inset
+     variables below are the widths the preload measured for Discord's trays. Both
+     fall back to the old numbers, so a page that cannot be measured looks the same
+     as before. */
+  width: var(--hc-rail-width, 300px);
   z-index: 2147483000;
   display: none;
   box-sizing: border-box;
@@ -50,7 +55,11 @@
 }
 
 #hypercord-rail[data-side="left"] {
-  left: 0;
+  /* not `left: 0`: that is Discord's server tray (the guild column and the channel
+     list), and a menu pinned there covers it. The rail starts at the tray's own
+     right edge instead, which is what "do not take over the server tray" means in
+     pixels. 0 is the fallback for a page with no measurable tray. */
+  left: var(--hc-tray-left, 0px);
   right: auto;
   border-left: none;
   border-right: 1px solid var(--hc-border, #2b2d31);
@@ -58,8 +67,33 @@
 }
 
 #hypercord-rail[data-side="right"] {
-  right: 0;
+  /* the same on the right: the member list is Discord's, so the rail begins where
+     it ends. */
+  right: var(--hc-tray-right, 0px);
   left: auto;
+}
+
+/* The break that makes the entry a section of its own rather than one more item in
+   Discord's list: a rule and the accent bar Discord uses to mark the selected
+   section. Purely ours, inside our own element, and it changes nothing of theirs. */
+#hypercord-settings-separator {
+  display: block;
+  height: 1px;
+  margin: 8px 8px 4px 8px;
+  background: var(--hc-border, #2b2d31);
+}
+#hypercord-settings-entry[data-hypercord="settings"] {
+  position: relative;
+}
+#hypercord-settings-entry[data-hypercord="settings"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--hc-accent, #5865f2);
 }
 
 #hypercord-rail .hc-head {

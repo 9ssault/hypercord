@@ -1,0 +1,161 @@
+[
+  {
+    "name": "Revenge runtime bundle",
+    "path": "vendor/revenge/revenge.js",
+    "kind": "upstream-bundle",
+    "source": "upstream Revenge runtime (BSD-3-Clause)",
+    "license": "BSD-3-Clause",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "The runtime that scripts/patch_runtime.py rewrites before it is published, and the only entry here that patch_runtime.py reads by name (its path ends in /revenge.js). It is not in this tree and its checksum is therefore not pinned: fetching it and recording the digest is the first step of restoring the Android build, and until that is done patch_runtime.py refuses to patch anything rather than patching an unreviewed upstream."
+  },
+  {
+    "name": "Xposed API",
+    "path": "android/libs/xposed-api-82.jar",
+    "kind": "compile",
+    "source": "maven: de.robv.android.xposed:api:82",
+    "coordinate": "de.robv.android.xposed:api:82",
+    "license": "Apache-2.0",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "Every loader source imports de.robv.android.xposed.* (XposedBridge, XC_MethodHook, XposedHelpers, XC_LoadPackage). Gradle resolves it; the path here is where an offline, checksum-pinned copy would be staged. Not required means a missing staged copy is not a build blocker, only an unpinned one."
+  },
+  {
+    "name": "LSPatch classes",
+    "path": "android/libs/lspatch.jar",
+    "kind": "compile",
+    "source": "LSPatch (GPL-3.0) - a local artifact, not on Maven",
+    "license": "GPL-3.0",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "android/manager/.../ApkPatcher.java imports org.lsposed.lspatch.share.* and org.lsposed.patch.util.* (ManifestParser, ApkSignatureHelper, Logger) and org.lsposed.lspatch.share.Constants/LSPConfig/PatchConfig. LSPatch publishes no Maven artifact, so its classes must be staged here (or built from the LSPatch sources) before the manager can compile. This is a named gap, not a mystery failure: without this jar the manager module does not build."
+  },
+  {
+    "name": "AppCompat-free shared Android sources",
+    "path": "android/shared/src/main/java/app/assault/shared/AccountSettings.java",
+    "kind": "source",
+    "source": "this repository (the loader and the manager both import app.assault.shared.*)",
+    "license": "GPL-3.0-or-later",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "android/loader/.../AssaultLoader.java imports app.assault.shared.AccountSettings, and the manager imports app.assault.shared.AccountSettings, CommandGuide and RichPresence. No android/shared module and no copy of those classes exists anywhere in the tree, so both modules currently fail to compile. The shared module has to exist before an APK can be produced; recorded here so the failure is a named gap."
+  },
+  {
+    "name": "Acorn licence text",
+    "path": "android/licenses/Acorn-MIT.txt",
+    "kind": "licence",
+    "source": "Acorn (MIT)",
+    "license": "MIT",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "Shipped inside the loader's asset bundle as licenses/Acorn-MIT.txt and required by the loader asset rules, so the build refuses a bundle without it. The licence text itself is not in this tree, which is why the licence files are listed as inputs rather than assumed."
+  },
+  {
+    "name": "Revenge licence text",
+    "path": "android/licenses/Revenge-BSD-3-Clause.txt",
+    "kind": "licence",
+    "source": "Revenge (BSD-3-Clause)",
+    "license": "BSD-3-Clause",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "Shipped as licenses/Revenge-BSD-3-Clause.txt in the loader bundle and required by the same rules. The notice in the manager's open-source screen names this licence; the text itself is not in the tree."
+  },
+  {
+    "name": "Repository licence for the Android half",
+    "path": "android/LICENSE",
+    "kind": "licence",
+    "source": "this repository (GPL-3.0-or-later, per package.json)",
+    "license": "GPL-3.0-or-later",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "There is no LICENSE at the repository root and none under android/, so the Android artifacts ship without a copy of the licence they are distributed under. Noted in README.md and docs/ANDROID-README.md as a gap; adding the text is a one-file change that nothing else depends on."
+  },
+  {
+    "name": "Gson",
+    "path": "android/libs/gson.jar",
+    "kind": "compile",
+    "source": "maven: com.google.code.gson:gson",
+    "coordinate": "com.google.code.gson:gson",
+    "license": "Apache-2.0",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "ApkPatcher.java imports com.google.gson.Gson for the patch config. Gradle resolves it; the version is deliberately left to the module build so it can be pinned in one place rather than two."
+  },
+  {
+    "name": "apkzlib",
+    "path": "android/libs/apkzlib.jar",
+    "kind": "compile",
+    "source": "maven: com.android.tools.build:apkzlib",
+    "coordinate": "com.android.tools.build:apkzlib",
+    "license": "Apache-2.0",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "ApkPatcher.java imports com.android.tools.build.apkzlib.* (ZFile, SigningExtension, AlignmentRules) to rewrite and re-sign the client APK on device."
+  },
+  {
+    "name": "Apache Commons IO",
+    "path": "android/libs/commons-io.jar",
+    "kind": "compile",
+    "source": "maven: commons-io:commons-io",
+    "coordinate": "commons-io:commons-io",
+    "license": "Apache-2.0",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "ApkPatcher.java imports org.apache.commons.io.FilenameUtils for the client's file names."
+  },
+  {
+    "name": "ManifestEditor",
+    "path": "android/libs/manifest-editor.jar",
+    "kind": "compile",
+    "source": "com.wind.meditor ManifestEditor (JitPack)",
+    "license": "Apache-2.0",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "ApkPatcher.java and ScriptProvider.java-adjacent code import com.wind.meditor.core.ManifestEditor and its property/NodeValue helpers to rewrite the client manifest (package visibility, attributes) during patching."
+  },
+  {
+    "name": "org.json",
+    "path": "android/libs/json.jar",
+    "kind": "compile",
+    "source": "maven: org.json:json (Android also provides org.json on the platform)",
+    "coordinate": "org.json:json",
+    "license": "Public Domain",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "The loader and manager use org.json.JSONObject for their on-device journals. On a device the platform class is used; the Maven artifact exists for unit tests that run off-device."
+  },
+  {
+    "name": "Generated addon bundle",
+    "path": "android/loader/src/main/assets/addons.js",
+    "kind": "generated",
+    "source": "built from the JavaScript module roots (core/, utils/, plugins/, themes/)",
+    "license": "GPL-3.0-or-later",
+    "required": false,
+    "sha256": null,
+    "pinned": false,
+    "notes": "The loader publishes addons.js as part of its asset bundle; it is generated during the build rather than checked in, so it is listed here as an input whose absence is expected before a build and fatal after one (the loader asset rules refuse a bundle without it)."
+  },
+  {
+    "name": "Code runner helper",
+    "path": "android/manager/src/main/assets/script_runner.py",
+    "kind": "asset",
+    "source": "this repository",
+    "license": "GPL-3.0-or-later",
+    "required": true,
+    "sha256": null,
+    "pinned": false,
+    "notes": "Present in the tree and shipped inside the manager. Its checksum is not pinned here yet: pinning is a step for whoever reviews the runner, and an unpinned file is reported as a gap by scripts/build_android.py rather than silently trusted."
+  }
+]

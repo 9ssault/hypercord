@@ -68,11 +68,19 @@ ipcRenderer.on("push", (_event, kind, payload) => {
   if (key === "themes:css" && !OURS) applyCss(payload);
   if (key === "rail:visible" && !OURS) {
     const host = ensureRail();
-    if (host) host.setAttribute("data-open", payload ? "true" : "false");
+    if (host) {
+      host.setAttribute("data-open", payload ? "true" : "false");
+      // opening is when the measurement matters: Discord's tray is laid out by then,
+      // and a rail measured only at mount would open onto the server tray again
+      if (payload) placeRail(host);
+    }
   }
   if (key === "rail:side" && !OURS) {
     const host = ensureRail();
-    if (host) host.setAttribute("data-side", String(payload) === "left" ? "left" : "right");
+    if (host) {
+      host.setAttribute("data-side", String(payload) === "left" ? "left" : "right");
+      placeRail(host);
+    }
   }
   if (key === "tokens:changed" && !OURS) refreshPrompt();
   for (const cb of listeners.get(key) || []) {
@@ -175,12 +183,79 @@ function ensureRail() {
     host.setAttribute("data-hypercord", "rail");
     document.documentElement.appendChild(host);
   }
+  // the window's own tray width is what keeps the rail off Discord's columns, and
+  // it changes when the window is resized or the tray collapses
+  if (!railFollowing) {
+    railFollowing = true;
+    window.addEventListener("resize", () => placeRail(document.getElementById("hypercord-rail")), { passive: true });
+  }
   return host;
+}
+
+let railFollowing = false;
+
+/**
+ * How far Discord's own tray already reaches in from a side of the window.
+ *
+ * The rail is an overlay pinned to an edge, and it used to be pinned to the very
+ * edge at the highest z-index on the page: on the left that is Discord's server
+ * tray - the guild column and the channel list - which the menu then covered. The
+ * owner of the client read that, correctly, as Hypercord taking over the server
+ * tray, so the rail now begins where Discord's own column ends.
+ *
+ * Measured from the page, never assumed: Discord's class names are generated and
+ * change between releases, so a miss returns 0 and leaves the rail exactly where
+ * the stylesheet puts it by default rather than throwing or guessing.
+ */
+function trayInset(side) {
+  if (!document.body || typeof window === "undefined") return 0;
+  const selectors =
+    side === "left"
+      ? ['[class*="guilds"]', '[class*="sidebar"]', 'nav[aria-label]']
+      : ['[class*="members"]', '[class*="memberList"]'];
+  let edge = 0;
+  for (const selector of selectors) {
+    for (const node of document.querySelectorAll(selector)) {
+      // never measure ourselves: our own rail is not Discord's tray
+      if (node.closest && node.closest("#hypercord-rail")) continue;
+      const box = node.getBoundingClientRect();
+      if (box.width < 40 || box.height < 200) continue;
+      edge = side === "left" ? Math.max(edge, box.right) : Math.max(edge, window.innerWidth - box.left);
+    }
+  }
+  return Math.max(0, Math.round(edge));
+}
+
+/**
+ * Put the rail beside Discord's tray rather than over it, and never wider than the
+ * room that leaves. Written on the element as custom properties and only when the
+ * numbers actually changed - this runs on mutation batches, so it must not write
+ * on every frame. Returns whether it wrote.
+ */
+function placeRail(host) {
+  if (!host || typeof window === "undefined") return false;
+  const side = host.getAttribute("data-side") === "left" ? "left" : "right";
+  const inset = trayInset(side);
+  const room = Math.max(0, window.innerWidth - inset);
+  // 200 is the narrowest the rail stays readable at; past that the room wins, so a
+  // small window gives Discord's columns their space back instead of a cut-off rail
+  const width = Math.max(200, Math.min(300, room));
+  const want = side + ":" + inset + ":" + width;
+  if (host.getAttribute("data-placed") === want) return false;
+  host.setAttribute("data-placed", want);
+  try {
+    host.style.setProperty(side === "left" ? "--hc-tray-left" : "--hc-tray-right", inset + "px");
+    host.style.setProperty("--hc-rail-width", width + "px");
+  } catch {
+    /* an element that refuses styles keeps the stylesheet's defaults */
+  }
+  return true;
 }
 
 function mountRail(html) {
   const host = ensureRail();
   if (!host) return false;
+  placeRail(host);
   if (typeof html === "string" && html.trim() && host.innerHTML !== html) {
     host.innerHTML = html;
     wireRail(host);
@@ -617,6 +692,17 @@ function ensureSettingsEntry() {
     return true;
   }
   for (const host of settingsHosts()) {
+    // A section of its own, not one more item in Discord's list: a separator above
+    // it, so the entry reads as Hypercord's own part of settings. The separator is
+    // ours - it carries no role and no tab behaviour, so Discord's own entries are
+    // still their own count and none of their nodes is touched.
+    if (!document.getElementById("hypercord-settings-separator")) {
+      const rule = document.createElement("div");
+      rule.id = "hypercord-settings-separator";
+      rule.setAttribute("data-hypercord", "settings-separator");
+      rule.setAttribute("aria-hidden", "true");
+      host.appendChild(rule);
+    }
     host.appendChild(settingsEntryFor(host));
     noteSettingsEntry("added", host);
     return true;
@@ -853,7 +939,10 @@ async function boot() {
     mountRail((assets && assets.html) || "");
     if (assets && assets.side) {
       const host = ensureRail();
-      if (host) host.setAttribute("data-side", assets.side === "left" ? "left" : "right");
+      if (host) {
+        host.setAttribute("data-side", assets.side === "left" ? "left" : "right");
+        placeRail(host);
+      }
     }
     const prompt = ensurePrompt();
     if (prompt && assets && assets.promptHtml) prompt.innerHTML = String(assets.promptHtml);
@@ -873,6 +962,11 @@ async function boot() {
   const observer = new MutationObserver(() => {
     const prompt = document.getElementById("hypercord-token-prompt");
     if (prompt && prompt.getAttribute("data-open") === "true") positionPrompt(prompt);
+    // only while it is on screen, and only when the measurement changed: the tray
+    // can be collapsed or resized by Discord at any time, so this cannot be done
+    // once at mount, and it is not worth a style write while the rail is closed
+    const rail = document.getElementById("hypercord-rail");
+    if (rail && rail.getAttribute("data-open") === "true") placeRail(rail);
     followSettings();
   });
   try {

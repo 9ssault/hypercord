@@ -1,0 +1,113 @@
+// language: Groovy, file: android/loader/build.gradle
+//
+// The loader: the module that runs inside Discord and injects the runtime, the addon
+// interpreter and the scripts capture. It is built as an APK because that is what the
+// release workflow copies and what `tests/loader-assets.test.mjs` verifies - a zip whose
+// `assets/` carries the runtime and the licences that ship with it.
+//
+// Read the "does not have" note at the bottom: this module has no manifest and no assets
+// in the tree, and both are required for the APK to exist at all.
+plugins {
+    id 'com.android.application'
+}
+
+def androidVersion = System.getenv('HYPERCORD_ANDROID_VERSION') ?: '0.0.0-untagged'
+def androidVersionCode = (System.getenv('HYPERCORD_ANDROID_VERSION_CODE') ?: '1') as int
+def keystorePath = System.getenv('HYPERCORD_KEYSTORE_PATH')
+def keystorePassword = System.getenv('HYPERCORD_SIGNING_PASSWORD')
+def keyAlias = System.getenv('HYPERCORD_KEY_ALIAS') ?: 'loader'
+
+android {
+    // The loader's classes are in app.assault.loader, and the entry point the loader
+    // declares to Xposed is app.assault.loader.AssaultLoader (that is the string in the
+    // `xposed_init` asset and in tests/loader-assets.test.mjs). The namespace has to agree
+    // with both or the injected entry point is a class that does not exist.
+    namespace 'app.assault.loader'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'app.assault.loader'
+        // Same floor as the manager, for the same reason (java.util.Base64 and the
+        // unknown-sources screen are API 26 features), and the loader is injected into a
+        // Discord build that targets far newer anyway.
+        minSdk 26
+        targetSdk 36
+        versionCode androidVersionCode
+        versionName androidVersion
+    }
+
+    sourceSets {
+        // The assets are the deliverable: the runtime, the addon interpreter bundle and
+        // the licence texts are assembled here by `scripts/build_android.py` before Gradle
+        // packages them. Stating the directory explicitly is what lets that script write
+        // into one place and Gradle pick it up without a copy step.
+        main {
+            assets.srcDirs = ['src/main/assets']
+            // No res/: this module draws its controls with framework widgets
+            // (AssaultLoader builds a TextView/LinearLayout) and declares no theme.
+            // A manifest icon would need one, which is why the manifest must not ask for one.
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    if (keystorePath && keystorePassword) {
+        signingConfigs {
+            release {
+                storeFile file(keystorePath)
+                storePassword keystorePassword
+                keyAlias keyAlias
+                keyPassword System.getenv('HYPERCORD_KEY_PASSWORD') ?: keystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystorePath && keystorePassword) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*.kotlin_module', 'META-INF/DEPENDENCIES']
+        }
+    }
+}
+
+dependencies {
+    // The Xposed API is compileOnly: the classes are provided at runtime by the loaded
+    // process, and packaging them would be a second copy of a framework Discord's
+    // injected environment already has.
+    compileOnly 'de.robv.android.xposed:api:82'
+
+    // org.json and every android.* import come from the platform, so they have no
+    // coordinate here. Nothing else in the loader's five sources imports a library.
+}
+
+// What this module does not have, each of which stops the build before the first source
+// file is compiled:
+//
+//  1. src/main/AndroidManifest.xml - an application module without a manifest does not
+//     build. It must declare package app.assault.loader, the Xposed entry points
+//     (xposedmodule / xposedminversion / xposeddescription meta-data) and nothing else:
+//     no activity, no launcher, no icon resource.
+//  2. src/main/assets - the ten files the release verification requires, which come from
+//     `scripts/build_android.py` (see the `assets` mapping in tests/loader-assets.test.mjs):
+//     xposed_init (app.assault.loader.AssaultLoader), assault-runtime.js, assault.js,
+//     addons.js, account-controls.js, rich-presence.js, history-export.js, html-export.js,
+//     licenses/Acorn-MIT.txt, licenses/Revenge-BSD-3-Clause.txt. The same test caps
+//     assault-runtime.js at 16 MiB.
+//  3. app.assault.shared.AccountSettings - imported by AssaultLoader and by the manager,
+//     and defined nowhere in this repository. See settings.gradle.
+//
+// The APK that the workflow copies (release/candidate/loader-release.apk) is the output
+// of `assembleRelease` here once 1 and 3 exist and 2 has been generated; the asset
+// contents themselves are verified a second time by the Python build script, so a
+// missing or oversized asset is caught there rather than at injection time.

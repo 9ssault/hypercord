@@ -1,0 +1,37 @@
+// language: Groovy, file: settings.gradle
+//
+// The Android build, as two modules and one absence.
+//
+// `app.assault.shared` is the absence. Both modules import it - the manager wants
+// AccountSettings, CommandGuide and RichPresence, the loader wants AccountSettings -
+// and nothing in this repository defines the package: there is no `android/shared`,
+// and no file under it. It is deliberately not declared here: a module with no
+// sources would replace "package app.assault.shared does not exist", which says
+// exactly what is wrong, with a Gradle error about an empty project. Add
+// `include ':android:shared'` the moment those classes exist.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    // Modules do not declare their own repositories: one list, here, so a dependency
+    // cannot resolve in one module and not another.
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        // Xposed's own module API. `de.robv.android.xposed:api:82` used to resolve from
+        // JCenter, which no longer serves new resolutions; api.xposed.info is the
+        // project's own repository for it.
+        maven { url = uri("https://api.xposed.info/") }
+    }
+}
+
+rootProject.name = "hypercord"
+
+include ':android:manager'
+include ':android:loader'

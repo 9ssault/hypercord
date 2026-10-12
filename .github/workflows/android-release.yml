@@ -49,10 +49,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          # 21: the Android documentation and the Android Gradle Plugin this tree
+          # targets require it, and the two files disagreed
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Install dependencies
@@ -66,10 +68,18 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          test -n "$KEYSTORE_BASE64" && test -n "$HYPERCORD_SIGNING_PASSWORD"
-          export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
-          trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
+          # A missing keystore used to abort the whole run. It must not: an unsigned
+          # APK is worse than a signed one and far better than no APK, and the mode has
+          # to be stated either way so nobody mistakes the result for a signed build.
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$HYPERCORD_SIGNING_PASSWORD" ]; then
+            echo "signing: a keystore is configured (KEYSTORE_BASE64 is set)"
+            export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
+            trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
+          else
+            echo "signing: UNSIGNED - KEYSTORE_BASE64 and HYPERCORD_SIGNING_PASSWORD are not both set,"
+            echo "         so these APKs carry no signature and cannot update a signed install"
+          fi
           python3 scripts/build_android.py --all-variants
           npm test
           npm run build
