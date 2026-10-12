@@ -29,8 +29,8 @@ the Hyper plugins that drive the selfbot's control server.
 | The catalogue browser reads metadata (a manifest), not plugin code | browsing 371 plugins loads kilobytes, not megabytes |
 | Themes are CSS at one injection point, and never execute | a theme costs a stylesheet, never a script |
 | Updates are silent | found in the background, downloaded in the background, installed on the way out. No dialog, no toast, no "restart to update" prompt |
-| No timers while idle | the rail, the manager sheet and the plugin host wake on events, not on a clock. `PERF.md` records the reading |
-| Every call can fail out loud | no click is ever a dead end: the rail and the manager say what went wrong in text |
+| No timers while idle | the settings pages and the plugin host wake on events, not on a clock. `PERF.md` records the reading |
+| Every call can fail out loud | no click is ever a dead end: every page says what went wrong, in text, in the line above it |
 
 ## Features stay, weight does not
 
@@ -46,7 +46,7 @@ The whole ecosystem is present - that is the point of a client mod:
 * **accounts**: the control server's accounts, and logging this client in as one
   of them, with the token going straight into the page's storage and never into a
   log, a state file in clear, or the UI;
-* the Hyper plugins: `hyperBridge`, `hyperRail`, `hyperAccounts`, `hyperPanes`,
+* the Hyper plugins: `hyperBridge`, `hyperPanes`, `hyperAccounts`,
   `hypercordRPC`.
 
 ## How it runs
@@ -60,16 +60,18 @@ Two paths, and the shell picks the better one:
    `app.asar` to `hypercord.app.asar` - never rewriting it, so unpatch is
    byte-exact - and writes a `resources/app` entry point that requires
    `src/loader.cjs` and then hands off to the real client. The loader injects one
-   `<style>` element and one rail host element into Discord's own windows.
+   `<style>` element into Discord's own windows - the themes and the styles for the
+   two pieces of Hypercord that live in Discord's tree - and nothing else.
 2. **The fallback window.** No Discord installed: `src/main.js` opens Discord web
-   with the same preload, rail and plugin host.
+   with the same preload, settings pages and plugin host.
 
-Everything of ours lives inside Discord's own window: the rail on an edge of it,
-the token option under its login fields, and the manager as a sheet over it that
-the rail's Manager button, `Ctrl+Shift+H`'s rail, or the **Hypercord** entry in
-Discord's settings opens. There is no second window to find or raise, and the
-manager is one tab per thing - commands, plugins, our own Hyper plugins, themes,
-logs, accounts, access keys.
+Everything of ours lives inside Discord's own window: the token option under its
+login fields, and Hypercord's settings as **pages inside Discord's own settings** -
+one entry per section in Discord's sidebar (commands, plugins, our own Hyper
+plugins, themes, logs, accounts, access keys), rendered in Discord's settings
+content column, wearing Discord's own classes and its own colour variables so the
+client's theme styles them. There is no second window, no overlay rail and no sheet
+of our own to find or raise; leaving Discord's settings leaves these pages with it.
 
 ## Setup
 
@@ -202,7 +204,7 @@ client can be installed from a browser as a web app. The route that serves it
 ### Signing in with a token
 
 Run `npm start` and the token card sits directly under Discord's own email and
-password fields; the rail's Accounts view does the same for a stored account. A
+password fields; the Accounts page does the same for a stored account. A
 pasted token is **checked with Discord first** - only a token whose identity
 Discord confirms is stored - and then kept by the operating system's keychain
 (`safeStorage`, through `src/tokens.js`); what reaches disk is metadata plus the
@@ -241,8 +243,9 @@ Two clients, one repository, and none of the interesting parts are Discord's:
   `hypercord`, and its `authors` are resolved out of upstream's own `Devs` map -
   `authorRefs` keeps the raw reference beside the resolved name so attribution can
   be checked rather than believed.
-* **Ours.** `plugins/hyper/` (the five that are on by default), `src/` (the shell,
-  patcher, preload, rail, manager sheet, plugin host, theme system and token store),
+* **Ours.** `plugins/hyper/` (the four that are on by default), `src/` (the shell,
+  patcher, preload, the settings pages, the plugin host, the theme system and the
+  token store),
   `plugins/examples/` with `themes/examples/`, and the Android client in `android/`,
   `core/`, `utils/`.
 * **Not ours, and not bundled.** Discord's own client is never in this repository.
@@ -269,19 +272,20 @@ this work itself is not in the tree, and neither is the Android half's
 hypercord/
   package.json          electron, electron-builder and electron-updater
   src/main.js           the shell: one window, attachment, no tray, quits on close
-  src/preload.cjs       the bridge, the rail's behaviour, the one style element
+  src/preload.cjs       the bridge, the settings entries, the one style element
   src/api.js            control-server client (Bearer token, never logged)
   src/plugin-host.js    manifest-driven host: lazy import, handles, settings, isolation
   src/themes.js         CSS-only themes: local, online-at-install, quick CSS, sanitised
   src/patcher.js        finding, patching, unpatching and launching a real Discord
   src/loader.cjs        what a patched Discord requires; injects into its windows
   src/updater.js        electron-updater, silent, installs on quit
-  src/rail.html|css     the rail markup and its scoped stylesheet
+  src/injected.css      the styles for what Hypercord injects into Discord's page:
+                        the token option and the entries in Discord's settings
   src/prompt.html       the token option that sits under Discord's login fields
   src/passkeys.cjs      the one passkey policy: no prompt nobody asked for
-  src/panes.html|js|css the manager sheet, mounted inside the Discord window:
-                        commands, plugins, Hyper plugins, themes, logs, accounts,
-                        access keys, one tab each
+  src/panes.html|js|css Hypercord's settings pages, mounted inside Discord's own
+                        settings: commands, plugins, Hyper plugins, themes, logs,
+                        accounts, access keys - one page each
   src/tokens.js         the user-token store: in the OS keychain, never in a log
   plugins/hyper/        the five Hyper plugins, and the set that is on by default
   plugins/manifest.json 371 entries of metadata: what the manager reads
@@ -311,8 +315,9 @@ first-run seeding of the Hyper set, lazy enable, dependency order, error
 isolation, live handles, declared setting defaults), the theme system (one
 injection point, nothing fetched in the background, hostile input refused), the
 patcher (byte-exact rename, idempotent, foreign installs refused, dry run,
-rollback), the preload (rail mount, theme style element, plugin list, working
-buttons) and the manager UI (all five views, real data, no page errors).
+rollback), the preload (theme style element, the token option, the entries in
+Discord's settings, the pages mounted in Discord's content column) and the settings
+UI (all seven pages, real data, no page errors).
 
 Not yet true, and not claimed: the RSS budget in `PERF.md`, the vendored
 catalogue's TypeScript plugin *bodies* (the host refuses a `.ts`/`.tsx` entry with

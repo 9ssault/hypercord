@@ -1,9 +1,10 @@
 // language: JavaScript, file: src/panes.js
 //
-// The panes sheet: the plugin catalogue, our own Hyper plugins, the themes, the
-// commands, the logs, the accounts and the access keys, all through the one bridge
-// the preload exposes as window.hypercord. One section per thing, the way a
-// settings screen is laid out.
+// Hypercord's settings pages: the plugin catalogue, our own Hyper plugins, the themes,
+// the commands, the logs, the accounts and the access keys, all through the one bridge
+// the preload exposes as window.hypercord. One page per section, and the sections are
+// entries in Discord's own settings sidebar: src/preload.cjs adds them, the shell says
+// which one to show, and this file shows it.
 //
 // It is not a page. src/preload.cjs mounts panes.html inside the Discord window,
 // in the container it owns (#hypercord-panes), and evaluates this file with the
@@ -93,9 +94,9 @@
     currentView = wanted;
     const root = sheet();
     if (root) {
-      for (const item of root.querySelectorAll(".nav-item")) {
-        item.classList.toggle("active", item.dataset.view === wanted);
-      }
+      // One page at a time. There is no in-page navigation to keep in step: which
+      // section is showing is the shell's business (it is the entry that was clicked)
+      // and the only thing this file owns is which page is visible.
       for (const section of root.querySelectorAll(".view")) {
         section.classList.toggle("hidden", section.dataset.view !== wanted);
       }
@@ -877,20 +878,6 @@
       // half-dead sheet
       say("the panes markup is not mounted in this page", "bad");
       return false;
-    }
-
-    for (const item of root.querySelectorAll(".nav-item")) {
-      item.addEventListener("click", () => setView(item.dataset.view));
-    }
-
-    const closeButton = $("hp-close");
-    if (closeButton) {
-      closeButton.addEventListener("click", () => {
-        // the shell owns the sheet's open state, so it is told first; if the
-        // method is not there, closing locally is still the right thing to do
-        if (hc && hc.panes && typeof hc.panes.close === "function") guard("close panes", () => hc.panes.close());
-        else close();
-      });
     }
 
     const commandForm = $("hp-cmdForm");

@@ -6,10 +6,11 @@
 //     Hypercord; nothing of ours keeps running, and nothing of ours starts at
 //     boot. A chat client that squats in the tray holds a renderer and a few
 //     hundred megabytes for a feature nobody asked for;
-//   * everything Hypercord adds lives *inside* the Discord window - the rail, the
-//     token option beside the login form, and the manager sheet - so there is no
-//     second window to find, raise or close, and nothing here polls: the rail,
-//     the sheet and the page are driven by the events they are subscribed to;
+//   * everything Hypercord adds lives *inside* the Discord window - the token
+//     option beside the login form, and Discord's own settings, where every
+//     Hypercord page is one of its sections - so there is no second window to
+//     find, raise or close, and nothing here polls: the sheet and the page are
+//     driven by the events they are subscribed to;
 //   * when a real Discord install is present the client *is* Discord, patched -
 //     see src/patcher.js. The Electron window is the fallback for a machine with
 //     no Discord installed, not the product.
@@ -28,7 +29,6 @@ import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looks
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE = () => path.join(app.getPath("userData"), "hypercord.json");
-const RAIL_TOGGLE = "CommandOrControl+Shift+H";
 const DISCORD = "https://discord.com/app";
 // The client does not act on a stored token every boot: measured against the live
 // page, the same write was taken up by its gateway once and ignored four times.
@@ -53,14 +53,12 @@ let themes = null;
 let tokens = null;
 let updater = null;
 const DISCORD_API = "https://discord.com/api/v9";
-// railOpen starts false: the rail is an overlay, and one that starts open covers the
-// server tray before the user has asked for anything. Discord's own settings hold the
-// manager; the rail opens on the shortcut, on request, or not at all.
-let state = { controlUrl: "", accounts: [], account: "", railOpen: false };
+let state = { controlUrl: "", accounts: [], account: "" };
 let sessionToken = ""; // memory only, when the OS keychain is unavailable
-// read once at boot: the rail, the token option and the manager sheet are six
-// small files, injected whole, with no watcher and no reload loop
-let rail = { css: "", html: "", prompt: "", panesHtml: "", panesCss: "", panesJs: "" };
+// read once at boot: what is injected into Discord's page - our own stylesheet, the
+// token option and Hypercord's settings pages - is five small files, injected whole,
+// with no watcher and no reload loop
+let assets = { css: "", promptHtml: "", panesHtml: "", panesCss: "", panesJs: "" };
 
 /* ---- state: plain json, and a token that is never in it in clear ---------- */
 
@@ -71,7 +69,6 @@ function readState() {
       controlUrl: String(saved.controlUrl || state.controlUrl || ""),
       accounts: Array.isArray(saved.accounts) ? saved.accounts.map(String) : [],
       account: String(saved.account || state.account || ""),
-      railOpen: saved.railOpen === true,
     };
     if (saved.token && safeStorage.isEncryptionAvailable()) {
       try {
@@ -532,24 +529,22 @@ function accountWindow() {
 
 /**
  * The one CSS string the page gets: the enabled themes and quick CSS, then the
- * rail's own stylesheet (whose every selector is scoped to #hypercord-rail, so a
- * theme can restyle Discord and still cannot touch the rail).
+ * stylesheet of our own injected pieces (whose every selector is scoped to an
+ * element Hypercord owns and Discord does not, so a theme can restyle Discord and
+ * still cannot touch the token option or the settings entries).
  */
 function pageCss() {
   const themed = themes ? themes.css() : "";
-  return [themed, rail.css].filter(Boolean).join("\n");
+  return [themed, assets.css].filter(Boolean).join("\n");
 }
 
-/** Everything the page and the rail need after a reload. */
+/** Everything the page needs after a reload. */
 function syncPage() {
   if (!win || win.isDestroyed()) return;
-  const owner = host && host.handle("hyperRail");
-  win.webContents.send("push", "rail:visible", owner ? owner.isOpen() : state.railOpen);
-  if (owner) win.webContents.send("push", "rail:side", owner.side());
   win.webContents.send("push", "themes:css", pageCss());
   win.webContents.send("push", "plugins:changed", host ? host.status() : null);
-  // the rail's token panel and the sign-in prompt both follow this, so storing a
-  // token anywhere makes the prompt go away everywhere
+  // the sign-in prompt follows this, so storing a token anywhere makes the prompt
+  // go away everywhere
   win.webContents.send("push", "tokens:changed", tokens ? tokens.list() : []);
 }
 
@@ -628,10 +623,10 @@ function showNotification(title, body) {
 /**
  * Open the manager inside the Discord window.
  *
- * There is no second window any more: the sheet is part of the page, mounted by
- * the preload, so opening a view is a push and nothing is created, raised or
- * released. The view itself still goes through the plugin that owns it, so the
- * sheet and the plugin cannot disagree about which view was last shown.
+ * There is no second window any more: Hypercord's pages are part of the page,
+ * mounted by the preload, so opening one is a push and nothing is created, raised or
+ * released. Which page that is still goes through the plugin that owns it, so the
+ * pages and the plugin cannot disagree about which one was last shown.
  */
 function openPanes(view) {
   const owner = host && host.handle("hyperPanes");
@@ -639,18 +634,6 @@ function openPanes(view) {
   if (!win || win.isDestroyed()) createWindow();
   if (win) win.webContents.send("push", "panes:open", wanted);
   return wanted;
-}
-
-function toggleRail(open) {
-  // the rail plugin owns the state when it is running; the shell's copy is the
-  // fallback for a client whose plugin set is off
-  const owner = host && host.handle("hyperRail");
-  const next = owner ? owner.toggle(open === null || open === undefined ? null : open) : (state.railOpen = open === null || open === undefined ? !state.railOpen : Boolean(open));
-  if (state.railOpen !== next) {
-    state.railOpen = next;
-    writeState();
-  }
-  return next;
 }
 
 /* ---- the bridge ---------------------------------------------------------- */
@@ -686,31 +669,27 @@ ipcMain.handle("api:request", async (_event, endpoint, opts = {}) => {
   if (!api) buildApi();
   return api.request(String(endpoint || "/"), opts || {});
 });
-ipcMain.handle("rail:ready", () => {
+// What the preload asks for once, at boot, and what it is handed: one style string and
+// the markup of the pieces the window injects (the token option and the settings pages).
+ipcMain.handle("ui:ready", () => {
   syncPage();
-  return { ok: true, plugins: host ? host.status() : null, account: state.account, accounts: state.accounts };
+  return { ok: true, account: state.account };
 });
-ipcMain.handle("rail:toggle", (_event, open) => toggleRail(open === null ? null : open));
-// the same shape the loader bakes into a patched Discord: one style string, one
-// rail markup string, one side
-ipcMain.handle("rail:assets", () => ({
+ipcMain.handle("ui:assets", () => ({
   css: pageCss(),
-  html: rail.html,
-  promptHtml: rail.prompt,
-  // the manager sheet: it is mounted inside the page, so the preload needs its
-  // markup, its one scoped stylesheet, and its script
-  panesHtml: rail.panesHtml,
-  panesCss: rail.panesCss,
-  panesJs: rail.panesJs,
-  side: host && host.handle("hyperRail") ? host.handle("hyperRail").side() : "right",
-  js: "",
+  promptHtml: assets.promptHtml,
+  // the settings pages: they are mounted inside Discord's own settings, so the preload
+  // needs their markup, their one scoped stylesheet, and their script
+  panesHtml: assets.panesHtml,
+  panesCss: assets.panesCss,
+  panesJs: assets.panesJs,
 }));
 ipcMain.handle("panes:open", (_event, view) => {
   openPanes(view);
   return { ok: true };
 });
-// the sheet's Close button asks the shell, so the sheet never hides itself
-// behind the shell's back
+// Leaving Discord's settings asks the shell to close the sheet, so the sheet never
+// hides itself behind the shell's back
 ipcMain.handle("panes:close", () => {
   if (win && !win.isDestroyed()) win.webContents.send("push", "panes:close", true);
   return { ok: true };
@@ -822,12 +801,11 @@ function attachToDiscord({ launch = true } = {}) {
     console.log("[hypercord] no Discord install found: " + found.error);
     return { ok: false, error: found.error };
   }
-  const owner = host && host.handle("hyperRail");
   const done = patch(found.install, {
     loader: path.join(here, "loader.cjs"),
-    // the rail and the themes are baked in at patch time, so the real client
+    // our stylesheet and the themes are baked in at patch time, so the real client
     // shows them without the shell having to be running at all
-    assets: { css: pageCss(), html: rail.html, side: owner ? owner.side() : "right" },
+    assets: { css: pageCss() },
     log: (line) => console.log(line),
   });
   if (!done.ok) return done;
@@ -852,9 +830,8 @@ function liveTimers() {
 
 // `--perf=45` runs the client exactly as it ships, waits, prints what Electron
 // itself reports per process, and quits. It is the same window and the same
-// flags as a normal run - the only difference is who closes it. Both states are
-// forced rather than assumed: the first snapshot is taken with the rail open and
-// the second with it closed, whatever the saved preference said.
+// flags as a normal run - the only difference is who closes it, and nothing about
+// the client's state is forced to make a reading possible.
 function perfMode() {
   const flag = process.argv.find((arg) => arg.startsWith("--perf"));
   if (!flag) return false;
@@ -879,7 +856,6 @@ function perfMode() {
   const snapshot = (label) => ({
     label,
     at: new Date().toISOString(),
-    railOpen: state.railOpen,
     timers: liveTimers(),
     processes: app.getAppMetrics().map((m) => ({
       type: m.type,
@@ -889,8 +865,8 @@ function perfMode() {
     })),
   });
   // app.getAppMetrics reports CPU as a delta since the previous call, so this
-  // priming read makes both snapshots averages over a real idle window instead
-  // of averages over the process's whole life
+  // priming read makes the reading an average over a real idle window instead
+  // of an average over the process's whole life
   app.getAppMetrics();
   (async () => {
     report("HYPERCORD_INFO " + JSON.stringify({
@@ -900,12 +876,8 @@ function perfMode() {
       version: app.getVersion(),
     }));
     await wait(seconds * 1000); // let Discord finish loading and go quiet
-    toggleRail(true);
-    await wait(windowMs); // an idle window with the rail open
-    report("HYPERCORD_PERF " + JSON.stringify(snapshot("rail-open")));
-    toggleRail(false);
-    await wait(windowMs); // an idle window with the rail dropped
-    report("HYPERCORD_PERF " + JSON.stringify(snapshot("rail-closed")));
+    await wait(windowMs); // one idle window, with nothing forced open
+    report("HYPERCORD_PERF " + JSON.stringify(snapshot("idle")));
     // app.exit, not app.quit: a page that asks before unloading must never be
     // able to hold the measurement - or the client - open
     app.exit(0);
@@ -934,18 +906,17 @@ async function boot() {
       .then((res) => console.log("[hypercord] user token from the environment: " + (res.ok ? "stored for " + res.account : "refused (" + res.error + ")")))
       .catch((err) => console.log("[hypercord] user token from the environment failed: " + redact(String((err && err.message) || err))));
   }
-  // read once: the rail, the token option, the manager sheet. Injected whole, no
-  // watcher and no reload loop.
+  // read once: our own stylesheet, the token option, the settings sheet. Injected
+  // whole, no watcher and no reload loop.
   for (const [key, file] of [
-    ["css", "rail.css"],
-    ["html", "rail.html"],
-    ["prompt", "prompt.html"],
+    ["css", "injected.css"],
+    ["promptHtml", "prompt.html"],
     ["panesHtml", "panes.html"],
     ["panesCss", "panes.css"],
     ["panesJs", "panes.js"],
   ]) {
     try {
-      rail[key] = fs.readFileSync(path.join(here, file), "utf8");
+      assets[key] = fs.readFileSync(path.join(here, file), "utf8");
     } catch (err) {
       console.log("[hypercord] could not read " + file + ": " + String((err && err.message) || err));
     }
@@ -960,7 +931,6 @@ async function boot() {
     console.log("[hypercord] could not install the default theme: " + String((err && err.message) || err));
   }
   createWindow();
-  globalShortcut.register(RAIL_TOGGLE, () => toggleRail());
   await startPlugins();
   // the feed stays empty until a Hypercord release repository exists; a packed
   // build uses the feed electron-builder baked in, and the updater is silent

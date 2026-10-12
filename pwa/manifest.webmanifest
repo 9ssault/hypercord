@@ -1,7 +1,7 @@
 {
   "name": "Hypercord",
   "short_name": "Hypercord",
-  "description": "Hypercord served by the control server - the same rail, installed from the browser",
+  "description": "Hypercord served by the control server, installed from the browser",
   "start_url": "/discord",
   "scope": "/",
   "display": "standalone",

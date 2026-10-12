@@ -2,9 +2,11 @@
 //
 // The baseline PERF.md measures against: plain Electron showing the same Discord
 // web app, with the same window size, the same GPU flag and no mods at all - no
-// preload, no plugin host, no rail, no control-server client. "Added cost" is
-// this subtracted from Hypercord's own numbers, because Discord itself dominates
-// the total either way.
+// preload, no plugin host, no control-server client, and no Hypercord surface of
+// any kind in the page (the rail is gone, and the settings pages only exist while
+// somebody is looking at them, which this baseline never is). "Added cost" is
+// this subtracted from Hypercord's own idle numbers, because Discord itself
+// dominates the total either way.
 //
 //   npx electron tests/baseline --perf=25
 import { app, BrowserWindow } from "electron";

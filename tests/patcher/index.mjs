@@ -203,18 +203,40 @@ ok("and it rolls the rename back", fs.existsSync(path.join(e.resources, "app.asa
 ok("so the client is exactly as it was found", fs.readFileSync(path.join(e.resources, "app.asar")).equals(before) && inspect(e.found.install).state === "clean");
 
 // what the patch bakes in, so a patched install has something to show without a
-// second file being found at launch time
+// second file being found at launch time. The stylesheet is the whole payload now:
+// the rail markup it used to carry alongside the css is gone, so a baked asset set
+// with an html half in it is exactly what must not be recorded.
 const bakedLoaderDir = path.join(root, "baked-loader");
 fs.mkdirSync(bakedLoaderDir, { recursive: true });
 fs.writeFileSync(path.join(bakedLoaderDir, "loader.cjs"), "// loader\n");
-fs.writeFileSync(path.join(bakedLoaderDir, "rail.json"), JSON.stringify({ css: ".rail{}", html: "<b>rail</b>", side: "left" }));
+// The file beside the loader is `hypercord.json`, in the one shape the patch itself
+// writes (`{ assets: { css } }`). The `rail.json` a previous release left there is
+// written too, with its own css, so that reading the stale name is a failure rather
+// than something this test cannot tell apart: exactly one of the two may be baked.
+fs.writeFileSync(
+  path.join(bakedLoaderDir, "rail.json"),
+  JSON.stringify({ css: ".stale{}", html: "<b>rail</b>", side: "left" }),
+);
+fs.writeFileSync(
+  path.join(bakedLoaderDir, "hypercord.json"),
+  JSON.stringify({ tool: "hypercord", assets: { css: ".baked{}" } }),
+);
 const f = makeInstall("f");
 const bakedPatch = patch(f.found.install, { loader: path.join(bakedLoaderDir, "loader.cjs") });
 const bakedManifest = JSON.parse(fs.readFileSync(path.join(f.resources, "app", "hypercord.json"), "utf8"));
-ok("a rail.json beside the loader is baked into the patch", bakedPatch.ok === true && bakedManifest.assets.css === ".rail{}", JSON.stringify(bakedManifest.assets));
-ok("and it records which side the rail goes on", bakedManifest.assets.side === "left", JSON.stringify(bakedManifest.assets));
-ok("the loader then finds it from what the patch wrote", loader.loadConfig({ mainDir: path.join(f.resources, "app"), dir: path.join(root, "nowhere"), env: {} }).css === ".rail{}");
+ok("an assets file beside the loader is baked into the patch", bakedPatch.ok === true && bakedManifest.assets.css === ".baked{}", JSON.stringify(bakedManifest.assets));
+ok("the stale rail.json beside it is not what was read", !JSON.stringify(bakedManifest.assets).includes(".stale{}"), JSON.stringify(bakedManifest.assets));
+ok("and nothing of the rail's markup is baked with it", !bakedManifest.assets.html && !bakedManifest.assets.rail && !bakedManifest.assets.side, JSON.stringify(bakedManifest.assets));
+ok("the loader then finds it from what the patch wrote", loader.loadConfig({ mainDir: path.join(f.resources, "app"), dir: path.join(root, "nowhere"), env: {} }).css === ".baked{}");
 ok("that install unpatches like any other", unpatch(f.found.install).ok === true);
+
+// the caller's own assets are the other source, and they win over the file
+const g = makeInstall("g");
+const callerPatch = patch(g.found.install, { loader: path.join(bakedLoaderDir, "loader.cjs"), assets: { css: ".caller{}" } });
+const callerManifest = JSON.parse(fs.readFileSync(path.join(g.resources, "app", "hypercord.json"), "utf8"));
+ok("assets handed to the patch are what it records", callerPatch.ok === true && callerManifest.assets.css === ".caller{}", JSON.stringify(callerManifest.assets));
+ok("and the loader reads those back too", loader.loadConfig({ mainDir: path.join(g.resources, "app"), dir: path.join(root, "nowhere"), env: {} }).css === ".caller{}");
+ok("that install unpatches like any other", unpatch(g.found.install).ok === true);
 
 const m = makeInstall("m");
 const missingAsar = { ...m.found.install, resources: path.join(root, "no-resources") };
@@ -256,12 +278,13 @@ ok("a spawn that throws is reported", launch(winInstall, { spawnImpl: () => { th
 
 /* ---- 4. the loader ------------------------------------------------------ */
 
-const script = loader.buildInjection({ css: ".a { color: red; }", rail: "<b>rail</b>", side: "left" });
+const script = loader.buildInjection({ css: ".a { color: red; }" });
 ok("the injection writes one style element", (script.match(/hypercord-theme/g) || []).length >= 2 && script.includes("document.createElement('style')"));
-ok("the injection writes one rail host", script.includes("document.createElement('div')") && script.includes('"hypercord-rail"'));
-ok("the injection carries the css and the rail as data", script.includes(JSON.stringify(".a { color: red; }")) && script.includes(JSON.stringify("<b>rail</b>")));
-ok("the injection remembers which side the rail is on", script.includes('"left"'));
-ok("the injection cannot break out of its own string", !loader.buildInjection({ css: 'x"; alert(1); "', rail: "" }).includes('x"; alert(1); "'));
+// the loader's whole footprint in Discord's page: one stylesheet. A host element, or
+// any other node of ours in there, is what the rail used to be and must stay gone.
+ok("and nothing else of ours is written into the page", !script.includes("createElement('div')") && !script.includes("hypercord-rail"));
+ok("the injection carries the css as data", script.includes(JSON.stringify(".a { color: red; }")));
+ok("the injection cannot break out of its own string", !loader.buildInjection({ css: 'x"; alert(1); "' }).includes('x"; alert(1); "'));
 ok("the entry source is what the patcher writes", entrySource("/x/loader.cjs").includes('require("/x/loader.cjs")'));
 
 function fakeWindow({ loading = false } = {}) {
@@ -282,7 +305,7 @@ function fakeWindow({ loading = false } = {}) {
 const first = fakeWindow();
 const app = { BrowserWindow: { getAllWindows: () => [first] }, on: (name, fn) => (app.handlers = { ...(app.handlers || {}), [name]: fn }), handlers: {} };
 const fireCreated = (win) => (app.handlers["browser-window-created"] || (() => {}))({}, win);
-const res = loader.attach(app, { css: "body{}", rail: "<i>r</i>", log: () => {} });
+const res = loader.attach(app, { css: "body{}", log: () => {} });
 ok("the loader attaches to a window that is already open", res.ok === true);
 await tick();
 ok("and injects into it exactly once", first.webContents.executed.length === 1, "executed " + first.webContents.executed.length);
@@ -304,18 +327,18 @@ fireCreated(later);
 await tick();
 ok("a window is never injected into twice", later.webContents.executed.length === 1, "executed " + later.webContents.executed.length);
 
-const empty = loader.attach({ BrowserWindow: { getAllWindows: () => [] }, on: () => {} }, { css: "", rail: "", log: () => {} });
+const empty = loader.attach({ BrowserWindow: { getAllWindows: () => [] }, on: () => {} }, { css: "", log: () => {} });
 ok("with nothing to inject it attaches nothing and says so", empty.ok === true && empty.injected === 0 && empty.empty === true, JSON.stringify(empty));
 ok("attaching without an app reports instead of throwing", loader.attach(null, {}).ok === false);
 
 const bakedDir = path.join(root, "baked");
 fs.mkdirSync(bakedDir, { recursive: true });
-fs.writeFileSync(path.join(bakedDir, "hypercord.json"), JSON.stringify({ tool: "hypercord", assets: { css: ".baked{}", html: "<u>rail</u>", side: "right" } }));
+fs.writeFileSync(path.join(bakedDir, "hypercord.json"), JSON.stringify({ tool: "hypercord", assets: { css: ".baked{}" } }));
 const bakedConfig = loader.loadConfig({ mainDir: bakedDir, dir: path.join(root, "nnowhere"), env: {} });
-ok("the loader reads what the patch baked in", bakedConfig.found.endsWith("hypercord.json") && bakedConfig.css === ".baked{}" && bakedConfig.html === "<u>rail</u>", JSON.stringify(bakedConfig));
+ok("the loader reads what the patch baked in", bakedConfig.found.endsWith("hypercord.json") && bakedConfig.css === ".baked{}", JSON.stringify(bakedConfig));
 
 const cfgFile = path.join(root, "cfg.json");
-fs.writeFileSync(cfgFile, JSON.stringify({ css: ".cfg{}", rail: "<s>r</s>" }));
+fs.writeFileSync(cfgFile, JSON.stringify({ css: ".cfg{}" }));
 const cfgConfig = loader.loadConfig({ mainDir: "", dir: path.join(root, "nowhere"), env: { HYPERCORD_LOADER_CONFIG: cfgFile } });
 ok("an explicit config wins", cfgConfig.found === cfgFile && cfgConfig.css === ".cfg{}", JSON.stringify(cfgConfig));
 const nothing = loader.loadConfig({ mainDir: "", dir: path.join(root, "nowhere"), env: {} });

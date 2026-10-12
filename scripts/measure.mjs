@@ -10,6 +10,12 @@
 //   node scripts/measure.mjs               # 5 samples, 25 s settle, 15 s window
 //   node scripts/measure.mjs --samples=3 --settle=20 --window=10
 //
+// Hypercord itself is read in one state, idle, because that is the only state it
+// has: the rail that used to be opened and closed over the client is gone, the
+// settings pages live inside Discord's own settings and exist only while somebody
+// is looking at them. A reading labelled "idle" is taken from the shell's own
+// snapshot, whatever the shell calls it.
+//
 // It is deliberately slow and deliberately serial: two Electron clients loading
 // Discord at once would contend for CPU and memory and produce numbers that
 // describe the collision rather than either app.
@@ -42,7 +48,24 @@ function log(line) {
   console.log(line);
 }
 
-/** One Hypercord run: returns { open, closed }, each { rss, cpu, timers }. */
+/** One snapshot of the app as one process tree. */
+function asReading(json) {
+  return {
+    rss: json.processes.reduce((a, p) => a + p.memMB, 0),
+    cpu: json.processes.reduce((a, p) => a + p.cpu, 0),
+    timers: json.timers,
+    procs: json.processes.length,
+  };
+}
+
+/**
+ * One Hypercord run: the app idle, as { idle, label, plugins, update }.
+ *
+ * The shell prints one snapshot per state and this reads the idle one by name. A
+ * build that prints a differently-labelled single snapshot is still read, because
+ * "idle" is the only state the app has now and the label is the shell's wording,
+ * not something to lose a measurement over; which label was used is reported.
+ */
 function runHypercord() {
   const res = spawnSync(electron, [".", "--perf=" + SETTLE], {
     cwd: root,
@@ -52,22 +75,17 @@ function runHypercord() {
   });
   const text = String(res.stdout || "") + String(res.stderr || "");
   const lines = text.split("\n").filter((l) => l.includes("HYPERCORD_PERF"));
-  const parse = (label) => {
-    for (const line of lines) {
-      const json = JSON.parse(line.slice(line.indexOf("HYPERCORD_PERF") + "HYPERCORD_PERF".length).trim());
-      if (json.label !== label) continue;
-      return {
-        rss: json.processes.reduce((a, p) => a + p.memMB, 0),
-        cpu: json.processes.reduce((a, p) => a + p.cpu, 0),
-        timers: json.timers,
-        procs: json.processes.length,
-      };
+  const snapshots = lines.map((line) => {
+    try {
+      return JSON.parse(line.slice(line.indexOf("HYPERCORD_PERF") + "HYPERCORD_PERF".length).trim());
+    } catch {
+      return null;
     }
-    return null;
-  };
+  });
+  const idle = snapshots.filter(Boolean).find((json) => json.label === "idle") || snapshots.filter(Boolean)[0] || null;
   const plugins = /\[hypercord\] plugins: (\{.*\})/.exec(text);
   const update = /\[hypercord\] updates: ([^\n]*)/.exec(text);
-  return { open: parse("rail-open"), closed: parse("rail-closed"), plugins: plugins ? plugins[1] : "", update: update ? update[1] : "" };
+  return { idle: idle ? asReading(idle) : null, label: idle ? String(idle.label || "") : "", plugins: plugins ? plugins[1] : "", update: update ? update[1] : "" };
 }
 
 /** One baseline run: plain Electron plus Discord web, nothing of ours. */
@@ -81,13 +99,7 @@ function runBaseline() {
   const text = String(res.stdout || "") + String(res.stderr || "");
   const line = text.split("\n").find((l) => l.includes("BASELINE_PERF"));
   if (!line) return null;
-  const json = JSON.parse(line.slice(line.indexOf("BASELINE_PERF") + "BASELINE_PERF".length).trim());
-  return {
-    rss: json.processes.reduce((a, p) => a + p.memMB, 0),
-    cpu: json.processes.reduce((a, p) => a + p.cpu, 0),
-    timers: json.timers,
-    procs: json.processes.length,
-  };
+  return asReading(JSON.parse(line.slice(line.indexOf("BASELINE_PERF") + "BASELINE_PERF".length).trim()));
 }
 
 /**
@@ -148,10 +160,11 @@ function median(values) {
   return sorted.length % 2 ? sorted[mid] : Math.round(((sorted[mid - 1] + sorted[mid]) / 2) * 100) / 100;
 }
 
-const samples = { baseline: [], open: [], closed: [] };
+const samples = { baseline: [], idle: [] };
 const pairs = [];
 let pluginLine = "";
 let updateLine = "";
+let idleLabel = "";
 
 for (let i = 0; i <= SAMPLES; i += 1) {
   const warmup = i === 0;
@@ -161,9 +174,10 @@ for (let i = 0; i <= SAMPLES; i += 1) {
   const hyper = runHypercord();
   if (hyper.plugins) pluginLine = hyper.plugins;
   if (hyper.update) updateLine = hyper.update;
-  if (!base || !hyper.open || !hyper.closed) {
+  if (hyper.label) idleLabel = hyper.label;
+  if (!base || !hyper.idle) {
     failed += 1;
-    log("   MISSING a reading (baseline " + Boolean(base) + ", rail-open " + Boolean(hyper.open) + ", rail-closed " + Boolean(hyper.closed) + ")");
+    log("   MISSING a reading (baseline " + Boolean(base) + ", hypercord idle " + Boolean(hyper.idle) + ")");
     continue;
   }
   if (warmup) {
@@ -171,30 +185,28 @@ for (let i = 0; i <= SAMPLES; i += 1) {
     continue;
   }
   samples.baseline.push(base);
-  samples.open.push(hyper.open);
-  samples.closed.push(hyper.closed);
-  pairs.push({ base, open: hyper.open, closed: hyper.closed });
-  log("   baseline " + base.rss + "MB / " + base.cpu.toFixed(2) + "% / " + base.timers + " timers | open " + hyper.open.rss + "MB / " + hyper.open.cpu.toFixed(2) + "% | closed " + hyper.closed.rss + "MB / " + hyper.closed.cpu.toFixed(2) + "%");
+  samples.idle.push(hyper.idle);
+  pairs.push({ base, idle: hyper.idle });
+  log("   baseline " + base.rss + "MB / " + base.cpu.toFixed(2) + "% / " + base.timers + " timers | hypercord idle " + hyper.idle.rss + "MB / " + hyper.idle.cpu.toFixed(2) + "% / " + hyper.idle.timers + " timers");
 }
 
 const rss = (rows) => rows.map((r) => r.rss);
 const cpu = (rows) => rows.map((r) => r.cpu);
 const spread = (values) => (values.length ? Math.min(...values) + "-" + Math.max(...values) : "-");
-const timers = [...samples.baseline, ...samples.open, ...samples.closed].map((r) => r.timers);
+const timers = [...samples.baseline, ...samples.idle].map((r) => r.timers);
 
 const out = {
   at: new Date().toISOString(),
   settleSeconds: SETTLE,
   windowSeconds: WINDOW,
   samples: samples.baseline.length,
+  idleLabel: idleLabel || "(none reported)",
   plugins: pluginLine,
   updater: updateLine,
   shipped: shippedWeight(),
   baseline: { rssMedian: median(rss(samples.baseline)), rssSpread: spread(rss(samples.baseline)), cpuMedian: median(cpu(samples.baseline)), cpuSpread: spread(cpu(samples.baseline).map((v) => Number(v.toFixed(2)))) },
-  railOpen: { rssMedian: median(rss(samples.open)), rssSpread: spread(rss(samples.open)), cpuMedian: median(cpu(samples.open)), cpuSpread: spread(cpu(samples.open).map((v) => Number(v.toFixed(2)))) },
-  railClosed: { rssMedian: median(rss(samples.closed)), rssSpread: spread(rss(samples.closed)), cpuMedian: median(cpu(samples.closed)), cpuSpread: spread(cpu(samples.closed).map((v) => Number(v.toFixed(2)))) },
-  deltaOpen: median(rss(samples.open)) - median(rss(samples.baseline)),
-  deltaClosed: median(rss(samples.closed)) - median(rss(samples.baseline)),
+  idle: { rssMedian: median(rss(samples.idle)), rssSpread: spread(rss(samples.idle)), cpuMedian: median(cpu(samples.idle)), cpuSpread: spread(cpu(samples.idle).map((v) => Number(v.toFixed(2)))) },
+  deltaIdle: median(rss(samples.idle)) - median(rss(samples.baseline)),
   timersSeen: [...new Set(timers)].sort((a, b) => a - b),
   raw: pairs,
 };
@@ -208,11 +220,10 @@ log("plugins: " + (pluginLine || "(none reported)") + " | updater: " + (updateLi
 log("");
 log("state                  RSS median (spread)          CPU median (spread)      timers");
 log("no mods, discord web   " + pad(out.baseline.rssMedian + "MB (" + out.baseline.rssSpread + ")") + pad(out.baseline.cpuMedian + "% (" + out.baseline.cpuSpread + ")") + JSON.stringify([...new Set(samples.baseline.map((r) => r.timers))]));
-log("rail open, idle        " + pad(out.railOpen.rssMedian + "MB (" + out.railOpen.rssSpread + ")") + pad(out.railOpen.cpuMedian + "% (" + out.railOpen.cpuSpread + ")") + JSON.stringify([...new Set(samples.open.map((r) => r.timers))]));
-log("rail closed, idle      " + pad(out.railClosed.rssMedian + "MB (" + out.railClosed.rssSpread + ")") + pad(out.railClosed.cpuMedian + "% (" + out.railClosed.cpuSpread + ")") + JSON.stringify([...new Set(samples.closed.map((r) => r.timers))]));
+log("hypercord, idle        " + pad(out.idle.rssMedian + "MB (" + out.idle.rssSpread + ")") + pad(out.idle.cpuMedian + "% (" + out.idle.cpuSpread + ")") + JSON.stringify([...new Set(samples.idle.map((r) => r.timers))]));
 log("");
-log("added RSS, rail open   " + (out.deltaOpen >= 0 ? "+" : "") + out.deltaOpen + " MB");
-log("added RSS, rail closed " + (out.deltaClosed >= 0 ? "+" : "") + out.deltaClosed + " MB");
+log("added RSS, hypercord   " + (out.deltaIdle >= 0 ? "+" : "") + out.deltaIdle + " MB");
+log("snapshot label read    " + out.idleLabel);
 log("timers seen in any state: " + JSON.stringify(out.timersSeen));
 log("");
 const weight = out.shipped;

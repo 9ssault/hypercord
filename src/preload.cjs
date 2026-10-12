@@ -11,10 +11,12 @@
 //     the page's world before the page's own scripts, and DOMContentLoaded (where
 //     this used to happen) is already too late - Discord's bundle has run by
 //     then. Measured, not assumed: see the ordering checks in tests/preload;
-//   * **the rail, with a tab per thing.** Everything Hypercord adds lives in its
-//     own tab inside the Discord window: user tokens, plugins, themes, accounts,
-//     commands. Markup is mounted here and wired here, because markup inserted
-//     with innerHTML never runs its own script;
+//   * **Hypercord's settings, as pages inside Discord's own settings.** The plugin
+//     catalogue, our own Hyper plugins, the themes, the access keys, the commands,
+//     the logs and the accounts are one section each in Discord's settings sidebar,
+//     and the sheet that renders them is placed over Discord's own content column.
+//     There is no Hypercord window to find, raise or close: settings is the one
+//     place somebody looks for settings, so that is where these live;
 //   * **the user-token option, beside Discord's own fields.** It is an extra way
 //     in, not a replacement: the email and password form stays exactly as it is.
 //
@@ -66,22 +68,6 @@ const listeners = new Map();
 ipcRenderer.on("push", (_event, kind, payload) => {
   const key = String(kind);
   if (key === "themes:css" && !OURS) applyCss(payload);
-  if (key === "rail:visible" && !OURS) {
-    const host = ensureRail();
-    if (host) {
-      host.setAttribute("data-open", payload ? "true" : "false");
-      // opening is when the measurement matters: Discord's tray is laid out by then,
-      // and a rail measured only at mount would open onto the server tray again
-      if (payload) placeRail(host);
-    }
-  }
-  if (key === "rail:side" && !OURS) {
-    const host = ensureRail();
-    if (host) {
-      host.setAttribute("data-side", String(payload) === "left" ? "left" : "right");
-      placeRail(host);
-    }
-  }
   // The pane tells us which sections it actually has, so an entry can never point at
   // one it has lost since this page was built.
   if (key === "panes:views" && !OURS) adoptSettingsViews(payload);
@@ -112,17 +98,12 @@ const call = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 
 contextBridge.exposeInMainWorld("hypercord", {
   shell: "hypercord",
-  // the rail talks to the control server through main, never with a token of its own
+  // the control server is spoken to through main, never with a token of its own
   api: {
     request: (path, opts = {}) => call("api:request", String(path), opts),
   },
-  rail: {
-    toggle: (open) => call("rail:toggle", open === undefined ? null : Boolean(open)),
-    assets: () => call("rail:assets"),
-    mount: (html) => mountRail(html),
-  },
-  // the manager sheet lives in this page: opening a view is a push, and Close is
-  // the shell's to confirm
+  // the sheet lives in this page: opening a view is a push, and Close is the
+  // shell's to confirm
   panes: {
     open: (view) => call("panes:open", String(view || "commands")),
     close: () => call("panes:close"),
@@ -175,96 +156,7 @@ contextBridge.exposeInMainWorld("hypercord", {
   on,
 });
 
-/* ---- the rail ------------------------------------------------------------ */
-
-function ensureRail() {
-  if (!document.documentElement) return null;
-  let host = document.getElementById("hypercord-rail");
-  if (!host) {
-    host = document.createElement("div");
-    host.id = "hypercord-rail";
-    host.setAttribute("data-hypercord", "rail");
-    document.documentElement.appendChild(host);
-  }
-  // the window's own tray width is what keeps the rail off Discord's columns, and
-  // it changes when the window is resized or the tray collapses
-  if (!railFollowing) {
-    railFollowing = true;
-    window.addEventListener("resize", () => placeRail(document.getElementById("hypercord-rail")), { passive: true });
-  }
-  return host;
-}
-
-let railFollowing = false;
-
-/**
- * How far Discord's own tray already reaches in from a side of the window.
- *
- * The rail is an overlay pinned to an edge, and it used to be pinned to the very
- * edge at the highest z-index on the page: on the left that is Discord's server
- * tray - the guild column and the channel list - which the menu then covered. The
- * owner of the client read that, correctly, as Hypercord taking over the server
- * tray, so the rail now begins where Discord's own column ends.
- *
- * Measured from the page, never assumed: Discord's class names are generated and
- * change between releases, so a miss returns 0 and leaves the rail exactly where
- * the stylesheet puts it by default rather than throwing or guessing.
- */
-function trayInset(side) {
-  if (!document.body || typeof window === "undefined") return 0;
-  const selectors =
-    side === "left"
-      ? ['[class*="guilds"]', '[class*="sidebar"]', 'nav[aria-label]']
-      : ['[class*="members"]', '[class*="memberList"]'];
-  let edge = 0;
-  for (const selector of selectors) {
-    for (const node of document.querySelectorAll(selector)) {
-      // never measure ourselves: our own rail is not Discord's tray
-      if (node.closest && node.closest("#hypercord-rail")) continue;
-      const box = node.getBoundingClientRect();
-      if (box.width < 40 || box.height < 200) continue;
-      edge = side === "left" ? Math.max(edge, box.right) : Math.max(edge, window.innerWidth - box.left);
-    }
-  }
-  return Math.max(0, Math.round(edge));
-}
-
-/**
- * Put the rail beside Discord's tray rather than over it, and never wider than the
- * room that leaves. Written on the element as custom properties and only when the
- * numbers actually changed - this runs on mutation batches, so it must not write
- * on every frame. Returns whether it wrote.
- */
-function placeRail(host) {
-  if (!host || typeof window === "undefined") return false;
-  const side = host.getAttribute("data-side") === "left" ? "left" : "right";
-  const inset = trayInset(side);
-  const room = Math.max(0, window.innerWidth - inset);
-  // 200 is the narrowest the rail stays readable at; past that the room wins, so a
-  // small window gives Discord's columns their space back instead of a cut-off rail
-  const width = Math.max(200, Math.min(300, room));
-  const want = side + ":" + inset + ":" + width;
-  if (host.getAttribute("data-placed") === want) return false;
-  host.setAttribute("data-placed", want);
-  try {
-    host.style.setProperty(side === "left" ? "--hc-tray-left" : "--hc-tray-right", inset + "px");
-    host.style.setProperty("--hc-rail-width", width + "px");
-  } catch {
-    /* an element that refuses styles keeps the stylesheet's defaults */
-  }
-  return true;
-}
-
-function mountRail(html) {
-  const host = ensureRail();
-  if (!host) return false;
-  placeRail(host);
-  if (typeof html === "string" && html.trim() && host.innerHTML !== html) {
-    host.innerHTML = html;
-    wireRail(host);
-  }
-  return true;
-}
+/* ---- what Hypercord mounts in Discord's page ---------------------------- */
 
 /**
  * The manager sheet, mounted inside the Discord window.
@@ -316,222 +208,18 @@ function mountPanes(assets) {
 
 const $ = (root, selector) => (root ? root.querySelector(selector) : null);
 
-/** Text, never markup: every value on the rail comes from somewhere else. */
+/** Text, never markup: every value shown here comes from somewhere else. */
 function fill(node, text) {
   if (!node) return;
   node.textContent = String(text === undefined || text === null ? "" : text);
 }
 
-function row(text, tag, kind) {
-  const line = document.createElement("div");
-  line.className = "hc-row";
-  const name = document.createElement("span");
-  name.className = "hc-name";
-  name.textContent = String(text);
-  line.appendChild(name);
-  if (tag) {
-    const pill = document.createElement("span");
-    pill.className = "hc-tag";
-    if (kind) pill.setAttribute("data-state", kind);
-    pill.textContent = String(tag);
-    line.appendChild(pill);
-  }
-  return line;
-}
-
-function empty(box, text) {
-  if (!box) return;
-  const line = document.createElement("div");
-  line.className = "hc-empty";
-  line.textContent = String(text);
-  box.replaceChildren(line);
-}
-
-function showPanel(host, wanted) {
-  for (const button of host.querySelectorAll(".hc-tab")) {
-    button.classList.toggle("hc-active", button.getAttribute("data-tab") === wanted);
-  }
-  for (const panel of host.querySelectorAll(".hc-panel")) {
-    panel.classList.toggle("hc-shown", panel.getAttribute("data-panel") === wanted);
-  }
-  const load = { tokens: renderTokens, plugins: renderPlugins, themes: renderThemes, accounts: renderAccounts };
-  if (load[wanted]) load[wanted]();
-}
-
-function wireRail(host) {
-  for (const button of host.querySelectorAll(".hc-tab")) {
-    button.addEventListener("click", () => showPanel(host, button.getAttribute("data-tab")));
-  }
-  for (const button of host.querySelectorAll(".hc-actions [data-hc]")) {
-    const action = button.getAttribute("data-hc");
-    button.addEventListener("click", () => {
-      if (action === "panes") call("panes:open", "plugins").catch(() => {});
-      if (action === "themes" || action === "themes-open") call("panes:open", "themes").catch(() => {});
-      if (action === "token-forget") forgetAllTokens();
-    });
-  }
-  const close = $(host, '[data-hc="close"]');
-  if (close) {
-    close.addEventListener("click", () => {
-      host.setAttribute("data-open", "false");
-      call("rail:toggle", false).catch(() => {});
-    });
-  }
-
-  const tokenForm = $(host, '[data-hc="token-form"]');
-  if (tokenForm) tokenForm.addEventListener("submit", (event) => event.preventDefault());
-  const tokenSave = $(host, '[data-hc="token-save"]');
-  if (tokenSave) {
-    tokenSave.addEventListener("click", () =>
-      addToken($(host, '[data-hc="token-value"]'), $(host, '[data-hc="token-label"]'), $(host, '[data-hc="token-hint"]')),
-    );
-  }
-
-  const search = $(host, '[data-hc="plugin-search"]');
-  if (search) search.addEventListener("input", () => renderPlugins());
-
-  const commandForm = $(host, '[data-hc="command-form"]');
-  if (commandForm) commandForm.addEventListener("submit", (event) => event.preventDefault());
-  for (const button of host.querySelectorAll('[data-hc="command-form"] button')) {
-    button.addEventListener("click", () => runCommand($(host, '[data-hc="command-input"]'), $(host, '[data-hc="command-out"]')));
-  }
-
-  // a plugin toggled in the manager, a theme installed, a token stored: the rail
-  // follows those events instead of asking on a clock
-  const follow = () => {
-    if ($(host, '.hc-panel[data-panel="plugins"].hc-shown')) renderPlugins();
-    else if ($(host, '.hc-panel[data-panel="themea"].hc-shown')) renderThemes();
-  };
-  const followPlugins = listeners.get("plugins:changed") || [];
-  followPlugins.push(() => {
-    if ($(host, '.hc-panel[data-panel="plugins"].hc-shown')) renderPlugins();
-    else if ($(host, '.hc-panel[data-panel="themes"].hc-shown')) renderThemes();
-  });
-  listeners.set("plugins:changed", followPlugins);
-  void follow;
-
-  showPanel(host, "tokens");
-}
-
-let catalogue = [];
-let lastPlugins = [];
-
-async function renderPlugins() {
-  const host = document.getElementById("hypercord-rail");
-  if (!host) return;
-  const box = $(host, '[data-hc="plugins"]');
-  let list = [];
-  try {
-    list = await call("plugins:list");
-  } catch {
-    list = [];
-  }
-  if (!Array.isArray(list)) list = [];
-  lastPlugins = list;
-  catalogue = list;
-  const query = String(($(host, '[data-hc="plugin-search"]') || {}).value || "").trim().toLowerCase();
-  const rows = query
-    ? list.filter((p) => String(p.id).toLowerCase().includes(query) || String(p.name).toLowerCase().includes(query))
-    : list.filter((p) => p.running || p.broken || p.defaultOn);
-  fill($(host, '[data-hc="plugin-summary"]'), list.filter((p) => p.running).length + " running of " + list.length + " in the catalogue" + (query ? " | " + rows.length + " match" : ""));
-  if (!box) return;
-  if (!rows.length) {
-    empty(box, query ? "nothing matches that search" : "no plugins loaded");
-    return;
-  }
-  box.replaceChildren();
-  for (const plugin of rows) {
-    const tag = plugin.broken ? "broken" : plugin.running ? "on" : plugin.enabled ? "off (broken?)" : plugin.defaultOn ? "Hyper set" : "off";
-    box.appendChild(row(plugin.name || plugin.id, tag, plugin.broken ? "broken" : plugin.running ? "on" : ""));
-  }
-}
-
-async function renderThemes() {
-  const host = document.getElementById("hypercord-rail");
-  const box = host && $(host, '[data-hc="themes"]');
-  if (!box) return;
-  let list = [];
-  try {
-    list = await call("themes:list");
-  } catch {
-    list = [];
-  }
-  if (!Array.isArray(list) || !list.length) {
-    empty(box, "no themes installed");
-    return;
-  }
-  box.replaceChildren();
-  for (const theme of list) box.appendChild(row(theme.name || theme.id, theme.enabled ? "on" : "off", theme.enabled ? "on" : ""));
-}
-
-async function renderAccounts() {
-  const host = document.getElementById("hypercord-rail");
-  const box = host && $(host, '[data-hc="accounts"]');
-  if (!box) return;
-  let info = null;
-  let stored = [];
-  try {
-    info = await call("account:current");
-    stored = await call("tokens:list");
-  } catch {
-    info = null;
-  }
-  // The token store is the local truth. A machine with no control server still has
-  // an account for every key stored on it, and "the control server reports no
-  // accounts" was telling the user they had none when they had several.
-  const accounts = (info && Array.isArray(info.accounts) ? info.accounts : []).map(String);
-  for (const key of Array.isArray(stored) ? stored : []) {
-    const id = String((key && key.account) || key || "");
-    if (id && !accounts.includes(id)) accounts.push(id);
-  }
-  if (!accounts.length) {
-    empty(box, "no key is stored on this machine and no control server is configured");
-    return;
-  }
-  box.replaceChildren();
-  for (const id of accounts) box.appendChild(row(id, info && String(info.account) === id ? "current" : "", info && String(info.account) === id ? "on" : ""));
-}
-
-async function renderTokens() {
-  const host = document.getElementById("hypercord-rail");
-  const box = host && $(host, '[data-hc="tokens"]');
-  if (!box) return;
-  let list = [];
-  let store = null;
-  try {
-    list = await call("tokens:list");
-    store = await call("tokens:store");
-  } catch {
-    list = [];
-  }
-  const rows = Array.isArray(list) ? list : [];
-  fill(
-    $(host, '[data-hc="token-hint"]'),
-    store && store.encrypted === false
-      ? "this machine has no usable keychain: a token stays in memory for the run only"
-      : rows.length
-        ? rows.length + " token(s) stored"
-        : "no user token yet - paste one to skip Discord's login",
-  );
-  if (!rows.length) {
-    empty(box, "no user token stored");
-    return;
-  }
-  box.replaceChildren();
-  for (const entry of rows) {
-    const line = row(entry.label || entry.account, "\u2026" + String(entry.last4 || ""), "on");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Use";
-    button.addEventListener("click", async () => {
-      const res = await call("tokens:use", entry.account).catch((err) => ({ ok: false, error: String((err && err.message) || err) }));
-      fill($(host, '[data-hc="token-hint"]'), res && res.ok ? "signed in as " + (entry.label || entry.account) : "could not use it: " + ((res && res.error) || "unknown"));
-    });
-    line.appendChild(button);
-    box.appendChild(line);
-  }
-}
-
+/**
+ * Store a user token, from the prompt that sits beside Discord's login form - that
+ * prompt is this function's only caller. The shell checks the token with Discord
+ * before anything is written, and the token itself is never repeated back: what is
+ * echoed is the label or the account it belongs to.
+ */
 async function addToken(valueInput, labelInput, hint) {
   const value = valueInput ? String(valueInput.value || "") : "";
   if (!value.trim()) {
@@ -550,39 +238,29 @@ async function addToken(valueInput, labelInput, hint) {
   fill(hint, res && res.ok ? "stored and signed in as " + (res.label || res.account) : "refused: " + ((res && res.error) || "unknown"));
   if (res && res.ok) {
     hidePrompt();
-    renderTokens();
     call("notify", "Hypercord", "Signed in with a stored user token").catch(() => {});
   }
   return res;
 }
 
-async function forgetAllTokens() {
-  const host = document.getElementById("hypercord-rail");
-  let res;
-  try {
-    res = await call("tokens:forgetAll");
-  } catch (err) {
-    res = { ok: false, error: String((err && err.message) || err) };
-  }
-  fill(host && $(host, '[data-hc="token-hint"]'), res && res.ok ? "every stored user token was removed" : "could not forget them: " + ((res && res.error) || "unknown"));
-  renderTokens();
-}
-
-/* ---- the way in from Discord's own settings ------------------------------ */
+/* ---- Hypercord's sections in Discord's own settings ---------------------- */
 
 /**
- * Hypercord, as a section inside Discord's settings.
+ * Hypercord, as sections inside Discord's settings.
  *
- * The manager is where everything Hypercord adds is configured - plugins, the
- * Hyper plugins, themes, access keys, commands, logs, accounts, one tab each - and
- * the place people look for settings is Discord's own settings. So when the
- * settings layer is open, this adds one item to its sidebar, next to the real
- * ones, and it opens the manager on the last view.
+ * Everything Hypercord adds is configured in the sheet - plugins, our own Hyper
+ * plugins, themes, access keys, commands, logs, accounts, one section each - and the
+ * place people look for settings is Discord's own settings. So when the settings
+ * layer is open, one entry per section is added to its sidebar, beside the real
+ * ones, and the sheet is placed over Discord's own settings content column rather
+ * than over the client: a section reads as a page of settings because it stands
+ * exactly where one stands.
  *
- * It is reachable without the rail, on purpose: somebody who only ever opens
- * Discord's settings still has to find it. Nothing is ever inserted into the
- * middle of Discord's own markup - the item is a sibling of their settings
- * entries, and its click goes to the shell like every other button of ours.
+ * Nothing is ever inserted into the middle of Discord's own markup - the entries are
+ * siblings of their settings items, and a click goes to the shell like every other
+ * button of ours. When that content column cannot be found the section is not opened
+ * at all and the reason is reported on the document, because a panel dropped over
+ * somebody's chat is the one outcome worth refusing.
  */
 
 /**
@@ -934,8 +612,8 @@ function ensurePrompt() {
   if (!document.documentElement) return null;
   let prompt = document.getElementById("hypercord-token-prompt");
   if (!prompt) {
-    // the rail's markup carries it; if the rail has not been mounted yet, this is
-    // where it arrives from
+    // the shell hands the prompt's markup over with the rest of Hypercord's assets;
+    // this is the host element it is written into
     prompt = document.createElement("div");
     prompt.id = "hypercord-token-prompt";
     prompt.setAttribute("data-hypercord", "token-prompt");
@@ -1116,40 +794,16 @@ function applyCss(css) {
   return true;
 }
 
-async function runCommand(input, out) {
-  const line = input ? String(input.value || "").trim() : "";
-  if (!line) return;
-  const parts = line.replace(/^\$/, "").split(/\s+/);
-  let res;
-  try {
-    res = await call("api:request", "/api/run", { method: "POST", body: { command: parts[0], args: parts.slice(1) } });
-  } catch (err) {
-    res = { ok: false, error: String((err && err.message) || err) };
-  }
-  if (out) {
-    out.textContent = res && res.ok ? String(res.text || "").slice(0, 4000) : "failed: " + ((res && res.error) || "the control server did not answer");
-  }
-}
-
 async function boot() {
   if (OURS) return; // Hypercord's own pages get the bridge and nothing else
-  mountRail("");
   try {
-    await call("rail:ready");
+    await call("ui:ready");
   } catch {
     /* the shell is not there yet */
   }
   try {
-    const assets = await call("rail:assets");
+    const assets = await call("ui:assets");
     applyCss((assets && assets.css) || "");
-    mountRail((assets && assets.html) || "");
-    if (assets && assets.side) {
-      const host = ensureRail();
-      if (host) {
-        host.setAttribute("data-side", assets.side === "left" ? "left" : "right");
-        placeRail(host);
-      }
-    }
     const prompt = ensurePrompt();
     if (prompt && assets && assets.promptHtml) prompt.innerHTML = String(assets.promptHtml);
     wirePrompt(ensurePrompt());
@@ -1168,11 +822,6 @@ async function boot() {
   const observer = new MutationObserver(() => {
     const prompt = document.getElementById("hypercord-token-prompt");
     if (prompt && prompt.getAttribute("data-open") === "true") positionPrompt(prompt);
-    // only while it is on screen, and only when the measurement changed: the tray
-    // can be collapsed or resized by Discord at any time, so this cannot be done
-    // once at mount, and it is not worth a style write while the rail is closed
-    const rail = document.getElementById("hypercord-rail");
-    if (rail && rail.getAttribute("data-open") === "true") placeRail(rail);
     followSettings();
   });
   try {

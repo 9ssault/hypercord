@@ -77,7 +77,6 @@
   "description": "the Hypercord set, on by default",
   "enabled": [
    "hyperBridge",
-   "hyperRail",
    "hyperAccounts",
    "hyperPanes",
    "hypercordRPC"
@@ -86,8 +85,7 @@
    "hyperAccounts",
    "hyperBridge",
    "hypercordRPC",
-   "hyperPanes",
-   "hyperRail"
+   "hyperPanes"
   ]
  },
  "plugins": [
@@ -2977,21 +2975,6 @@
    "authorRefs": [],
    "version": "",
    "entry": "plugins/hyper/hyperPanes/index.js",
-   "built": false,
-   "builtin": true,
-   "deps": [],
-   "defaultOn": true,
-   "source": "hypercord",
-   "defaultOnSet": "Hyper"
-  },
-  {
-   "id": "hyperRail",
-   "name": "hyperRail",
-   "description": "The Hypercord rail, on the edge of the window, with the plugin list on it",
-   "authors": [],
-   "authorRefs": [],
-   "version": "",
-   "entry": "plugins/hyper/hyperRail/index.js",
    "built": false,
    "builtin": true,
    "deps": [],

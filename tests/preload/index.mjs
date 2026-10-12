@@ -3,9 +3,11 @@
 // The injection path, in a real window: `src/preload.cjs` is loaded exactly as
 // the client loads it (sandboxed, contextIsolated) into a page that stands in for
 // Discord's, and the checks look at the document - one style element carrying the
-// themes and the rail CSS, the rail mounted with a tab per thing, the token
-// option placed under the login form, and the manager sheet mounted inside the
-// page rather than in a window of its own.
+// themes and what Hypercord injects, the token option placed under the login form,
+// and Hypercord's own sections mounted inside Discord's settings, as pages in
+// Discord's content column rather than in a window of their own. There is no rail
+// and no settings sheet of our own left to test; that is the point of the suite
+// now, so "there is no #hypercord-rail in the page" is asserted below.
 //
 // Two details of that stand-in page are deliberate:
 //
@@ -83,13 +85,18 @@ const PAGE = `<!doctype html><html><head><title>discord stands here</title></hea
 </body></html>`;
 
 // The other page that matters: Discord's settings layer, whose sidebar is a tab
-// strip with real tabs in it. Hypercord puts one entry of its own in there.
-const SETTINGS_PAGE = `<!doctype html><html><head><title>settings</title></head><body>
+// strip with real tabs in it. Hypercord puts one entry of its own in there, and the
+// page it opens becomes the content column below - so this page carries the two
+// things that proves: a content column the sheet can be placed in, and Discord's
+// own CSS custom properties and item classes for the entries and the page title to
+// wear. Without them a test could only show that the nodes exist, not that they are
+// laid out and coloured like the settings around them.
+const SETTINGS_PAGE = `<!doctype html><html style="--header-primary: #f2f3f5; --text-normal: #dbdee1; --background-primary: #313338;"><head><title>settings</title></head><body>
 <div class="layers-1a2b" style="display:flex"><div class="sidebar-3c4d" role="tablist" style="width:220px;height:320px;display:flex;flex-direction:column">
-  <button type="button" role="tab">My Account</button>
-  <button type="button" role="tab">Profiles</button>
-  <button type="button" role="tab">Privacy &amp; Safety</button>
-  <button type="button" role="tab">Notifications</button>
+  <button type="button" class="item-9f8e" role="tab">My Account</button>
+  <button type="button" class="item-9f8e" role="tab">Profiles</button>
+  <button type="button" class="item-9f8e" role="tab">Privacy &amp; Safety</button>
+  <button type="button" class="item-9f8e" role="tab">Notifications</button>
 </div><div class="content-1a2b" style="width:380px;height:300px"></div></div>
 </body></html>`;
 
@@ -147,27 +154,28 @@ const opened = [];
 const calls = { plugins: 0, tokens: 0, uses: [], forgets: 0, closes: 0, themeRows: 0 };
 let tokenRows = [];
 
-// What the shell's pageCss() hands over: the enabled themes, then the rail's own
-// stylesheet (which is where the prompt and the rail get their looks from). The
-// harness sending anything less would be testing a client that does not exist.
+// What the shell's pageCss() hands over: the enabled themes, then the stylesheet of
+// what Hypercord injects into Discord's page. The harness sending anything less
+// would be testing a client that does not exist.
 const THEME_CSS = ".theme-is-here { color: red; }";
-const SHELL_CSS = THEME_CSS + "\n" + read("rail.css");
+const SHELL_CSS = THEME_CSS + "\n" + read("injected.css");
 
-ipcMain.handle("rail:ready", () => ({ ok: true, account: "selftest" }));
-ipcMain.handle("rail:assets", () => ({
+// The two channels the preload asks for, answered the way the shell answers them:
+// nothing about a rail, because there is none - the settings pages are the whole
+// surface, and `injected.css` is the stylesheet that dresses the two pieces of
+// Hypercord that live in Discord's tree (the token option and the entries).
+ipcMain.handle("ui:ready", () => ({ ok: true, account: "selftest" }));
+ipcMain.handle("ui:assets", () => ({
   css: SHELL_CSS,
-  html: read("rail.html"),
   promptHtml: read("prompt.html"),
   panesHtml: read("panes.html"),
   panesCss: read("panes.css"),
   panesJs: read("panes.js"),
-  side: "right",
 }));
-ipcMain.handle("rail:toggle", (_event, open) => open);
 ipcMain.handle("panes:open", (_event, view) => {
   opened.push(String(view));
   // the shell opens the sheet by pushing the view back at the page, which is the
-  // path the rail's Manager button and the settings entry both take
+  // path a settings entry and the shell both take
   for (const target of BrowserWindow.getAllWindows()) {
     if (!target.isDestroyed()) target.webContents.send("push", "panes:open", String(view || "commands"));
   }
@@ -186,7 +194,7 @@ ipcMain.handle("plugins:list", () => {
   // `source` is what splits our own plugins from the vendored catalogue: the
   // manifest marks ours "hypercord" and everything vendored "upstream"
   return [
-    { id: "hyperRail", name: "hyperRail", description: "the rail", source: "hypercord", running: true, enabled: true, broken: "" },
+    { id: "hyperPanes", name: "hyperPanes", description: "the settings pages", source: "hypercord", running: true, enabled: true, broken: "" },
     { id: "hyperBridge", name: "hyperBridge", description: "the bridge", source: "hypercord", running: true, enabled: true, broken: "" },
     { id: "spellCheck", name: "SpellCheck", description: "spellcheck", source: "upstream", running: false, enabled: false, broken: "TypeScript source, not built" },
     { id: "updater", name: "Updater", description: "updates", source: "hypercord", running: false, enabled: false, broken: "" },
@@ -280,86 +288,57 @@ async function run() {
   await win.loadURL(origin);
   // the preload boots on DOMContentLoaded and asks main for the assets after
   await wait(600);
-  // the shell answers rail:ready by pushing the rail state, so the stand-in does
-  // the same thing here; the assertions below then read the page, not the stub
-  win.webContents.send("push", "rail:visible", true);
+  // the shell answers ui:ready by pushing the page's CSS, so the stand-in does the
+  // same thing here; the assertions below then read the page, not the stub
   win.webContents.send("push", "themes:css", SHELL_CSS);
   await wait(200);
 
-  /* ---- the bridge, the rail, the theme --------------------------------- */
+  /* ---- the bridge, the injected css, the settings pages ---------------- */
 
   const seen = await page(
     win,
     `(() => {
     const style = document.getElementById("hypercord-theme");
-    const rail = document.getElementById("hypercord-rail");
-    const names = [...document.querySelectorAll("#hypercord-rail .hc-name")].map((n) => n.textContent);
-    const tags = [...document.querySelectorAll("#hypercord-rail .hc-tag")].map((n) => ({ text: n.textContent, state: n.getAttribute("data-state") }));
+    const host = document.getElementById("hypercord-panes");
     return {
       bridge: typeof window.hypercord,
       surfaces: window.hypercord ? Object.keys(window.hypercord).sort() : [],
       styleText: style ? style.textContent : null,
       styleCount: document.querySelectorAll("style").length,
-      railSide: rail ? rail.getAttribute("data-side") : null,
-      railOpen: rail ? rail.getAttribute("data-open") : null,
-      hasClose: Boolean(document.querySelector('#hypercord-rail [data-hc="close"]')),
-      hasPanes: Boolean(document.querySelector('#hypercord-rail [data-hc="panes"]')),
-      names,
-      tags,
+      // the rail is gone: no node, no rule, no bridge method to drive one
+      railNode: Boolean(document.getElementById("hypercord-rail")),
+      railRules: style ? /#hypercord-rail|--hc-rail-width|--hc-tray-/.test(style.textContent) : false,
       appIntact: document.getElementById("app").textContent.includes("Welcome back!"),
       inputsIntact: Boolean(document.getElementById("email")) && Boolean(document.getElementById("password")),
-      panesPresent: Boolean(document.getElementById("hypercord-panes")),
-      panesOpen: (document.getElementById("hypercord-panes") || { getAttribute: () => null }).getAttribute("data-open"),
+      panesPresent: Boolean(host),
+      panesOpen: host ? host.getAttribute("data-open") : null,
+      panesSeamless: host ? host.getAttribute("data-seamless") : null,
+      panesWidth: host ? Math.round(host.getBoundingClientRect().width) : -1,
     };
   })()`,
   );
 
   ok("the bridge is exposed to the page", seen.bridge === "object", seen.bridge);
-  for (const surface of ["api", "rail", "panes", "plugins", "themes", "tokens", "account", "update", "notify", "on"]) {
+  for (const surface of ["api", "panes", "plugins", "themes", "tokens", "account", "update", "notify", "on"]) {
     ok("the bridge carries " + surface, seen.surfaces.includes(surface), seen.surfaces.join(","));
   }
-  ok("the rail markup was mounted with its own tabs", seen.hasClose && seen.hasPanes);
-  ok("the rail is on the side main asked for", seen.railSide === "right", String(seen.railSide));
-  ok("a pushed rail:visible opens the rail", seen.railOpen === "true", String(seen.railOpen));
-  // the rail shows one panel at a time, so its plugin list is what its own
-  // Plugins tab shows - which is also how a user reaches it
-  await page(win, `document.querySelector('#hypercord-rail .hc-tab[data-tab="plugins"]').click(); true`);
-  await wait(250);
-  const pluginsPanel = await page(
-    win,
-    `(() => ({
-    names: [...document.querySelectorAll('#hypercord-rail .hc-name')].map((n) => n.textContent),
-    tags: [...document.querySelectorAll('#hypercord-rail .hc-tag')].map((n) => ({ text: n.textContent, state: n.getAttribute("data-state") })),
-    summary: (document.querySelector('#hypercord-rail [data-hc="plugin-summary"]') || {}).textContent || "",
-  }))()`,
-  );
-  ok("the rail's Plugins tab lists the running and the broken", pluginsPanel.names.includes("hyperRail") && pluginsPanel.names.includes("SpellCheck") && !pluginsPanel.names.includes("Updater"), JSON.stringify(pluginsPanel.names));
-  ok("running plugins are tagged on and the failure is tagged broken", pluginsPanel.tags.filter((t) => t.state === "on").length >= 2 && pluginsPanel.tags.filter((t) => t.state === "broken").length === 1, JSON.stringify(pluginsPanel.tags));
-  ok("the rail says how many are running of how many", /running of/.test(pluginsPanel.summary), JSON.stringify(pluginsPanel.summary));
+  ok("the bridge carries no rail: the settings pages are the whole surface", !seen.surfaces.includes("rail"), seen.surfaces.join(","));
+  ok("no rail is mounted in the page", seen.railNode === false && seen.railRules === false, "node " + seen.railNode + " rules " + seen.railRules);
   ok(
-    "the themes and the rail's own css arrive as one element",
-    seen.styleText === SHELL_CSS && seen.styleText.includes("#hypercord-rail") && seen.styleText.includes("#hypercord-token-prompt") && seen.styleCount === 2,
+    "the themes and our own injected css arrive as one element, with nothing of a rail in it",
+    seen.styleText === SHELL_CSS && seen.styleText.includes("#hypercord-token-prompt") && seen.styleCount === 2,
     "our style elements " + seen.styleCount + ", chars " + (seen.styleText || "").length,
   );
-  ok("the manager sheet is mounted, and closed until it is asked for", seen.panesPresent && seen.panesOpen === "false", "present " + seen.panesPresent + " open " + seen.panesOpen);
+  ok("the settings pages are mounted, and closed until a section is asked for", seen.panesPresent && seen.panesOpen === "false", "present " + seen.panesPresent + " open " + seen.panesOpen);
+  // The login page has no settings layer, so there is nowhere to place them: they
+  // claim no room at all rather than covering the client with a page of our own.
+  ok("they claim no space at all until Discord's settings content column is found", seen.panesSeamless === null && seen.panesWidth === 0, "seamless " + seen.panesSeamless + " width " + seen.panesWidth);
   ok("discord's own markup is untouched", seen.appIntact && seen.inputsIntact);
-
-  // the rail's buttons are wired in the isolated world, so a click has to reach
-  // main: this is the difference between markup and a working rail
-  await page(win, `document.querySelector('#hypercord-rail .hc-actions [data-hc="themes"]').click(); true`);
-  await wait(150);
-  await page(win, `document.querySelector('#hypercord-rail .hc-actions [data-hc="panes"]').click(); true`);
-  await wait(150);
-  ok("the rail's Themes and Manager buttons reach the shell", opened.includes("themes") && opened.includes("plugins"), JSON.stringify(opened));
-
-  await page(win, `document.querySelector('#hypercord-rail [data-hc="close"]').click(); true`);
-  await wait(150);
-  ok("Hide closes the rail", (await page(win, `document.getElementById("hypercord-rail").getAttribute("data-open")`)) === "false");
 
   win.webContents.send("push", "themes:css", ".pushed { color: blue; }");
   await wait(150);
   ok("a pushed theme replaces the injected css", (await page(win, `document.getElementById("hypercord-theme").textContent`)) === ".pushed { color: blue; }");
-  // back to the real sheet, because everything below reads the rail's own styles
+  // back to the real sheet, because everything below reads its own styles
   win.webContents.send("push", "themes:css", SHELL_CSS);
   await wait(150);
 
@@ -504,27 +483,29 @@ async function run() {
             .every((selector) => selector.split(",").every((one) => one.includes("#hypercord-panes")))
         : false,
       api: typeof window.hypercordPanes,
-      views: [...document.querySelectorAll("#hypercord-panes .nav-item")].map((b) => b.getAttribute("data-view")),
+      // no navigation of our own: the section list is Discord's settings sidebar
+      nav: document.querySelectorAll("#hypercord-panes .nav, #hypercord-panes .nav-item").length,
+      views: [...document.querySelectorAll("#hypercord-panes section.view")].map((b) => b.getAttribute("data-view")),
       sections: document.querySelectorAll("#hypercord-panes section.view").length,
-      hpIds: ["hp-status", "hp-main", "hp-close", "hp-pluginList", "hp-themeList", "hp-tokenList"].every((id) => Boolean(document.getElementById(id))),
+      hpIds: ["hp-status", "hp-main", "hp-pluginList", "hp-themeList", "hp-tokenList"].every((id) => Boolean(document.getElementById(id))),
       inDiscord: Boolean(document.getElementById("app")),
     };
   })()`,
   );
 
-  ok("the manager sheet is mounted inside discord's own page", sheet.host && sheet.mounted === "true" && sheet.inDiscord, JSON.stringify(sheet));
-  ok("the rail's Manager button opened it, in this page", sheet.open === "true", String(sheet.open));
+  ok("the settings pages are mounted inside discord's own page", sheet.host && sheet.mounted === "true" && sheet.inDiscord, JSON.stringify(sheet));
+  ok("and stay closed until a settings section opens one", sheet.open === "false", String(sheet.open));
+  ok("they carry no navigation of their own, because Discord's sidebar is the list", sheet.nav === 0, "nav " + sheet.nav);
   ok("its stylesheet travels with it, scoped to the sheet", sheet.css > 500 && sheet.cssScoped, "chars " + sheet.css + " scoped " + sheet.cssScoped);
   ok("its script ran in the page's own world, under a page that forbids scripts", sheet.api === "object", String(sheet.api));
   ok(
-    "it offers a tab per thing, access keys and our own plugins included",
+    "it is one page per thing, access keys and our own plugins included",
     sheet.sections === 7 && ["commands", "plugins", "hyper", "themes", "logs", "accounts", "tokens"].every((v) => sheet.views.includes(v)),
     JSON.stringify(sheet.views),
   );
   ok("it uses hp- ids, so discord cannot collide with it", sheet.hpIds === true);
 
-  // the shell opens a view by pushing, which is the path the rail's Manager
-  // button and the shortcut both take
+  // the shell opens a page by pushing, which is the path a settings entry takes
   win.webContents.send("push", "panes:open", "themes");
   await wait(400);
   const openedSheet = await page(
@@ -535,23 +516,24 @@ async function run() {
     return {
       open: host.getAttribute("data-open"),
       visible,
-      active: (document.querySelector("#hypercord-panes .nav-item.active") || {}).textContent || "none",
       themeRows: document.querySelectorAll("#hypercord-panes #hp-themeList *").length,
       status: (document.getElementById("hp-status") || {}).textContent || "",
     };
   })()`,
   );
-  ok("a pushed panes:open opens the sheet on that view", openedSheet.open === "true" && openedSheet.visible.length === 1 && openedSheet.visible[0] === "themes", JSON.stringify(openedSheet));
+  ok("a pushed panes:open opens the page it names", openedSheet.open === "true" && openedSheet.visible.length === 1 && openedSheet.visible[0] === "themes", JSON.stringify(openedSheet));
   ok("the themes view rendered the installed themes", openedSheet.themeRows > 0, "nodes " + openedSheet.themeRows + " status " + JSON.stringify(openedSheet.status));
   // the acceptance criterion, stated plainly: opening the manager must not create a
   // second window for it to live in
   ok("opening the manager created no second window", BrowserWindow.getAllWindows().length === 1, "windows " + BrowserWindow.getAllWindows().length);
   ok("opening a view logged no error", !/^\s*(error|failed)/i.test(openedSheet.status), JSON.stringify(openedSheet.status));
 
-  // every view has to render when it is opened, with no polling involved
+  // every page has to render when it is shown, with no polling involved. `show()` is
+  // the sheet's own API and the one the preload drives; the user's way in - clicking
+  // Discord's own settings entry - is what the settings window below exercises.
   const visited = [];
   for (const view of ["commands", "plugins", "hyper", "themes", "logs", "accounts", "tokens"]) {
-    await page(win, `document.querySelector('#hypercord-panes .nav-item[data-view="${view}"]').click(); true`);
+    await page(win, `window.hypercordPanes.show(${JSON.stringify(view)}); true`);
     await wait(250);
     const shown = await page(
       win,
@@ -559,7 +541,6 @@ async function run() {
       const visible = [...document.querySelectorAll("#hypercord-panes section.view")].filter((n) => !n.classList.contains("hidden"));
       return {
         shown: visible.map((n) => n.getAttribute("data-view")),
-        active: document.querySelectorAll("#hypercord-panes .nav-item.active").length,
         status: (document.getElementById("hp-status") || {}).textContent || "",
         pluginRows: document.querySelectorAll("#hypercord-panes #hp-pluginList *").length,
         tokenRows: document.querySelectorAll("#hypercord-panes #hp-tokenList *").length,
@@ -567,7 +548,7 @@ async function run() {
     })()`,
     );
     visited.push(view + ":" + JSON.stringify(shown.shown));
-    ok("the " + view + " view shows exactly itself, marked active", shown.shown.length === 1 && shown.shown[0] === view && shown.active === 1, JSON.stringify(shown));
+    ok("the " + view + " page shows exactly itself", shown.shown.length === 1 && shown.shown[0] === view, JSON.stringify(shown));
     ok("the " + view + " view logged no error", !/^\s*(error|failed)/i.test(shown.status), JSON.stringify(shown.status));
     if (view === "plugins") ok("the plugins view listed the catalogue", shown.pluginRows > 0, "nodes " + shown.pluginRows);
     if (view === "tokens") ok("the access keys view listed the stored token", shown.tokenRows > 0, "nodes " + shown.tokenRows);
@@ -578,7 +559,7 @@ async function run() {
   // two catalogues: Hyper must hold ours and only ours
   // reading each list after its own load, because a view renders from a bridge
   // call: reading in the same script tick would read the previous view
-  await page(win, `document.querySelector('#hypercord-panes .nav-item[data-view="hyper"]').click(); true`);
+  await page(win, `window.hypercordPanes.show("hyper"); true`);
   await wait(300);
   const oursText = await page(
     win,
@@ -587,7 +568,7 @@ async function run() {
     hyperSummary: (document.getElementById("hp-hyperSummary") || {}).textContent || "",
   }))()`,
   );
-  await page(win, `document.querySelector('#hypercord-panes .nav-item[data-view="plugins"]').click(); true`);
+  await page(win, `window.hypercordPanes.show("plugins"); true`);
   await wait(300);
   const allText = await page(
     win,
@@ -597,17 +578,19 @@ async function run() {
   }))()`,
   );
   const split = { ours: oursText.ours, hyperSummary: oursText.hyperSummary, all: allText.all, catalogueSummary: allText.summary };
-  ok("the Hyper tab lists our own plugins", /hyperRail/.test(split.ours) && /hyperBridge/.test(split.ours), split.ours.slice(0, 120));
+  ok("the Hyper page lists our own plugins", /hyperPanes/.test(split.ours) && /hyperBridge/.test(split.ours), split.ours.slice(0, 120));
   ok("and not the vendored ones", !/SpellCheck/.test(split.ours) && /SpellCheck/.test(split.all), "hyper: " + /SpellCheck/.test(split.ours) + ", catalogue: " + /SpellCheck/.test(split.all));
-  ok("the Hyper tab says how many of the catalogue are ours", /2|3|our/i.test(split.hyperSummary), JSON.stringify(split.hyperSummary));
-  ok("the whole catalogue tab still holds everything", /of 4|4 /.test(split.catalogueSummary), JSON.stringify(split.catalogueSummary));
+  ok("the Hyper page says how many of the catalogue are ours", /2|3|our/i.test(split.hyperSummary), JSON.stringify(split.hyperSummary));
+  ok("the whole catalogue page still holds everything", /of 4|4 /.test(split.catalogueSummary), JSON.stringify(split.catalogueSummary));
 
-  // Close goes through the shell, and the sheet hides: there is no window to
-  // close any more, the sheet is part of the page
-  await page(win, `document.getElementById("hp-close").click(); true`);
-  await wait(300);
+  // No Close button: leaving a page of ours is leaving Discord's settings, and
+  // Discord's own settings close is the one that does it. The shell pushes the
+  // close, which is what happens when that layer goes away.
+  ok("the pages offer no close of their own", (await page(win, `document.querySelectorAll("#hypercord-panes .close, #hp-close").length`)) === 0);
+  win.webContents.send("push", "panes:close", true);
+  await wait(250);
   const closed = await page(win, `document.getElementById("hypercord-panes").getAttribute("data-open")`);
-  ok("the sheet's Close hides it and tells the shell", closed === "false" && calls.closes >= 1, "open " + closed + " closes " + calls.closes);
+  ok("a pushed panes:close hides the page", closed === "false", "open " + closed);
 
   ok("nothing the page or the sheet did logged an error", consoleErrors.length === 0, (consoleErrors.join(" | ") + " || all: " + consoleAll.slice(0, 4).join(" | ")).slice(0, 300));
 
@@ -641,6 +624,10 @@ async function run() {
       announced: document.documentElement.getAttribute("data-hypercord-settings-entries"),
       sheetViews: [...document.querySelectorAll("#hypercord-panes section.view")].map((n) => n.getAttribute("data-view")),
       discordsOwn: list ? [...list.querySelectorAll('[role="tab"]')].filter((n) => !n.hasAttribute("data-hypercord")).length : 0,
+      // Discord's own class attribute on one of their items, and the one our entry
+      // wears: the entry is built to sit among them, not merely near them
+      ownClass: list && list.firstElementChild ? list.firstElementChild.className : "",
+      entryClass: button ? button.className : "",
       sheet: Boolean(document.getElementById("hypercord-panes")),
     };
   })()`,
@@ -650,7 +637,12 @@ async function run() {
   ok("as its own group of sections rather than one item", entry.group === "Hypercord" && entry.entries.length > 1, entry.group + " " + JSON.stringify(entry.labels));
   ok("one entry per section the sheet actually has", sameViews(entry.entries, entry.sheetViews) && String(entry.entries.length) === entry.announced, JSON.stringify(entry.entries) + " vs " + JSON.stringify(entry.sheetViews) + " announced " + entry.announced);
   ok("Discord's own settings entries are left alone", entry.discordsOwn === 4, "theirs " + entry.discordsOwn + ", last " + JSON.stringify(entry.last));
-  ok("the manager sheet is there to be opened from settings", entry.sheet === true);
+  ok("the settings pages are there to be opened from settings", entry.sheet === true);
+  ok(
+    "the entries wear Discord's own class attribute, so the client's stylesheet lays them out",
+    entry.entryClass !== "" && entry.entryClass === entry.ownClass,
+    JSON.stringify({ ours: entry.entryClass, theirs: entry.ownClass }),
+  );
 
   // Each entry has to open ITS OWN section: that is the whole point of the change, so
   // two different entries are clicked and required to land on two different sections.
@@ -671,7 +663,24 @@ async function run() {
       `(() => {
       const host = document.getElementById("hypercord-panes");
       const visible = [...document.querySelectorAll("#hypercord-panes section.view")].filter((n) => !n.classList.contains("hidden")).map((n) => n.getAttribute("data-view"));
-      return { open: host ? host.getAttribute("data-open") : null, visible };
+      const shown = [...document.querySelectorAll("#hypercord-panes section.view")].find((n) => !n.classList.contains("hidden"));
+      const heading = shown ? shown.querySelector("h2") : null;
+      const content = document.querySelector(".content-1a2b");
+      const box = host ? host.getBoundingClientRect() : null;
+      return {
+        open: host ? host.getAttribute("data-open") : null,
+        visible,
+        // where it landed, and what it looks like there: a page inside Discord's
+        // settings is placed in Discord's own column and paints nothing of its own
+        seamless: host ? host.getAttribute("data-seamless") : null,
+        position: host ? getComputedStyle(host).position : null,
+        background: host ? getComputedStyle(host).backgroundColor : null,
+        width: box ? Math.round(box.width) : -1,
+        contentWidth: content ? Math.round(content.getBoundingClientRect().width) : -1,
+        nav: document.querySelectorAll("#hypercord-panes .nav, #hypercord-panes .nav-item").length,
+        title: heading ? heading.textContent : "",
+        titleColour: heading ? getComputedStyle(heading).color : "",
+      };
     })()`,
     );
     return { clicked, seen };
@@ -681,6 +690,26 @@ async function run() {
   const fromSettings = await clickEntry(firstEntry);
   ok("clicking an entry opens the manager inside Discord", fromSettings.clicked && fromSettings.seen.open === "true" && fromSettings.seen.visible.length === 1, JSON.stringify(fromSettings.seen));
   ok("and it opens the section that entry names", fromSettings.seen.visible[0] === firstEntry, JSON.stringify(fromSettings.seen) + " for " + firstEntry);
+  ok(
+    "the page is placed in Discord's own settings content column, at its size",
+    fromSettings.seen.seamless === "true" && fromSettings.seen.position === "fixed" && fromSettings.seen.width === fromSettings.seen.contentWidth && fromSettings.seen.width > 320,
+    JSON.stringify({ seamless: fromSettings.seen.seamless, width: fromSettings.seen.width, column: fromSettings.seen.contentWidth }),
+  );
+  ok(
+    "and it paints no surface of its own, so Discord's column is what is behind it",
+    fromSettings.seen.background === "rgba(0, 0, 0, 0)",
+    String(fromSettings.seen.background),
+  );
+  ok(
+    "it has no tab row of ours: Discord's own sidebar is the navigation",
+    fromSettings.seen.nav === 0,
+    "nav " + fromSettings.seen.nav,
+  );
+  ok(
+    "it is titled like a settings page, in Discord's own heading colour",
+    fromSettings.seen.title === "Commands" && fromSettings.seen.titleColour === "rgb(242, 243, 245)",
+    JSON.stringify({ title: fromSettings.seen.title, colour: fromSettings.seen.titleColour }),
+  );
   const fromLastEntry = await clickEntry(lastEntry);
   ok("and a different entry opens a different section", fromLastEntry.clicked && fromLastEntry.seen.visible.length === 1 && fromLastEntry.seen.visible[0] === lastEntry, JSON.stringify(fromLastEntry.seen) + " for " + lastEntry);
   ok("the settings page logged no error", settingsErrors.length === 0, settingsErrors.join(" | ").slice(0, 200));
@@ -775,7 +804,22 @@ async function run() {
   const openedBefore = opened.length;
   await page(plainList.win, `document.getElementById("hypercord-settings-entry").click(); true`);
   await wait(250);
-  ok("clicking it opens the manager without the rail ever being touched", opened.length > openedBefore, JSON.stringify(opened.slice(-2)));
+  const openedHere = await page(
+    plainList.win,
+    `(() => {
+    const host = document.getElementById("hypercord-panes");
+    return {
+      open: host ? host.getAttribute("data-open") : null,
+      seamless: host ? host.getAttribute("data-seamless") : null,
+      nav: document.querySelectorAll("#hypercord-panes .nav-item").length,
+    };
+  })()`,
+  );
+  ok(
+    "clicking it opens Hypercord's pages in that very window, in Discord's content column",
+    opened.length > openedBefore && openedHere.open === "true" && openedHere.seamless === "true" && openedHere.nav === 0,
+    JSON.stringify(openedHere),
+  );
   ok("that page logged no error", plainList.errors.length === 0, plainList.errors.join(" | ").slice(0, 200));
 
   const french = await openEntryPage("/settings-fr");

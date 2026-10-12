@@ -163,10 +163,10 @@ export class PluginHost {
       const plugin = (mod && mod.default) || mod;
       if (!plugin || typeof plugin.start !== "function") throw new Error("no start()");
       this.modules.set(entry.id, plugin);
-      // whatever start() hands back is that plugin's live surface - the rail's
-      // toggle, the manager sheet's last view - so the shell can drive a feature
-      // through the plugin that owns it instead of keeping a second copy of its
-      // state. Nothing is kept when start() returns nothing.
+      // whatever start() hands back is that plugin's live surface - which view the
+      // settings pages are on, say - so the shell can drive a feature through the
+      // plugin that owns it instead of keeping a second copy of its state. Nothing
+      // is kept when start() returns nothing.
       const handle = await plugin.start(this.contextFor(entry, plugin));
       if (handle !== undefined && handle !== null) this.handles.set(entry.id, handle);
       this.running.add(entry.id);

@@ -48,7 +48,7 @@ template asks for; they are not proven requirements of the manager itself.
 ## What Hypercord's Android build would be
 
 The honest answer: **a manager, not a fork of Discord.** Hypercord's own code is
-the plugin platform, the theme system and the rail - none of which is
+the plugin platform and the theme system - neither of which is
 Android-specific - so the Android deliverable is a manager that bundles a Discord
 APK with our modifications, in the shape the projects above already use:
 
@@ -123,6 +123,6 @@ beside it.
 
 ## The one honest claim
 
-The rail, the themes and the plugin catalogue are already platform-agnostic: the
-PWA fallback in `pwa/` runs in any modern Android browser with no APK at all, and
-that is the only Android story this repository actually ships today.
+The themes and the plugin catalogue are already platform-agnostic: the PWA fallback
+in `pwa/` runs in any modern Android browser with no APK at all, and that is the only
+Android story this repository actually ships today.

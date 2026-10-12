@@ -1,45 +1,53 @@
 /* language: CSS, file: src/panes.css
 
-   The panes sheet's whole stylesheet, and every selector in it is scoped to
-   #hypercord-panes. That is not tidiness: the sheet is mounted inside the
-   Discord page, next to Discord's own stylesheet, so an unscoped `.card` or
-   `button` here would restyle the client. Scoping also means nothing is
-   inherited from Discord: colours, borders, fonts and sizes are all set here.
+ * The presentation of Hypercord's settings *pages*, and the rule behind every colour
+ * in this file: this is a page inside Discord's own settings, so it wears Discord's
+ * clothes.
 
-   The colours come from the Hypercord palette, shared with src/rail.css, and
-   every `var()` carries the colour it used to be. Nothing here *defines* one of
-   those properties on purpose: a definition on the sheet element would sit
-   between a theme's `--hc-bg` set on the root element and the sheet inside it,
-   and win, so a theme could never recolour the sheet. Undefined variables are
-   what make the default look identical to before and a themed look possible:
+ * Discord exposes its palette as CSS custom properties on the document
+ * (`--text-normal`, `--header-primary`, `--background-modifier-hover`,
+ * `--brand-experiment` and so on), and every theme - Discord's own light and dark,
+ * and every third-party one - restyles the client by redefining them. Using them as
+ * the default means a Hypercord page matches whatever theme the client is in,
+ * including themes that did not know Hypercord existed.
 
-     --hc-bg          the sheet itself
-     --hc-bg-raised   panels: the bar, the settings sidebar, lists, the drawer
-     --hc-bg-input    controls: buttons, badges, fields, hover fills
-     --hc-border      every border
-     --hc-text        body text and names
-     --hc-text-muted  hints, labels, descriptions
-     --hc-text-faint  the quietest text: card metadata, field notes
-     --hc-accent      the accent: active section, primary button, Hypercord badge
-     --hc-danger      errors
-     --hc-good        the running/healthy badge
-     --hc-on-accent   text drawn on the accent, the danger and the good badge
+ * The client's own `--hc-*` variables stay in front of each one, because they are the
+ * theme hook this repository documents: a Hypercord theme that sets `--hc-accent` still
+ * wins over Discord's brand colour, and a client with no theme gets Discord's look. The
+ * chain is `var(--hc-x, var(--discord-x, <the colour Discord has when nothing is set>))`.
 
-   It is a full-window overlay with its own scroll regions, so a catalogue of
-   hundreds of plugins is usable while the sheet is up, and Discord is untouched
-   underneath. z-index stays below the rail's 2147483001 so the rail keeps the
-   top of the stack. */
+ * There is no window here. The sheet is a page *inside* Discord's settings: its
+ * section list is Discord's own sidebar (src/preload.cjs adds one entry per section),
+ * its geometry is Discord's settings content column (the four `--hc-panes-*` numbers
+ * the preload measures), and it paints no surface of its own - Discord's column is
+ * already behind it, and a second background on top of it is what makes a page look
+ * like a panel someone dropped on the client. A page opened without that measurement
+ * has no size at all, so nothing of ours can ever be drawn over the client.
+
+ * Nothing here is animated on a timer and nothing outside `#hypercord-panes` is touched.
+ */
 
 #hypercord-panes {
+  /* Discord's settings content column, measured by the preload. The fallbacks are
+     zero, not the viewport: without a measurement this element occupies nothing, so a
+     section that could not be placed is invisible rather than a full-screen sheet. */
   position: fixed;
-  inset: 0;
+  top: var(--hc-panes-top, 0px);
+  left: var(--hc-panes-left, 0px);
+  width: var(--hc-panes-width, 0px);
+  height: var(--hc-panes-height, 0px);
   z-index: 2147483000;
   display: none;
   flex-direction: column;
-  background: var(--hc-bg, #000000);
-  color: var(--hc-text, #dbdee1);
-  font: 13px/1.45 "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  /* Discord's own type, inherited rather than named: a named stack is how a page ends up
+     in a different font from the settings it sits in. */
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.375;
   text-align: left;
+  background: none;
+  color: var(--hc-text, var(--text-normal, #dbdee1));
+  overflow-y: auto;
 }
 
 #hypercord-panes[data-open="true"] {
@@ -55,199 +63,94 @@
   display: none !important;
 }
 
-#hypercord-panes .bar {
+/* ---- the line this client reports on ------------------------------------- */
+
+/* Not a title bar: one flat row above the page, empty unless the client has
+   something to say about what was just done. Discord's own settings put its
+   notices in the page, at its own body size and colour, so this does too. */
+#hypercord-panes .statusbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--hc-bg-raised, #060607);
-  border-bottom: 1px solid var(--hc-border, #3f4147);
-  flex: 0 0 auto;
-}
-
-#hypercord-panes .brand {
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  color: var(--hc-text, #dbdee1);
+  justify-content: flex-end;
+  min-height: 20px;
+  padding: 20px 40px 0;
+  max-width: 740px;
 }
 
 #hypercord-panes .status {
-  color: var(--hc-text-muted, #949ba4);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
+  font-size: 12px;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 #hypercord-panes .status.bad {
-  color: var(--hc-danger, #ed4245);
+  color: var(--hc-danger, var(--text-danger, #ed4245));
 }
 
 #hypercord-panes .status.good {
-  color: var(--hc-good, #3ba55d);
-}
-
-/* Seamless mode: the sheet stops being a window of its own.
-
-   Discord's settings layer has a sidebar and a content column. The entry in that
-   sidebar measures the column and src/preload.cjs writes its rectangle here as
-   variables, so the sheet *is* the settings content area instead of an overlay on
-   top of the client. Nothing of ours shows outside it - no bar, no shadow, no
-   second navigation: the section list becomes the tab row Discord's own settings
-   pages use, and the status line is the only chrome kept, because it is where every
-   failure is reported to the user. */
-#hypercord-panes[data-seamless="true"] {
-  top: var(--hc-panes-top, 0px);
-  left: var(--hc-panes-left, 0px);
-  right: auto;
-  bottom: auto;
-  width: var(--hc-panes-width, 100vw);
-  height: var(--hc-panes-height, 100vh);
-  box-shadow: none;
-  border-radius: 0;
-}
-
-#hypercord-panes[data-seamless="true"] .bar {
-  background: none;
-  border-bottom: 0;
-  padding: 0 0 6px;
-}
-
-/* the brand and the close button are the sheet's own chrome: inside Discord's
-   settings the page already says where you are and Discord's own close is there, so
-   both go and only the status line stays */
-#hypercord-panes[data-seamless="true"] .brand,
-#hypercord-panes[data-seamless="true"] .close {
-  display: none;
-}
-
-#hypercord-panes[data-seamless="true"] .layout {
-  flex-direction: column;
-}
-
-#hypercord-panes[data-seamless="true"] .nav {
-  flex: 0 0 auto;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  padding: 0 0 10px;
-  background: none;
-  border-right: 0;
-  border-bottom: 1px solid var(--hc-border, #3f4147);
-  overflow-x: auto;
-}
-
-#hypercord-panes[data-seamless="true"] .nav-title {
-  padding: 0 6px 0 0;
-}
-
-#hypercord-panes[data-seamless="true"] .nav-item {
-  white-space: nowrap;
-}
-
-#hypercord-panes[data-seamless="true"] .view {
-  padding: 14px 0 0;
-}
-
-#hypercord-panes .close {
-  margin-left: auto;
-  flex: 0 0 auto;
-}
-
-#hypercord-panes .layout {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
-/* the section list: a settings sidebar, so it is wide enough for the longest
-   label and it names itself the way a settings screen does */
-#hypercord-panes .nav {
-  flex: 0 0 152px;
-  background: var(--hc-bg-raised, #060607);
-  border-right: 1px solid var(--hc-border, #3f4147);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-#hypercord-panes .nav-title {
-  color: var(--hc-text-muted, #949ba4);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
-  padding: 4px 9px 6px;
-}
-
-#hypercord-panes .nav-item {
-  text-align: left;
-  background: none;
-  border: 0;
-  color: var(--hc-text-muted, #949ba4);
-  padding: 7px 9px;
-  border-radius: 6px;
-  font: inherit;
-  cursor: pointer;
-}
-
-#hypercord-panes .nav-item:hover {
-  background: var(--hc-bg-input, #313338);
-  color: var(--hc-text, #dbdee1);
-}
-
-#hypercord-panes .nav-item.active {
-  background: var(--hc-accent, #5865f2);
-  color: var(--hc-on-accent, #fff);
+  color: var(--hc-good, var(--text-positive, #23a55a));
 }
 
 #hypercord-panes #hp-main {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  display: flex;
-}
-
-#hypercord-panes .view {
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
 }
 
+/* ---- a page in Discord's settings ---------------------------------------- */
+
+/* Discord's settings page: a title, then sections, on a column that does not run the
+   full width of a wide monitor. One page is on screen at a time; the others are
+   `.hidden`, which is what src/panes.js toggles. */
+#hypercord-panes .view {
+  display: block;
+  padding: 20px 40px 60px;
+  max-width: 740px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#hypercord-panes .view > * + * {
+  margin-top: 12px;
+}
+
+/* the page's own title, at Discord's heading weight and size */
 #hypercord-panes h2 {
   margin: 0;
-  font-size: 15px;
-  color: var(--hc-text, #dbdee1);
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
 }
 
+/* a section heading inside a page, at Discord's smaller heading treatment */
 #hypercord-panes h3 {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--hc-text-muted, #949ba4);
+  margin: 24px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.02em;
 }
 
 #hypercord-panes .hint {
   margin: 0;
-  color: var(--hc-text-muted, #949ba4);
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
 }
 
-/* A standing explanation, not a transient message: the access-key view keeps it
-   above the form so somebody who has just been sent here knows what a key is. */
+/* A standing explanation, not a transient message: the access-key page keeps it above
+   the form so somebody who has just been sent here knows what a key is. Flat, like the
+   information blocks Discord puts at the top of a settings page. */
 #hypercord-panes .banner {
-  border: 1px solid var(--hc-border, #3f4147);
-  border-left: 3px solid var(--hc-accent, #5865f2);
-  border-radius: 6px;
-  background: var(--hc-bg-raised, #060607);
-  padding: 9px 11px;
-  color: var(--hc-text-muted, #949ba4);
+  border: 0;
+  border-left: 3px solid var(--hc-accent, var(--brand-experiment, #5865f2));
+  border-radius: 4px;
+  background: var(--hc-bg-raised, var(--background-secondary, #2b2d31));
+  padding: 10px 12px;
+  color: var(--hc-text, var(--text-normal, #dbdee1));
   flex: 0 0 auto;
 }
 
@@ -262,17 +165,23 @@
   flex-wrap: wrap;
 }
 
+/* Discord's controls: its input fill, its placeholder, its 3px radius */
 #hypercord-panes input[type="text"],
 #hypercord-panes input[type="search"],
 #hypercord-panes input[type="password"],
 #hypercord-panes textarea {
-  background: var(--hc-bg-input, #313338);
-  color: var(--hc-text, #dbdee1);
-  border: 1px solid var(--hc-border, #3f4147);
-  border-radius: 6px;
-  padding: 7px 9px;
+  background: var(--hc-bg-input, var(--input-background, var(--background-tertiary, #1e1f22)));
+  color: var(--hc-text, var(--text-normal, #dbdee1));
+  border: 1px solid var(--hc-border, var(--input-border, transparent));
+  border-radius: 3px;
+  padding: 8px 10px;
   font: inherit;
   min-width: 0;
+}
+
+#hypercord-panes input::placeholder,
+#hypercord-panes textarea::placeholder {
+  color: var(--text-muted, #949ba4);
 }
 
 #hypercord-panes input[type="text"],
@@ -293,54 +202,72 @@
 #hypercord-panes textarea {
   width: 100%;
   resize: vertical;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-code, ui-monospace, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
 }
 
+/* Discord's primary button is the brand colour, its secondary one is a flat grey, and
+   both are 3px - a page whose buttons are a different shape from the switch next to it
+   is the thing that reads as foreign. */
 #hypercord-panes button {
-  background: var(--hc-accent, #5865f2);
-  color: var(--hc-on-accent, #fff);
+  background: var(--hc-accent, var(--brand-experiment, #5865f2));
+  color: var(--hc-on-accent, var(--white-500, #fff));
   border: 0;
-  border-radius: 6px;
-  padding: 7px 11px;
+  border-radius: 3px;
+  padding: 8px 16px;
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
 }
 
+#hypercord-panes button:hover {
+  background: var(--brand-experiment-560, #4752c4);
+}
+
 #hypercord-panes button.ghost {
-  background: var(--hc-bg-input, #313338);
-  color: var(--hc-text, #dbdee1);
-  border: 1px solid var(--hc-border, #3f4147);
+  background: var(--hc-bg-input, var(--button-secondary-background, #4e5058));
+  color: var(--hc-text, var(--white-500, #fff));
+  border: 0;
+}
+
+#hypercord-panes button.ghost:hover {
+  background: var(--button-secondary-background-hover, #6d6f78);
 }
 
 #hypercord-panes button.danger {
-  background: var(--hc-danger, #ed4245);
+  background: var(--hc-danger, var(--button-danger-background, #da373c));
 }
 
 #hypercord-panes button[disabled] {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
 }
 
+/* Discord does not box a list of settings: it stacks rows and separates them with a
+   hairline, so that is what a list of plugins, keys or accounts is here. */
 #hypercord-panes .list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--hc-border, #3f4147);
-  border-radius: 8px;
-  background: var(--hc-bg-raised, #060607);
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 
 #hypercord-panes .card {
   display: flex;
   gap: 10px;
   align-items: flex-start;
-  padding: 9px 11px;
-  border-bottom: 1px solid var(--hc-border, #3f4147);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hc-border, var(--background-modifier-accent, rgba(78, 80, 88, 0.48)));
 }
 
 #hypercord-panes .card:last-child {
   border-bottom: 0;
+}
+
+#hypercord-panes .card:hover {
+  background: var(--hc-bg-input, var(--background-modifier-hover, rgba(78, 80, 88, 0.16)));
 }
 
 #hypercord-panes .card-main {
@@ -357,66 +284,63 @@
 
 #hypercord-panes .card-name {
   font-weight: 600;
-  color: var(--hc-text, #dbdee1);
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
 }
 
 #hypercord-panes .card-desc {
-  color: var(--hc-text-muted, #949ba4);
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
   overflow-wrap: anywhere;
 }
 
 #hypercord-panes .card-meta {
-  color: var(--hc-text-faint, #7d838b);
+  color: var(--hc-text-faint, var(--text-muted, #949ba4));
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 #hypercord-panes .card-actions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex: 0 0 auto;
 }
 
 #hypercord-panes .badge {
   font-size: 11px;
   padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--hc-bg-input, #313338);
-  color: var(--hc-text-muted, #949ba4);
-  border: 1px solid var(--hc-border, #3f4147);
+  border-radius: 3px;
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
+  border: 0;
 }
 
 #hypercord-panes .badge.on {
-  color: var(--hc-on-accent, #fff);
-  background: var(--hc-good, #3ba55d);
-  border-color: var(--hc-good, #3ba55d);
+  color: var(--hc-on-accent, var(--white-500, #fff));
+  background: var(--hc-good, var(--text-positive, #23a55a));
 }
 
 #hypercord-panes .badge.bad {
-  color: var(--hc-on-accent, #fff);
-  background: var(--hc-danger, #ed4245);
-  border-color: var(--hc-danger, #ed4245);
+  color: var(--hc-on-accent, var(--white-500, #fff));
+  background: var(--hc-danger, var(--text-danger, #da373c));
 }
 
 #hypercord-panes .badge.own {
-  color: var(--hc-on-accent, #fff);
-  background: var(--hc-accent, #5865f2);
-  border-color: var(--hc-accent, #5865f2);
+  color: var(--hc-on-accent, var(--white-500, #fff));
+  background: var(--hc-accent, var(--brand-experiment, #5865f2));
 }
 
 #hypercord-panes .empty {
-  padding: 12px;
-  color: var(--hc-text-muted, #949ba4);
+  padding: 12px 0;
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
 }
 
 #hypercord-panes .out {
   margin: 0;
-  padding: 10px;
-  background: var(--hc-bg, #16171a);
-  border: 1px solid var(--hc-border, #3f4147);
-  border-radius: 8px;
-  color: var(--hc-text, #dbdee1);
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  padding: 12px;
+  background: var(--hc-bg, var(--background-secondary-alt, #232428));
+  border: 1px solid var(--hc-border, var(--background-modifier-accent, #3f4147));
+  border-radius: 4px;
+  color: var(--hc-text, var(--text-normal, #dbdee1));
+  font-family: var(--font-code, ui-monospace, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -430,23 +354,26 @@
 }
 
 #hypercord-panes .settings {
-  border: 1px solid var(--hc-border, #3f4147);
-  border-radius: 8px;
-  background: var(--hc-bg-raised, #060607);
-  padding: 10px;
+  border: 0;
+  border-top: 1px solid var(--hc-border, var(--background-modifier-accent, #3f4147));
+  border-radius: 0;
+  background: none;
+  padding: 12px 0 0;
   flex: 0 0 auto;
 }
 
-/* The settings drawer belongs to the sheet, not to one view: both plugin tabs
-   open it, so it sits beside whichever view is showing rather than inside it. */
+/* The settings drawer belongs to the sheet, not to one page: both plugin pages open it,
+   so it sits beside whichever page is showing rather than inside it. In Discord's
+   settings it becomes the right-hand column Discord itself uses for a page's details. */
 #hypercord-panes #hp-pluginSettings {
   flex: 0 0 320px;
   max-width: 45%;
   border: 0;
-  border-left: 1px solid var(--hc-border, #3f4147);
+  border-left: 1px solid var(--hc-border, var(--background-modifier-accent, #3f4147));
   border-radius: 0;
   overflow-y: auto;
   margin: 0;
+  padding: 14px 0 14px 16px;
 }
 
 #hypercord-panes .settings-form {
@@ -460,11 +387,12 @@
   display: flex;
   gap: 8px;
   align-items: center;
+  padding: 6px 0;
 }
 
 #hypercord-panes .field label {
   flex: 0 0 190px;
-  color: var(--hc-text-muted, #949ba4);
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
   overflow-wrap: anywhere;
 }
 
@@ -475,6 +403,6 @@
 }
 
 #hypercord-panes .field .note {
-  color: var(--hc-text-faint, #7d838b);
+  color: var(--hc-text-faint, var(--text-muted, #949ba4));
   font-size: 12px;
 }

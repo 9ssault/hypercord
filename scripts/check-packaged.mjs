@@ -5,10 +5,10 @@
 // Everything else in tests/ runs the *source* through Electron. This runs the
 // artifact: it starts the built executable, attaches to its renderer over the
 // DevTools protocol, and reads the page it actually produced. That is the only
-// check that can answer "does the exe I am about to hand over carry the rail, the
-// token option, the manager sheet and the passkey policy" - a passing unit test
-// cannot, because the build could be stale, and this one was: dist/ sat hours
-// behind src/ while the dialog kept appearing.
+// check that can answer "does the exe I am about to hand over carry the token
+// option, the settings pages inside Discord's own settings, and the passkey
+// policy" - a passing unit test cannot, because the build could be stale, and this
+// one was: dist/ sat hours behind src/ while the dialog kept appearing.
 //
 //   node scripts/check-packaged.mjs
 //   node scripts/check-packaged.mjs --exe "dist/win-unpacked/Hypercord.exe" --port 9225 --wait 90
@@ -161,8 +161,6 @@ try {
         url: location.href,
         bridge: typeof window.hypercord,
         surfaces: window.hypercord ? Object.keys(window.hypercord).sort() : [],
-        rail: Boolean(document.getElementById("hypercord-rail")),
-        railTabs: [...document.querySelectorAll("#hypercord-rail .hc-tab")].map((n) => n.getAttribute("data-tab")),
         prompt: Boolean(document.getElementById("hypercord-token-prompt")),
         promptOpen: (document.getElementById("hypercord-token-prompt") || { getAttribute: () => null }).getAttribute("data-open"),
         promptAnchored: (document.getElementById("hypercord-token-prompt") || { getAttribute: () => null }).getAttribute("data-anchored"),
@@ -171,7 +169,13 @@ try {
         sheetMounted: (document.getElementById("hypercord-panes") || { getAttribute: () => null }).getAttribute("data-mounted"),
         sheetCss: Boolean(document.getElementById("hypercord-panes-css")),
         sheetApi: typeof window.hypercordPanes,
-        sheetTabs: [...document.querySelectorAll("#hypercord-panes .nav-item")].map((n) => n.getAttribute("data-view")),
+        // The pages the sheet carries, and the proof that the overlay presentation
+        // is gone: no rail host anywhere, and no in-page section list inside the
+        // sheet - the sections are entries in Discord's own settings sidebar.
+        sheetViews: [...document.querySelectorAll("#hypercord-panes section.view")].map((n) => n.getAttribute("data-view")),
+        sheetNav: Boolean(document.querySelector("#hypercord-panes .nav-item")),
+        rail: Boolean(document.getElementById("hypercord-rail")),
+        injectedCss: Boolean(document.getElementById("hypercord-theme")),
         // The settings entry is added to Discord's own sidebar, which only exists
         // once a client is signed in and the settings layer is open. What is always
         // readable is the decision the preload recorded on the document: "added" or
@@ -188,7 +192,7 @@ try {
       lastError = "";
       // with a fresh profile Discord's client redirects itself to its login page a
       // moment after /app renders, so that is what this waits for before reading
-      const settled = seen && seen.rail && seen.sheetMounted === "true" && seen.passkeys === "on-demand" && seen.prompt && (!fresh || seen.loginForm);
+      const settled = seen && seen.sheetMounted === "true" && seen.passkeys === "on-demand" && seen.prompt && (!fresh || seen.loginForm);
       if (settled) break;
     } catch (err) {
       lastError = String((err && err.message) || err);
@@ -198,11 +202,19 @@ try {
   if (!seen) throw new Error("the page never answered: " + lastError);
 
   ok("the bridge is in the page", seen.bridge === "object", String(seen.bridge));
-  ok("the rail is mounted with a tab per thing", seen.rail && seen.railTabs.length >= 5, JSON.stringify(seen.railTabs));
+  // The overlay presentation is retired: no rail host in the page, and the sheet
+  // carries no section list of its own. Both are asserted rather than reported,
+  // because a build that still has either is a build carrying dead presentation.
+  ok("no overlay rail is mounted in the page", seen.rail === false);
+  ok("the sheet carries no section list of its own", seen.sheetNav === false);
   ok("the passkey policy is in place before the page's scripts", seen.passkeys === "on-demand", String(seen.passkeys));
+  ok("the stylesheet the shell injects is in the page", seen.injectedCss === true);
   ok("the manager sheet is mounted in Discord's own page", seen.sheet && seen.sheetMounted === "true" && seen.sheetCss, "mounted " + seen.sheetMounted);
   ok("the manager's script ran", seen.sheetApi === "object", String(seen.sheetApi));
-  ok("the manager carries the tabs, access keys included", seen.sheetTabs.includes("hyper") && seen.sheetTabs.includes("tokens") && seen.sheetTabs.includes("themes"), JSON.stringify(seen.sheetTabs));
+  // One page per section the owner named, read off the markup the build shipped:
+  // this is the check that a stale build cannot pass by having only some of them.
+  const wantedViews = ["commands", "plugins", "hyper", "themes", "logs", "accounts", "tokens"];
+  ok("the manager carries a page per settings section", wantedViews.every((view) => seen.sheetViews.includes(view)) && seen.sheetViews.length === wantedViews.length, JSON.stringify(seen.sheetViews));
   ok("the token option is in the page", seen.prompt && seen.promptHasForm, "open " + String(seen.promptOpen));
   // The settings entry: the decision is asserted here, the placement itself needs a
   // signed-in client with its settings layer open, so it is reported rather than

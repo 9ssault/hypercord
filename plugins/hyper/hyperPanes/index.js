@@ -2,8 +2,9 @@
 //
 // The manager sheet, built into the Discord window: there is no second window, so
 // this plugin owns the one thing left for it to own - which view the sheet is
-// showing. It is opened on demand by the rail's button or the shell's shortcut,
-// and the sheet is part of the page whether or not it is open.
+// showing. It is opened on demand from Hypercord's own entries in Discord's
+// settings sidebar, or by a push from the shell, and the sheet is part of the
+// page whether or not it is open.
 export default {
   name: "hyperPanes",
   description: "The Hypercord manager, built into the Discord window: user tokens, commands, plugins, themes, logs, accounts",

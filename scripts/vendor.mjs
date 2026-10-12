@@ -276,7 +276,7 @@ const SET = { name: "Hyper", description: "the Hypercord set, on by default" };
 
 // Only these are on the first time: everything else in the catalogue is one
 // click away, present and discoverable, and costs nothing while it is off.
-const HYPER_ON = new Set(["hyperBridge", "hyperRail", "hyperAccounts", "hyperPanes", "hypercordRPC"]);
+const HYPER_ON = new Set(["hyperBridge", "hyperAccounts", "hyperPanes", "hypercordRPC"]);
 
 // Upstream writes `authors: [Devs.Ven, Devs.AutumnVN]`, so the names live in the
 // Devs map rather than in the plugin. Resolve them there, and keep the raw

@@ -70,9 +70,10 @@ npm run check:packaged -- --fresh   # same, on a throwaway profile, so Discord
 ```
 
 `scripts/check-packaged.mjs` starts the executable, attaches to its renderer over
-the DevTools protocol, and asserts what the build actually injected: the rail and
-its tabs, the token option beside the login fields, the manager sheet with its own
-tabs, and the passkey policy. It kills the process tree it started and removes the
+the DevTools protocol, and asserts what the build actually injected: the token option
+beside the login fields, Hypercord's entries inside Discord's settings, its pages
+mounted with one page showing and no overlay of ours left in the page, and the
+passkey policy. It kills the process tree it started and removes the
 throwaway profile afterwards.
 
 If a real Discord is installed, `npm start -- --attach` patches it and starts the
@@ -88,8 +89,7 @@ below is from reading the files named, and the places that cannot be verified he
 say so.
 
 **One platform branch, in one file.** `src/main.js` contains no `process.platform`
-test at all; its only OS-specific call is `app.getPath("userData")`, and the rail
-shortcut is `CommandOrControl+Shift+H`, which is the right key on all three. Every
+test at all; its only OS-specific call is `app.getPath("userData")`. Every
 install discovery lives in `src/patcher.js` (`listInstalls`, line ~140): `win32`
 over `%LOCALAPPDATA%`, `darwin` over `/Applications` and `~/Applications` with the
 version read out of `Info.plist` and a bundle started with `open -a`, and everything

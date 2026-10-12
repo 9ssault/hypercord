@@ -316,22 +316,25 @@ export function inspect(install, opts = {}) {
 /* ---- patch and unpatch --------------------------------------------------- */
 
 /**
- * rail.json sitting beside the loader, baked in at patch time when the caller
+ * hypercord.json sitting beside the loader, baked in at patch time when the caller
  * did not hand over assets itself. That is what makes a patched install show
- * something: the loader reads what the patch recorded, so no second file has to
- * be found later and no launch-time environment has to be arranged.
+ * something: the loader reads what the patch recorded, so no second file has to be
+ * found later and no launch-time environment has to be arranged.
+ *
+ * The stylesheet is the whole payload - the rail markup that used to travel with
+ * it is gone - and the file may carry it either on its own or inside an `assets`
+ * object, which is the shape the patch itself writes.
  */
 function readBakedAssets(loader) {
-  for (const file of [path.join(path.dirname(loader), "rail.json"), path.join(path.dirname(loader), "..", "rail.json")]) {
+  for (const file of [path.join(path.dirname(loader), "hypercord.json"), path.join(path.dirname(loader), "..", "hypercord.json")]) {
     let found = null;
     try {
       found = JSON.parse(fs.readFileSync(file, "utf8")) || null;
     } catch {
       found = null;
     }
-    if (found && (found.css || found.html || found.rail)) {
-      return { css: String(found.css || ""), html: String(found.html || found.rail || ""), side: found.side === "left" ? "left" : "right", from: file };
-    }
+    const assets = found && found.assets && typeof found.assets === "object" ? found.assets : found;
+    if (assets && assets.css) return { css: String(assets.css), from: file };
   }
   return {};
 }

@@ -2,19 +2,18 @@
 
 What "light" means here, and what the machine actually said. Baseline is plain
 Electron showing the same Discord web app, same window size, same GPU flag, no
-preload, no plugin host, no rail, no control-server client. Hypercord's **added**
-cost is the interesting number, because Discord's own web app dominates the total
-either way.
+preload, no plugin host, no settings pages, no control-server client. Hypercord's
+**added** cost is the interesting number, because Discord's own web app dominates
+the total either way.
 
 ## Budget
 
 | Metric | Budget | State |
 | --- | --- | --- |
-| Added RSS with the rail closed | <= 60 MB | **not met** as measured: see below |
-| Added RSS with the rail open, idle | <= 90 MB | **not met** as measured: see below |
+| Added RSS, idle | <= 60 MB | **not met** as measured: see below |
 | Idle CPU, nothing happening | <= 1% of one core | confounded by Discord's own work: see below |
 | Steady timers or polling loops while idle | 0 | **met: 0 in every state, in every run** |
-| Plugins enabled on first run | the Hyper set only | **met: 5 enabled, 5 running, of 371** |
+| Plugins enabled on first run | the Hyper set only | **met: 4 enabled, 4 running, of 371** |
 | Background processes after the window closes | 0 | **met: nothing of ours survives a close** |
 | Login item / start on boot | none | **met: never registered, never set** |
 
@@ -23,9 +22,10 @@ either way.
 1. `app.getAppMetrics()` inside the process for per-process memory and CPU. CPU is
    reported as a delta since the previous call, so the mode primes it once and
    then reads over a fixed idle window rather than over the process's whole life.
-2. The same three states every time: rail open and idle, rail closed and idle. The
-   rail is forced open for the first snapshot and forced closed for the second, so
-   the label is true whatever the saved preference says.
+2. One state, and it is not forced: the client as it ships, idle, with Discord
+   settled. There is nothing left to switch on or off to make a reading possible -
+   the rail is gone and the settings pages only exist while a section is open - so
+   the reading is of the app somebody actually runs.
 3. Timers: `process._getActiveHandles()` filtered to live `Timeout` handles. Zero
    is the only acceptable number; it is printed in every snapshot.
 4. `npm run test:baseline` (plain Electron) and `npx electron . --perf=<settle>`
@@ -43,44 +43,48 @@ either way.
 
 ### Run B - Hypercord
 
-`npx electron . --perf=90` (same shape; 371 plugins in the catalogue, 5 running)
+`npx electron . --perf=90` (same shape; the catalogue in the tree at that time, the
+Hyper set running). This run predates the retirement of the overlay rail, so it has
+the two states that used to be forced; `--perf` now reports one unforced `idle`
+snapshot instead, and both rows are kept because the analysis below is about them.
 
 | State | Total RSS | CPU sum over the window | Timers |
 | --- | --- | --- | --- |
-| rail open, idle | 1218 MB | 1.39% of one core | 0 |
-| rail closed, idle | 1030 MB | 5.29% of one core | 0 |
+| idle, rail forced open | 1218 MB | 1.39% of one core | 0 |
+| idle, rail forced closed | 1030 MB | 5.29% of one core | 0 |
 
 ### Run C - Hypercord, an earlier measurement of the same two states
 
 | State | Total RSS | Timers |
 | --- | --- | --- |
-| rail open | 997 MB | 0 |
-| rail closed | 909 MB | 0 |
+| idle, rail forced open | 997 MB | 0 |
+| idle, rail forced closed | 909 MB | 0 |
 
 ## What these numbers actually say
 
 - **Timers: 0 in every state, in every run.** This is the row that matters most
-  and it is unambiguous. The plugin host, the theme system, the rail, the panes
-  window and the shell schedule nothing while idle; a check is a call somebody
-  makes, not an interval.
+  and it is unambiguous. The plugin host, the theme system, the settings pages and
+  the shell schedule nothing while idle; a check is a call somebody makes, not an
+  interval.
 - **The added-RSS rows are not met, and at this precision they cannot be trusted
-  either way.** Rail-closed readings for the same nominal state came out at 909 MB,
+  either way.** Idle readings for the same nominal state came out at 909 MB,
   1030 MB and 1377 MB across runs, and the no-mods baseline itself reads 963 MB —
   the spread between runs is larger than the whole budget. Discord's web app loads
   lazily, spawns renderers as you navigate and caches aggressively, so a single
-  sample per state measures Discord's mood, not our footprint. Rail *closed* even
-  came out 54 MB **below** the baseline in run C, which is the clearest sign that
-  this precision is noise.
-- **The idle-CPU rows are confounded the same way.** Rail-closed shows a *higher*
-  CPU sum than rail-open in run B (5.29% vs 1.39%), which cannot be the rail
-  becoming cheaper when it is open. The samples simply caught Discord doing work
-  between them. No CPU claim is made from these readings.
-- **What is structural, not measured:** the rail is DOM and CSS at one injection
-  point plus a stylesheet whose every selector is scoped to the rail, the themes
-  are one `<style>` element, a disabled plugin's code is dropped on disable, the
-  catalogue is a JSON manifest that no code is read from, the manager sheet is
-  markup that only mounts when a view is opened (there is no second window, and
-  no window to create, raise or release), there is no tray or resident process,
+  sample per state measures Discord's mood, not our footprint. The rail-closed
+  reading even came out 54 MB **below** the baseline in run C, which is the clearest
+  sign that this precision is noise.
+- **The idle-CPU rows are confounded the same way.** In run B the rail-closed
+  snapshot shows a *higher* CPU sum than the rail-open one (5.29% vs 1.39%), which
+  cannot be our own code getting cheaper when something of ours is on screen. The
+  samples simply caught Discord doing work between them. No CPU claim is made from
+  these readings.
+- **What is structural, not measured:** the themes are one `<style>` element, a
+  disabled plugin's code is dropped on disable, the catalogue is a JSON manifest
+  that no code is read from, Hypercord's pages are markup and one stylesheet mounted
+  once and only painted while a section is open (there is no second window, and no
+  window to create, raise or release, and a page that was never placed in Discord's
+  settings content column has no size at all), there is no tray or resident process,
   and the client quits with its window.
 
 ## What ships, and what actually weighs
@@ -99,10 +103,10 @@ only production dependency is `electron-updater`.
 
 | What | Where | Ships? | Weight of the artifact |
 | --- | --- | --- | --- |
-| the shell, preload, rail, panes, prompt | `src/` - 18 files, all reached from `main.js`, `preload.cjs`, `panes.html` or `rail.html` | yes | kilobytes of JS, CSS and HTML |
+| the shell, preload, settings pages, token option | `src/` - every file, reached from `main.js`, `preload.cjs`, `panes.html` or `injected.css` | yes | kilobytes of JS, CSS and HTML |
 | the plugin catalogue | `plugins/manifest.json` - 7,805 lines of indented JSON, **on the order of 300 KB (estimated from the line count, not measured)** | yes | the largest single file of ours |
 | the interpreter and the host | `plugins/sandbox.js`, `plugins/index.js` | yes | kilobytes |
-| our plugins | `plugins/hyper/` - 5 plugins, the ones on by default | yes | kilobytes |
+| our plugins | `plugins/hyper/` - the Hyper set, four plugins, on by default | yes | kilobytes |
 | the reference addons | `plugins/examples/`, `themes/examples/`, `themes/index.js` | yes | kilobytes; inert for the desktop host, which reads the manifest rather than enumerating directories |
 | the served manifest | `pwa/manifest.webmanifest` | yes | one file |
 | the vendored catalogue's *bodies* | `vendor/vencord/`, `vendor/equicord/` | **no** | not in `build.files` at all; the `.ts`/`.tsx` exclusions would also drop them if it were |
@@ -140,12 +144,12 @@ Two consequences worth stating plainly, because both are easy to misread:
    them the vendored TypeScript would ship inside the asar.
 4. **Keep `electronLanguages: ["en-US"]`.** Re-adding locales adds tens of megabytes of
    Chromium `.pak` files for no feature.
-5. **Nothing found that ships and that nothing reads.** All 18 files in `src/` are
-   reached from `main.js`, `preload.cjs`, `panes.html` or `rail.html`; `pwa/` is what
-   `PLATFORMS.md` tells a TWA wrapper to use; `themes/index.js` is imported by
-   `core/index.js` and `plugins/index.js`. There is no second copy of the rail, no
-   bundled webview and no icon set beyond `build/` (which `make-icons.mjs` generates
-   rather than committing opaque binaries).
+5. **Nothing found that ships and that nothing reads.** Every file in `src/` is
+   reached from `main.js`, `preload.cjs`, `panes.html` or `injected.css`; `pwa/` is
+   what `PLATFORMS.md` tells a TWA wrapper to use; `themes/index.js` is imported by
+   `core/index.js` and `plugins/index.js`. There is no second copy of the settings
+   pages, no bundled webview and no icon set beyond `build/` (which `make-icons.mjs`
+   generates rather than committing opaque binaries).
 
 ## To settle the RSS question properly
 
