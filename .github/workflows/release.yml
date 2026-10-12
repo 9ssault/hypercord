@@ -132,7 +132,7 @@ jobs:
           echo "DISPLAY=${DISPLAY:-<unset>}"
           APP_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("package.json","utf8")).version')"
           echo "app version from package.json: $APP_VERSION"
-          echo "tag being built: $GITHUB_REF_NAME"
+          echo "tag being built: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
 
       # electron-builder names every artifact and writes `latest.yml` from package.json,
       # and `electron-updater` compares that version with the one the installed client
@@ -141,9 +141,13 @@ jobs:
       # update over 0.2.6. Cheap to check here, expensive to discover from a client.
       - name: Check that the tag and the app version agree
         shell: bash
+        env:
+          # A manual run names its tag in an input; `github.ref_name` there is the branch
+          # the dispatch was made from, which is not a version and never will be.
+          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         run: |
           version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json","utf8")).version')"
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${TAG_NAME#v}"
           if [ "$version" != "$tag" ]; then
             echo "FAIL the tag says $tag and package.json says $version."
             echo "     electron-builder writes the artifact names and latest.yml from"
@@ -551,8 +555,10 @@ jobs:
           umask 077
           # The version the APK claims comes from the tag, so the APK and the release page
           # cannot disagree; both modules read these, and the manager compares the embedded
-          # loader's versionCode against its own, so the two must match each other.
-          TAG="${GITHUB_REF_NAME:-${GITHUB_REF#refs/tags/}}"
+          # loader's versionCode against its own, so the two must match each other. A manual
+          # run names its tag in an input - `github.ref_name` is the branch it was made from,
+          # and an APK whose versionName is `main` is one no manager will ever update.
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
           export HYPERCORD_ANDROID_VERSION="${TAG#v}"
           export HYPERCORD_ANDROID_VERSION_CODE="$(date -u +%Y%m%d)"
           # Prefer the repository's wrapper: it pins the Gradle the modules were ported
