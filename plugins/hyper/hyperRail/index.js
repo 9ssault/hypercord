@@ -10,12 +10,16 @@ export default {
   version: "1.0.0",
   defaultOn: true,
   settings: [
-    { key: "open", type: "boolean", default: true, description: "start with the rail open" },
+    // Closed by default, and that is deliberate: the rail is an overlay, and an
+    // overlay that starts open sits on top of a column Discord drew itself (the
+    // server tray). The manager is reached from Discord's own settings; the rail is
+    // the shortcut, not the door.
+    { key: "open", type: "boolean", default: false, description: "start with the rail open (off: the manager is in Discord's settings)" },
     { key: "side", type: "string", default: "right", description: "which edge the rail sits on" },
   ],
 
   start(ctx) {
-    let open = ctx.setting("open") !== false;
+    let open = ctx.setting("open") === true;
     let side = ctx.setting("side") === "left" ? "left" : "right";
 
     function push() {

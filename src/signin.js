@@ -78,13 +78,15 @@ export function looksLikeUserToken(value) {
   if (text.length < 48 || text.length > 4096) return false;
   if (text.startsWith('"') || text.endsWith('"')) return false;
   if (!/^[A-Za-z0-9_\-+/=.]+$/.test(text)) return false;
+  // Two or three dot-separated segments, a long one at each end - not "every part
+  // is long", and not exactly three: the tokens this client is handed are
+  // `<base64 id>.<hmac>` as often as `<base64 id>.<short>.<hmac>`, so demanding
+  // three long parts rejected real ones. A single long string, or a dotted string
+  // with a stub at either end, still fails.
   const parts = text.split(".");
-  if (parts.length !== 3) return false;
-  // Not "every part is long": Discord's user token is base64(user id) .
-  // base64(timestamp) . hmac, and the middle segment is only about seven
-  // characters. Requiring all three to be long rejected real tokens while the
-  // shape below still rejects a stray string that merely contains dots.
-  return parts[0].length >= 16 && parts[1].length >= 4 && parts[2].length >= 16;
+  if (parts.length < 2 || parts.length > 3) return false;
+  if (parts[0].length < 16 || parts[parts.length - 1].length < 16) return false;
+  return parts.slice(1, -1).every((part) => part.length >= 4);
 }
 
 /* ---- what the client's storage actually holds ----------------------------- */

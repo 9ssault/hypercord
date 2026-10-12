@@ -53,7 +53,10 @@ let themes = null;
 let tokens = null;
 let updater = null;
 const DISCORD_API = "https://discord.com/api/v9";
-let state = { controlUrl: "", accounts: [], account: "", railOpen: true };
+// railOpen starts false: the rail is an overlay, and one that starts open covers the
+// server tray before the user has asked for anything. Discord's own settings hold the
+// manager; the rail opens on the shortcut, on request, or not at all.
+let state = { controlUrl: "", accounts: [], account: "", railOpen: false };
 let sessionToken = ""; // memory only, when the OS keychain is unavailable
 // read once at boot: the rail, the token option and the manager sheet are six
 // small files, injected whole, with no watcher and no reload loop
@@ -68,7 +71,7 @@ function readState() {
       controlUrl: String(saved.controlUrl || state.controlUrl || ""),
       accounts: Array.isArray(saved.accounts) ? saved.accounts.map(String) : [],
       account: String(saved.account || state.account || ""),
-      railOpen: saved.railOpen !== false,
+      railOpen: saved.railOpen === true,
     };
     if (saved.token && safeStorage.isEncryptionAvailable()) {
       try {
