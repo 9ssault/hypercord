@@ -29,11 +29,15 @@ what each platform gets - stated plainly rather than promised:
 * one check ~30 s after launch, then every 6 hours (0 disables it), with
   `checkNow()`/`installNow()` available for a menu action.
 
-The feed is a `generic` URL pointing at the release directory (GitHub Releases
-assets work: point it at
-`https://github.com/<owner>/hypercord/releases/latest/download` and publish
-`latest.yml` / `latest-mac.yml` / `latest-linux.yml` with the artifacts). Set it
-one of two ways:
+The feed is this repository's own GitHub releases: `build.publish` uses the
+`github` provider (owner `9ssault`, repo `hypercord`), so `electron-builder`
+writes that feed into `app-update.yml` at build time and `electron-updater`
+reads the release list directly. Attach `latest.yml` / `latest-mac.yml` /
+`latest-linux.yml` to the release with the artifacts and a published release *is*
+the update. (A `generic` feed URL used to be configured here; it pointed at
+`updates.hypercord.app`, which resolves nowhere, which is why an installed client
+could never update itself. Keep any replacement URL one that answers.) Set the
+feed one of two ways:
 
 1. `build.publish` in `package.json` (used by `electron-builder` to write the
    feed files at build time) - this is what a shipped build uses, or

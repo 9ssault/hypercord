@@ -1,8 +1,9 @@
 {
   "name": "hypercord",
   "productName": "Hypercord",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "author": "Hypercord",
   "type": "module",
   "description": "Hypercord - our Discord client: an Electron shell around Discord web with the merged Vencord/Equicord plugin platform and the Hyper plugins",
   "license": "GPL-3.0-or-later",
@@ -46,8 +47,10 @@
     "compression": "maximum",
     "publish": [
       {
-        "provider": "generic",
-        "url": "https://updates.hypercord.app/${os}/${arch}"
+        "provider": "github",
+        "owner": "9ssault",
+        "repo": "hypercord",
+        "releaseType": "release"
       }
     ],
     "electronLanguages": [
