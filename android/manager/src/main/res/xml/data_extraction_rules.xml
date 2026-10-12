@@ -1,0 +1,26 @@
+<!-- language: XML, file: android/manager/src/main/res/xml/data_extraction_rules.xml
+
+     `android:dataExtractionRules` on Android 12+ replaces the older
+     `fullBackupContent`, and the manifest sets both to "nothing". The reason is in the
+     manager's own design: it holds a signing key and prepared client APKs, and a
+     backup that carried the signing key to another device would let an update be
+     signed by whoever restored it. Both directions are excluded, because a transfer
+     moves the same bytes a cloud backup would. The domains are listed explicitly
+     rather than relying on a single catch-all, so a future addition of a shared
+     preference or a new directory is a deliberate choice, not an accident. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

@@ -24,7 +24,7 @@ import { createTokens, redact } from "./tokens.js";
 import { createUpdater } from "./updater.js";
 import { findDiscord, patch } from "./patcher.js";
 import passkeys from "./passkeys.cjs";
-import { appRoute, captureSessionScript, decideSignIn, looksLikeUserToken, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
+import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looksLikeUserToken, pickClientAuth, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const STATE = () => path.join(app.getPath("userData"), "hypercord.json");
@@ -311,6 +311,12 @@ async function probeAuth(win) {
       "probe: page.local=[" + names(answer.page && answer.page.localKeys) + "] page.session=[" + names(answer.page && answer.page.sessionKeys) +
         "] frame.local=[" + names(answer.frame && answer.frame.localKeys) + "] cookies=[" + (answer.cookies || []).join(",") + "] indexeddb=[" + stores + "]",
     );
+    // The client's own modules, by name only: this is the half that answers "where does
+    // this build keep a session", so it belongs in the log beside the storage report.
+    const client = answer.client || {};
+    const named = (client.candidates || []).map((one) => one.module + "[" + (one.auth || []).join(",") + "]" + ((one.callable || []).length ? "->" + one.callable.join(",") : "")).join(" ");
+    logSignIn("probe client: registry=" + Boolean(client.registry) + " require=" + Boolean(client.require) + " modules=" + Number(client.modules || 0) + " candidates=[" + named + "]");
+    for (const note of client.notes || []) logSignIn("probe client note: " + redact(String(note)).slice(0, 140));
     for (const note of answer.notes || []) logSignIn("probe note: " + redact(String(note)).slice(0, 140));
     return answer;
   } catch (err) {
@@ -416,6 +422,31 @@ async function useToken(account) {
       return { ok: true, account: id, stored: form.name, used, captured: captured.where, tried };
     }
   }
+  // The client's own sign-in, when the probe found it. This is the path that does not
+  // depend on knowing which storage key the client reads: the shapes above are the older
+  // ecosystem's, and the log shows this build ignoring them, so if the client exposes an
+  // auth export then that is the thing to call. Attempted once, only with a target the
+  // probe named, and its answer says what happened.
+  const clientTarget = pickClientAuth(probe);
+  if (clientTarget) {
+    try {
+      const watching = watchForTokenUse(win, secret);
+      const answer = String(await win.webContents.executeJavaScript(clientSignInScript(secret, probe), true));
+      const outcome = await waitForSignIn(win, 20000);
+      const used = await watching;
+      tried.push({ form: "client " + clientTarget.module + "." + clientTarget.method, result: answer.startsWith("ok") ? "called" : "refused", why: answer.slice(0, 90), url: outcome.pathname, used });
+      logSignIn("client sign-in: " + answer.slice(0, 120) + " used=" + used + " landed=" + String(outcome.pathname) + " verdict=" + outcome.verdict);
+      if (outcome.verdict === "accepted") {
+        const captured = await captureSession(win, probe);
+        if (captured.ok && captured.value !== secret) tokens.put(id, captured.value, { label: id });
+        return { ok: true, account: id, stored: "client", used, captured: captured.where, tried };
+      }
+    } catch (err) {
+      logSignIn("client sign-in failed: " + redact(String((err && err.message) || err)).slice(0, 140));
+    }
+  } else {
+    logSignIn("client sign-in: not attempted - the probe found no callable auth export");
+  }
   const writable = tried.filter((one) => one.result !== "unwritable");
   const used = writable.some((one) => one.used === true);
   const landed = writable.map((one) => one.url).filter(Boolean).pop();
@@ -424,11 +455,13 @@ async function useToken(account) {
     ok: false,
     account: id,
     used,
-    error: !writable.length
-      ? "this client could not write the token into the page: " + String((tried[0] && tried[0].why) || "the page offers no storage")
-      : used
-        ? "the client read that token and Discord refused it (it came back to " + String(landed || "its login page") + "): the token is expired, reset, or not a user token"
-        : "the client never used that token: it did not read it from the page's storage. Try again - it takes the entry on some boots and not others - or sign in with the email and password form",
+    error: used
+      ? "the client read that token and Discord refused it (it came back to " + String(landed || "its login page") + "): the token is expired, reset, or not a user token"
+      : clientTarget
+        ? "the client never used that token: its storage was written and its own sign-in (" + clientTarget.module + "." + clientTarget.method + ") was called, and it stayed on its login page. signin.log's probe line says what this page holds; signing in with the email and password form is captured either way"
+        : !writable.length
+          ? "this client could not write the token into the page: " + String((tried[0] && tried[0].why) || "the page offers no storage")
+          : "the client never used that token: it did not read it from the page's storage, and the probe found no auth export to call. signin.log has the probe line; signing in with the email and password form is captured either way",
     tried,
   };
 }

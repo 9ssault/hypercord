@@ -1,0 +1,27 @@
+<!-- language: XML, file: android/loader/src/main/AndroidManifest.xml
+
+     The loader is injected, never opened, so this manifest declares no activity, no
+     launcher category and no icon - `android/loader/build.gradle` has no `res/` and
+     says so explicitly, and an icon here would be the one resource the module would
+     then need.
+
+     What it must declare is the Xposed contract: `xposedmodule` marks it as a module,
+     `xposedminversion` is the API level the sources compile against (the build file's
+     `de.robv.android.xposed:api:82`), and `xposeddescription` is the line LSPosed
+     shows for it. The entry class itself is not named here: Xposed reads it from the
+     `xposed_init` asset, which is `app.assault.loader.AssaultLoader`. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="Hypercord Loader"
+        android:hasCode="true">
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="Hypercord: the runtime, the addon interpreter and the script capture that run inside Discord." />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="82" />
+    </application>
+</manifest>

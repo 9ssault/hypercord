@@ -98,6 +98,8 @@ android {
 }
 
 dependencies {
+    // The shared package both app modules import (AccountSettings, RichPresence, CommandGuide).
+    implementation project(':android:shared')
     // From the platform, so no coordinate: the sources import org.json.JSONObject, which
     // Android provides.
     //

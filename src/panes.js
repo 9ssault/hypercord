@@ -853,7 +853,20 @@
     return wanted;
   }
 
-  window.hypercordPanes = { open, close, isOpen };
+  /**
+   * Show a view without asking the shell to change its record of one: the settings
+   * entry that opened the sheet already knows which section it stands for, so
+   * telling the shell again would be a second source of truth for the same thing.
+   */
+  function show(view) {
+    const wanted = VIEWS.includes(text(view)) ? text(view) : currentView;
+    const root = sheet();
+    if (root) root.setAttribute("data-open", "true");
+    setView(wanted, { tell: false });
+    return wanted;
+  }
+
+  window.hypercordPanes = { open, close, isOpen, show };
 
   /* ---- wiring, once -------------------------------------------------------- */
 

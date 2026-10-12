@@ -25,9 +25,11 @@ import {
   AUTH_PATHS,
   appRoute,
   captureSessionScript,
+  clientSignInScript,
   decideSignIn,
   looksLikeAuthName,
   looksLikeUserToken,
+  pickClientAuth,
   pickIndexedTarget,
   signInCandidates,
   signInForms,
@@ -321,6 +323,13 @@ ok("cookies are reported by name only", probeReport.cookies.includes("__Secure-s
 ok("no value reaches the report, whatever its source", !probeText.includes(LIVE_TOKEN) && !probeText.includes(COOKIE_VALUE), probeText.slice(0, 200));
 ok("the token's length is what is reported, not the token", pageKeys.find((key) => key.name === "token").length === LIVE_TOKEN.length);
 ok("a world without indexedDB is a note, not a failure", (probeReport.notes || []).some((note) => /indexedDB/i.test(note)), JSON.stringify(probeReport.notes));
+// The client's own modules: the probe asks where the *client* keeps a session, not only
+// where a page keeps keys. A world with no module registry is a note, never a throw, and
+// the section may carry names only.
+ok("the probe asks the client for its own modules", probeReport.client && typeof probeReport.client === "object", JSON.stringify(probeReport.client));
+ok("a world with no module registry says so instead of failing", probeReport.client.registry === false && (probeReport.client.notes || []).some((note) => /registry/i.test(note)), JSON.stringify(probeReport.client));
+ok("and it offers nothing to call there", Array.isArray(probeReport.client.candidates) && probeReport.client.candidates.length === 0);
+ok("the client section carries no value either", !JSON.stringify(probeReport.client).includes(LIVE_TOKEN));
 ok("the probe script is valid JavaScript", (() => {
   try {
     new Function("return " + storageProbeScript());
@@ -400,6 +409,58 @@ ok("capture is a script the page can run", (() => {
     return false;
   }
 })());
+
+/* ---- the client's own sign-in: only ever with a target the probe named ----- */
+
+// The storage shapes are the older ecosystem's and this build ignores them. The other
+// path is the client's own sign-in code, and it may only be called when the probe
+// actually named a callable export - a guessed module id would be a guess, which is the
+// mistake this whole file exists to stop repeating.
+const probeWithClient = { client: { registry: true, require: true, candidates: [{ module: "42226", exports: ["getToken", "login"], auth: ["login"], callable: ["login"] }] } };
+const chosen = pickClientAuth(probeWithClient);
+ok("a callable auth export is what a sign-in calls", chosen && chosen.module === "42226" && chosen.method === "login", JSON.stringify(chosen));
+ok("handleTokenLogin wins over the plainer names", pickClientAuth({ client: { candidates: [{ module: "1", callable: ["login", "handleTokenLogin"] }] } }).method === "handleTokenLogin");
+ok("a store-less report offers nothing to call", pickClientAuth(null) === null && pickClientAuth({}) === null && pickClientAuth({ client: { candidates: [{ module: "1", callable: [] }] } }) === null);
+ok("the client sign-in is not attempted without a target", run(clientSignInScript(LIVE_TOKEN, null)).startsWith("err:not attempted:"), run(clientSignInScript(LIVE_TOKEN, null)));
+ok("and it says what was missing", /no callable auth export/.test(run(clientSignInScript(LIVE_TOKEN, {}))));
+const clientScript = clientSignInScript(LIVE_TOKEN, probeWithClient);
+ok("with a target it names the module and the method it will call", clientScript.includes("42226") && clientScript.includes("login"));
+ok("and it is a script the page can run", (() => {
+  try {
+    new Function("return " + clientScript);
+    return true;
+  } catch {
+    return false;
+  }
+})());
+
+/** A registry that answers the probe's fake chunk with a require function. */
+function fakeRegistry(cache) {
+  const registry = [];
+  registry.push = (chunk) => chunk[2]({ c: cache });
+  return registry;
+}
+function runClient(script, cache) {
+  const registry = fakeRegistry(cache);
+  const world = { webpackChunkDiscord_app: registry };
+  return new Function("window", "globalThis", "return " + script)(world, world);
+}
+
+// The call has to hand the client the raw token, and the answer may not contain it.
+const calls = [];
+const okAnswer = await runClient(clientScript, { 42226: { exports: { login: (token) => { calls.push(token); return true; } } } });
+ok("the client's own sign-in is called with the raw token", calls.length === 1 && calls[0] === LIVE_TOKEN, JSON.stringify(calls.length));
+ok("and the answer names what was called, without the token", okAnswer === "ok:client 42226.login returned boolean" && !okAnswer.includes(LIVE_TOKEN), okAnswer);
+
+const refused = await runClient(clientScript, { 42226: { exports: { login: () => { throw new Error("token " + LIVE_TOKEN + " is not valid"); } } } });
+ok("a refusal by the client is a reason, not our failure", refused.startsWith("err:") && /threw/.test(refused), refused);
+ok("and the client's own message cannot carry the token out", !refused.includes(LIVE_TOKEN), refused);
+const missing = await runClient(clientScript, {});
+ok("a module that is gone says so", missing.startsWith("err:") && /not loaded/.test(missing), missing);
+const notCallable = await runClient(clientScript, { 42226: { exports: { login: "a string, not a function" } } });
+ok("an export that is not callable says so", notCallable.startsWith("err:") && /not callable/.test(notCallable), notCallable);
+const noRegistry = new Function("return " + clientScript)();
+ok("a page with no registry at all says so", String(await noRegistry).startsWith("err:") && /registry/.test(String(await noRegistry)), String(await noRegistry));
 
 console.log("\npassed " + passed + "  failed " + failed);
 process.exit(failed === 0 ? 0 : 1);

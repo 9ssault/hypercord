@@ -82,6 +82,7 @@ android {
 }
 
 dependencies {
+    implementation project(':android:shared')
     // The Xposed API is compileOnly: the classes are provided at runtime by the loaded
     // process, and packaging them would be a second copy of a framework Discord's
     // injected environment already has.

@@ -1,0 +1,19 @@
+<!-- language: XML, file: android/manager/src/main/res/drawable/ic_launcher.xml
+
+     `R.drawable.ic_launcher` is what `ManagerActivity` puts in the header's 72dp
+     ImageView, and it is not the mipmap of the same name: a drawable shown inside the
+     app is not masked by the launcher, so this one carries its own rounded tile
+     instead of relying on the adaptive-icon mask - otherwise the header would show a
+     square black block on a background of a different black. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#0B0B0E"
+        android:pathData="M24,4h60a20,20 0 0 1 20,20v60a20,20 0 0 1 -20,20h-60a20,20 0 0 1 -20,-20v-60a20,20 0 0 1 20,-20z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,33h8v17h12v-17h8v42h-8v-17h-12v17h-8z" />
+</vector>

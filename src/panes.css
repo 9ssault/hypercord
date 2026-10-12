@@ -87,6 +87,68 @@
   color: var(--hc-good, #3ba55d);
 }
 
+/* Seamless mode: the sheet stops being a window of its own.
+
+   Discord's settings layer has a sidebar and a content column. The entry in that
+   sidebar measures the column and src/preload.cjs writes its rectangle here as
+   variables, so the sheet *is* the settings content area instead of an overlay on
+   top of the client. Nothing of ours shows outside it - no bar, no shadow, no
+   second navigation: the section list becomes the tab row Discord's own settings
+   pages use, and the status line is the only chrome kept, because it is where every
+   failure is reported to the user. */
+#hypercord-panes[data-seamless="true"] {
+  top: var(--hc-panes-top, 0px);
+  left: var(--hc-panes-left, 0px);
+  right: auto;
+  bottom: auto;
+  width: var(--hc-panes-width, 100vw);
+  height: var(--hc-panes-height, 100vh);
+  box-shadow: none;
+  border-radius: 0;
+}
+
+#hypercord-panes[data-seamless="true"] .bar {
+  background: none;
+  border-bottom: 0;
+  padding: 0 0 6px;
+}
+
+/* the brand and the close button are the sheet's own chrome: inside Discord's
+   settings the page already says where you are and Discord's own close is there, so
+   both go and only the status line stays */
+#hypercord-panes[data-seamless="true"] .brand,
+#hypercord-panes[data-seamless="true"] .close {
+  display: none;
+}
+
+#hypercord-panes[data-seamless="true"] .layout {
+  flex-direction: column;
+}
+
+#hypercord-panes[data-seamless="true"] .nav {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 10px;
+  background: none;
+  border-right: 0;
+  border-bottom: 1px solid var(--hc-border, #3f4147);
+  overflow-x: auto;
+}
+
+#hypercord-panes[data-seamless="true"] .nav-title {
+  padding: 0 6px 0 0;
+}
+
+#hypercord-panes[data-seamless="true"] .nav-item {
+  white-space: nowrap;
+}
+
+#hypercord-panes[data-seamless="true"] .view {
+  padding: 14px 0 0;
+}
+
 #hypercord-panes .close {
   margin-left: auto;
   flex: 0 0 auto;

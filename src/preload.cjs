@@ -643,6 +643,85 @@ function settingsHosts() {
  * `data-hypercord-settings` on the document root says what happened, which is what
  * a check can read from the page's own world.
  */
+/**
+ * The rectangle of Discord's settings *content* column, or null.
+ *
+ * The manager must be that column, not a panel over the client. Class names here are
+ * hashed, so this is shape and not names: inside the same layer as the sidebar, to
+ * its right, and large enough to be a pane. A page that does not match yields null,
+ * which means the manager is not opened at all - never drawn over somebody's chat.
+ */
+function settingsContentRegion(host) {
+  if (!host || typeof window === "undefined") return null;
+  const box = host.getBoundingClientRect();
+  if (box.width < 120 || box.height < 60) return null;
+  const layer = (host.closest && host.closest('[class*="layers"]')) || host.parentElement;
+  if (!layer) return null;
+  let best = null;
+  for (const node of layer.querySelectorAll("div")) {
+    if (node === host || node.contains(host)) continue;
+    if (node.closest && node.closest("#hypercord-panes")) continue;
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 320 || rect.height < 240) continue;
+    if (rect.left < box.right - 8) continue;
+    if (rect.right > window.innerWidth + 2) continue;
+    const area = rect.width * rect.height;
+    if (best && area <= best.area) continue;
+    best = { area: area, top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  }
+  return best;
+}
+
+/**
+ * Put the sheet exactly where Discord's own settings content is, and say whether it
+ * landed. The rectangle goes into CSS variables the stylesheet reads, so the layout
+ * itself is still the stylesheet's business and a resize only rewrites four numbers.
+ */
+function placePanes(host) {
+  const panes = document.getElementById("hypercord-panes");
+  if (!panes) return false;
+  const region = settingsContentRegion(host);
+  if (!region) return false;
+  try {
+    panes.style.setProperty("--hc-panes-top", Math.round(region.top) + "px");
+    panes.style.setProperty("--hc-panes-left", Math.round(region.left) + "px");
+    panes.style.setProperty("--hc-panes-width", Math.round(region.width) + "px");
+    panes.style.setProperty("--hc-panes-height", Math.round(region.height) + "px");
+  } catch {
+    return false;
+  }
+  panes.setAttribute("data-seamless", "true");
+  return true;
+}
+
+/**
+ * Does the sheet close when Discord's own settings are used? Two things have to:
+ * choosing one of Discord's own sections (so nothing of ours is left over another
+ * page) and the settings layer closing altogether. Both are wired here, once per
+ * host, and both only set an attribute - the shell keeps owning the open state.
+ */
+function watchSettingsLeaving(host) {
+  if (!host || host.getAttribute("data-hypercord-watched") === "true") return;
+  host.setAttribute("data-hypercord-watched", "true");
+  const closeOurs = () => {
+    const panes = document.getElementById("hypercord-panes");
+    if (panes && panes.getAttribute("data-seamless") === "true") panes.setAttribute("data-open", "false");
+  };
+  host.addEventListener(
+    "click",
+    (event) => {
+      const node = event.target && event.target.closest ? event.target.closest("[id]") : null;
+      if (node && (node.id === "hypercord-settings-entry" || node.id === "hypercord-settings-separator")) return;
+      closeOurs();
+    },
+    true,
+  );
+  window.addEventListener("resize", () => {
+    const panes = document.getElementById("hypercord-panes");
+    if (panes && panes.getAttribute("data-open") === "true" && panes.getAttribute("data-seamless") === "true") placePanes(host);
+  });
+}
+
 function settingsEntryFor(host) {
   const sibling = [...host.children].find((node) => node.id !== "hypercord-settings-entry") || null;
   const likeButton = !sibling || sibling.tagName === "BUTTON";
@@ -655,9 +734,18 @@ function settingsEntryFor(host) {
   if (sibling && sibling.className) entry.className = sibling.className;
   entry.textContent = "Hypercord";
   entry.setAttribute("aria-label", "Hypercord settings");
+  // Measured before anything is shown: the sheet becomes the settings content column,
+  // and when that column cannot be found it is not opened at all - the one thing this
+  // must never do is put a panel over the client, and reporting "no-region" is how
+  // that is said out loud instead of drawn.
   const open = () => {
+    if (!placePanes(host)) {
+      noteSettingsEntry("no-region", host);
+      return;
+    }
     call("panes:open", "plugins").catch(() => {});
   };
+  watchSettingsLeaving(host);
   entry.addEventListener("click", open);
   // a div with a role is not clickable by keyboard on its own
   entry.addEventListener("keydown", (event) => {
@@ -719,7 +807,15 @@ function ensureSettingsEntry() {
  * nothing written at all while the entry is already in the page.
  */
 function followSettings() {
-  return ensureSettingsEntry();
+  const present = ensureSettingsEntry();
+  // Settings closes as a layer and Discord takes its sidebar with it. A sheet left
+  // open would be a panel over the client with nothing under it, so it closes with
+  // the layer that hosted it.
+  if (!document.getElementById("hypercord-settings-entry")) {
+    const panes = document.getElementById("hypercord-panes");
+    if (panes && panes.getAttribute("data-seamless") === "true") panes.setAttribute("data-open", "false");
+  }
+  return present;
 }
 
 /* ---- the user-token prompt ---------------------------------------------- */

@@ -291,8 +291,14 @@ def gradle_command(module: str, variant: str, keystore: dict = None) -> list:
     The keystore is passed as the injected-signing properties rather than baked into
     a `build.gradle`, so no signing material is ever a tracked file.
     """
-    task = f":{module}:assemble{variant.capitalize()}"
-    command = ["gradle", "--project-dir", str(ANDROID_DIR), "--console=plain", task]
+    # Run from the repository root against the root settings.gradle, which declares
+    # `:android:manager` and `:android:loader`. The previous form was `--project-dir
+    # android` with `:manager`, and that combination cannot work: Gradle would look for
+    # a build rooted in android/ (there is none) and `:manager` is not a declared
+    # project - the first real run died on it. find_built_apk still looks under
+    # android/<module>/build/outputs/apk/<variant>, which is where this puts them.
+    task = f":android:{module}:assemble{variant.capitalize()}"
+    command = ["gradle", "--console=plain", task]
     if keystore:
         command += [
             f"-Pandroid.injected.signing.store.file={keystore['store_file']}",

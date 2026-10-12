@@ -18,11 +18,23 @@
 //     in storage, and no request the client made ever carried them. "Discord reads
 //     localStorage.token at boot" is therefore NOT a measurement; it was an
 //     assumption, and it is the reason token login did not work.
-//   * NOT KNOWN: where the client actually reads a session from. It is not
-//     `localStorage.token` on this build. `storageProbeScript()` below exists to
-//     answer that from the live page - it reports which storages and which keys
-//     exist, never a value - and `signInCandidates()` is ordered so a probe result
-//     can reorder it without the rest of this file changing.
+//   * NOT KNOWN, and now asked rather than assumed: where the client reads a session
+//     from. `storageProbeScript()` answers that from the live page - which storages
+//     and which keys exist, and which of the client's *own* modules expose an auth
+//     export - never a value. `signInCandidates()` is ordered so a probe result can
+//     move the storage shapes without the rest of this file changing, and
+//     `pickClientAuth()`/`clientSignInScript()` are the other path: the client's own
+//     sign-in code, called only when the probe actually found it.
+//   * MEASURED IN THIS WORKSPACE, and the reason that second path is worth trying: the
+//     selfbot in the sibling project signs a real account in with nothing but the raw
+//     token - `await this.client.login(this.token)` in hypersb-edit/src/bot.js - so the
+//     token is what Discord accepts on its gateway. What that does *not* prove is that
+//     the web client reads one out of storage, which is why both paths are attempted
+//     and the log records which one answered.
+//   * Both paths can be right and the sign-in still be a question of the client's own
+//     auth flow: whatever the client uses, the route it lands on is the only witness,
+//     and a session it establishes itself is captured (`captureSessionScript`) so the
+//     store ends up holding the session this build actually accepts.
 //   * MEASURED, by route only: the client restores a session when the *app* boots,
 //     never on the login page, so a sign-in boots `/app` and is judged by where it
 //     lands. That part of the design holds and its tests hold with it.
@@ -108,7 +120,8 @@ export function looksLikeUserToken(value) {
 export function storageProbeScript() {
   return `(async () => {
     const AUTH = /token|auth|session|credential|secret/i;
-    const out = { page: {}, frame: null, cookies: [], indexeddb: [], notes: [] };
+    const out = { page: {}, frame: null, cookies: [], indexeddb: [], client: { registry: false, require: false, modules: 0, candidates: [], notes: [] }, notes: [] };
+    const CLIENT_AUTH = /token|auth|session|credential|secret|login|logout/i;
     const describe = (store) => {
       const keys = [];
       if (!store) return keys;
@@ -197,6 +210,44 @@ export function storageProbeScript() {
         out.notes.push("indexedDB.databases() is not available in this world");
       }
     } catch (err) { out.notes.push("indexeddb enumeration failed: " + (err && err.name)); }
+    // The client's own modules. Its persistence is not localStorage on this build, so
+    // the question "where is the session" is really "which of its modules owns auth" -
+    // and a module registry that hands out a require function lets that be *read*: the
+    // cache of already-required modules is walked, their export *names* are collected,
+    // and nothing is called and no value is read. Only names, so the report can be
+    // logged beside the storage report without carrying a secret.
+    try {
+      const registry = (typeof window !== "undefined" && window && window.webpackChunkdiscord_app) ||
+        (typeof globalThis !== "undefined" && globalThis && globalThis.webpackChunkdiscord_app) || null;
+      if (!registry || typeof registry.push !== "function") out.client.notes.push("no module registry in this world");
+      else {
+        out.client.registry = true;
+        let requireFunction = null;
+        try {
+          registry.push([["hypercord-probe-" + Date.now()], {}, (require_) => { requireFunction = require_; }]);
+        } catch (err) { out.client.notes.push("the registry refused a probe chunk: " + (err && err.name)); }
+        if (typeof requireFunction !== "function") out.client.notes.push("no require function came back from the registry");
+        else {
+          out.client.require = true;
+          const cache = requireFunction.c || {};
+          const ids = Object.keys(cache);
+          out.client.modules = ids.length;
+          for (let i = 0; i < ids.length && out.client.candidates.length < 8; i += 1) {
+            const exported = cache[ids[i]] && cache[ids[i]].exports;
+            if (!exported) continue;
+            let keys = [];
+            try { keys = Object.keys(exported); } catch (err) { continue; }
+            const auth = keys.filter((key) => CLIENT_AUTH.test(key));
+            if (!auth.length) continue;
+            const callable = [];
+            for (const key of auth) {
+              try { if (typeof exported[key] === "function") callable.push(key); } catch (err) { /* a getter that throws is not callable */ }
+            }
+            out.client.candidates.push({ module: String(ids[i]), exports: keys.slice(0, 12), auth: auth.slice(0, 6), callable: callable.slice(0, 6) });
+          }
+        }
+      }
+    } catch (err) { out.client.notes.push("client modules unreadable: " + (err && err.name)); }
     return JSON.stringify(out);
   })()`;
 }
@@ -379,6 +430,70 @@ export function captureSessionScript(probe) {
     }
     return JSON.stringify({ where: "", key: "", value: "" });
   })()`;
+}
+
+/* ---- the client's own sign-in ------------------------------------------- */
+
+/**
+ * The export a sign-in should call, chosen from a probe report - the client's own
+ * code, not a guessed storage key.
+ *
+ * Preference is deliberate and narrow: `handleTokenLogin` and `login` are the names a
+ * client uses for "take this token and start a session", `setToken` and `startSession`
+ * are the ones an older or forked build uses, and only if none of those is callable
+ * does the first callable auth-looking export do. Returns null when the probe found
+ * nothing to call, which is a fact to report and not a failure to dress up.
+ */
+export function pickClientAuth(probe) {
+  const candidates = probe && probe.client && Array.isArray(probe.client.candidates) ? probe.client.candidates : [];
+  const preferred = ["handleTokenLogin", "login", "setToken", "startSession", "authenticate"];
+  for (const wanted of preferred) {
+    for (const entry of candidates) {
+      const callable = (entry && Array.isArray(entry.callable) ? entry.callable : []);
+      if (callable.includes(wanted)) return { module: String((entry && entry.module) || ""), method: wanted };
+    }
+  }
+  for (const entry of candidates) {
+    const first = (entry && Array.isArray(entry.callable) ? entry.callable : [])[0];
+    if (first) return { module: String((entry && entry.module) || ""), method: String(first) };
+  }
+  return null;
+}
+
+/**
+ * The script that asks the client to sign in with the token, through the client's own
+ * module - the path that does not depend on knowing which storage key it reads.
+ *
+ * It is generated only from a target the probe named, so it never guesses a module id:
+ * with no target it answers "not attempted" and says why. The value is interpolated the
+ * same way the storage writes interpolate it (it has to reach the page), and the answer
+ * is a short string with no token in it - `ok:client <module>.<method>` or
+ * `err:<why>` - so the shell can log the outcome and the person can read it.
+ */
+export function clientSignInScript(secret, probe) {
+  const target = pickClientAuth(probe);
+  if (!target) return `(() => "err:not attempted: the probe found no callable auth export in the client's own modules")()`;
+  const value = JSON.stringify(rawValue(secret));
+  const moduleId = JSON.stringify(String(target.module));
+  const methodName = JSON.stringify(String(target.method));
+  return `(async () => {
+  try {
+    const registry = (typeof window !== "undefined" && window && window.webpackChunkdiscord_app) ||
+      (typeof globalThis !== "undefined" && globalThis && globalThis.webpackChunkdiscord_app) || null;
+    if (!registry || typeof registry.push !== "function") return "err:the client's module registry is not in this page";
+    let requireFunction = null;
+    registry.push([["hypercord-login-" + Date.now()], {}, (require_) => { requireFunction = require_; }]);
+    if (typeof requireFunction !== "function") return "err:no require function came back from the client's registry";
+    const exported = requireFunction.c && requireFunction.c[${moduleId}] && requireFunction.c[${moduleId}].exports;
+    if (!exported) return "err:the client's module " + ${moduleId} + " is not loaded any more";
+    const method = exported[${methodName}];
+    if (typeof method !== "function") return "err:the client's " + ${methodName} + " is not callable";
+    const answer = await method.call(exported, ${value});
+    return "ok:client " + ${moduleId} + "." + ${methodName} + (answer === undefined ? "" : " returned " + typeof answer);
+  } catch (err) {
+    return "err:the client's own sign-in threw " + (err && err.name) + ": " + String((err && err.message) || "").slice(0, 80);
+  }
+})()`;
 }
 
 /* ---- the route ----------------------------------------------------------- */
