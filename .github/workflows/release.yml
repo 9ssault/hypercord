@@ -488,7 +488,10 @@ jobs:
           export HYPERCORD_ANDROID_VERSION_CODE="$(date -u +%Y%m%d)"
           # Prefer the repository's wrapper: it pins the Gradle the modules were ported
           # with. build_android.py resolves ./gradlew itself when it is executable.
-          if [ -x ./gradlew ]; then export GRADLE_CMD="$PWD/gradlew"; fi
+          # The wrapper ships executable, but a checkout that lost the mode bit must not
+          # silently fall back to a Gradle that is not on the runner at all: it is made
+          # executable here, and then used.
+          if [ -f ./gradlew ]; then chmod +x ./gradlew; export GRADLE_CMD="$PWD/gradlew"; fi
           if [ -n "${KEYSTORE_BASE64}" ]; then
             export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
             trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT

@@ -92,7 +92,9 @@ const H_HEIGHT = 0.47;
 const STEM = 0.125;
 const BAR = 0.125;
 const TOP = [0, 0, 0]; // #000000 - the tile is black
-const BOTTOM = [9, 9, 12]; // #09090c - barely off black, so the tile has a direction
+// Flat black, not a barely-off-black gradient: the owner asked for the logo to be black,
+// and a tile that is #09090c at one edge reads as dark grey next to a flat black client.
+const BOTTOM = [0, 0, 0]; // #000000 - the same black as the top, so the tile is flat
 const RIM = [42, 44, 52]; // #2a2c34 - the hairline that keeps the silhouette on black
 const MARK = [255, 255, 255]; // the H has to carry the contrast on a black tile
 const SS = 4; // supersamples per axis, which is where the anti-aliasing comes from
