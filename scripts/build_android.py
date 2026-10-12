@@ -433,16 +433,21 @@ VALUE_DECLARATION = re.compile(
 
 
 def _resource_files(res_dir: Path) -> dict:
-    """Every `type/name` one resource directory defines, mapped to the file defining it."""
+    """Every `configuration/type/name` one resource directory defines.
+
+    The configuration directory is part of the key (`mipmap-anydpi-v26` and
+    `mipmap-anydpi-v33` both define `mipmap/ic_launcher` on purpose - the qualifier picks
+    which one a device receives), so it is the pair of them that tells a second
+    definition apart from a second configuration of the same resource.
+
+    The value is the file that defines it, which is what a message has to name.
+    """
     defined = {}
     if not res_dir.is_dir():
         return defined
     for entry in sorted(res_dir.iterdir()):
         if not entry.is_dir():
             continue
-        # `mipmap-anydpi-v26` and `drawable-v26` are qualified forms of `mipmap` and
-        # `drawable`: the qualifier picks which one a device receives, not which
-        # resources exist.
         resource_type = entry.name.split("-")[0]
         is_values = entry.name == "values" or entry.name.startswith("values-")
         for candidate in sorted(entry.rglob("*")):
@@ -453,10 +458,43 @@ def _resource_files(res_dir: Path) -> dict:
                     continue
                 text = candidate.read_text(encoding="utf-8", errors="replace")
                 for kind, name in VALUE_DECLARATION.findall(text):
-                    defined.setdefault(f"{kind}/{name}", candidate)
+                    defined.setdefault(f"{entry.name}/{kind}/{name}", candidate)
                 continue
-            defined.setdefault(f"{resource_type}/{candidate.stem}", candidate)
+            defined.setdefault(f"{entry.name}/{resource_type}/{candidate.stem}", candidate)
     return defined
+
+
+def _defined_resources(module_dir: Path) -> dict:
+    """Every resource a module defines, by `type/name`, as a list of defining files."""
+    defined = {}
+    for directory in (module_dir / part for part in MODULE_RESOURCE_DIRS):
+        for key, path in _resource_files(directory).items():
+            _configuration, resource_type, name = key.split("/", 2)
+            defined.setdefault(f"{resource_type}/{name}", []).append(path)
+    return defined
+
+
+def resource_conflicts(module_dir: Path) -> list:
+    """Resources two of a module's resource directories both define.
+
+    AGP does not resolve these and does not shadow them: it fails the merge with
+    `Duplicate resources` naming both files. Both modules add `../branding/res` to their
+    own `src/main/res`, so any resource the shared directory and the module both carry - a
+    launcher icon, say - is exactly this failure.
+    """
+    conflicts = []
+    for reference, files in sorted(_defined_resources(module_dir).items()):
+        directories = {_reported_path(candidate.parents[1]) for candidate in files}
+        if len(directories) < 2:
+            continue
+        conflicts.append(
+            {
+                "reference": reference,
+                "files": [_reported_path(candidate) for candidate in files],
+                "directories": sorted(directories),
+            }
+        )
+    return conflicts
 
 
 # The loader's Gradle task composes its bundle from two places: the asset tree
@@ -485,11 +523,16 @@ def loader_asset_collisions(module_dir: Path) -> list:
 
 
 def _reported_path(path: Path) -> str:
-    """A path as the message should name it: repository-relative when it is inside it."""
+    """A path as a message should name it: repository-relative when it is inside it.
+
+    Resolved first, so a resource directory the build files name as `../branding/res`
+    is reported as `android/branding/res` rather than as a path with a `..` in it.
+    """
+    resolved = path.resolve()
     try:
-        return path.resolve().relative_to(ROOT).as_posix()
+        return resolved.relative_to(ROOT).as_posix()
     except ValueError:
-        return str(path)
+        return str(resolved)
 
 
 def manifest_resource_gaps(module_dir: Path) -> list:
@@ -502,9 +545,7 @@ def manifest_resource_gaps(module_dir: Path) -> list:
         # against yet, and one blocker per problem is enough.
         return []
     directories = [module_dir / part for part in MODULE_RESOURCE_DIRS]
-    defined = {}
-    for directory in directories:
-        defined.update(_resource_files(directory))
+    defined = _defined_resources(module_dir)
     gaps = []
     for resource_type, name in dict.fromkeys(MANIFEST_REFERENCE.findall(text)):
         if f"{resource_type}/{name}" in defined:
@@ -562,6 +603,17 @@ def preflight(modules, gradle="gradle") -> list:
                 "android/licenses into the bundle: two sources for one bundle entry fail "
                 "the build (\"no duplicate handling strategy has been set\"). Keep the "
                 "asset tree free of what the task adds."
+            )
+    # Two resource directories defining the same resource is the failure on the other side
+    # of the one above: AGP fails the merge with `Duplicate resources` and names both files,
+    # but only after the whole module has been compiled around them.
+    for module in modules:
+        for conflict in resource_conflicts(ANDROID_DIR / module):
+            files = " and ".join(conflict["files"])
+            blockers.append(
+                f"android/{module} defines {conflict['reference']} in two resource "
+                f"directories ({files}), which AGP refuses to merge: remove one of them. "
+                f"The directories are {' and '.join(conflict['directories'])}."
             )
     # A resource the manifest names and the module does not have is a packaging failure
     # with a compiling-looking build around it, so it is named here rather than left to

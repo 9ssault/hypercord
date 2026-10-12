@@ -307,22 +307,45 @@ jobs:
       # them is the publish job's one job.
       - name: Build the installers
         shell: bash
-        # CSC_IDENTITY_AUTO_DISCOVERY is off when no certificate is configured: an
-        # identity discovered in a runner's keychain is how a build ends up signed
-        # with something nobody chose.
+        # The secrets are read into names electron-builder does not look at, and the ones
+        # it does look at are exported below only when they hold something. An empty secret
+        # still *defines* the variable, and electron-builder reads a defined-but-empty
+        # CSC_LINK as a path: it resolves to the working directory, and the macOS job died
+        # with "<project dir> not a file" before it ever packed anything. Empty
+        # APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD have the same shape for notarisation.
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK == '' && 'false' || 'true' }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CERTIFICATE: ${{ secrets.CSC_LINK }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           # `set -o pipefail` and the tee: electron-builder's reason for refusing to build
           # a platform is the one thing the release needs, and GitHub withholds a run's
           # logs while any job is still going - so the reason is written to a file that
           # the step below uploads whether this step passed or failed.
           set -o pipefail
+          if [ -n "${CERTIFICATE:-}" ]; then
+            export CSC_LINK="$CERTIFICATE"
+            if [ -n "${CERTIFICATE_PASSWORD:-}" ]; then export CSC_KEY_PASSWORD="$CERTIFICATE_PASSWORD"; fi
+            # A certificate is configured, so an identity in the runner's keychain may be
+            # used; without one, auto-discovery is off - an identity nobody chose is how a
+            # build ends up signed by accident.
+            export CSC_IDENTITY_AUTO_DISCOVERY=true
+            echo "signing: a certificate is configured (CSC_LINK is set)"
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "signing: UNSIGNED - no CSC_LINK secret, so this build carries no certificate"
+            echo "         Windows SmartScreen and macOS Gatekeeper will warn about it"
+          fi
+          if [ -n "${NOTARY_APPLE_ID:-}" ]; then
+            export APPLE_ID="$NOTARY_APPLE_ID"
+            if [ -n "${NOTARY_PASSWORD:-}" ]; then export APPLE_APP_SPECIFIC_PASSWORD="$NOTARY_PASSWORD"; fi
+            if [ -n "${NOTARY_TEAM_ID:-}" ]; then export APPLE_TEAM_ID="$NOTARY_TEAM_ID"; fi
+            echo "notarisation: APPLE_ID is set, so electron-builder can notarise"
+          else
+            echo "notarisation: none - no APPLE_ID secret, so nothing is notarised"
+          fi
           npm run dist -- ${{ matrix.targets }} --publish never 2>&1 | tee installer-build.log
 
       - name: Keep the installer build log

@@ -77,6 +77,57 @@ assert gaps() == [], gaps()
   assert.equal(result.status, 0, result.stderr || result.error?.message);
 });
 
+test('a resource two resource directories define is refused as a duplicate', (t) => {
+  if (!python) return t.skip('no python interpreter on PATH');
+  const program = `
+import importlib.util, tempfile
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('build_android', 'scripts/build_android.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+# Both modules add ../branding/res to their own src/main/res, so this is the shape the
+# manager's launcher icon had: its own copy and the shared one, which AGP refuses with
+# "Duplicate resources" after compiling the whole module.
+for module in ('loader', 'manager'):
+    assert m.resource_conflicts(m.ANDROID_DIR / module) == [], module
+
+root = Path(tempfile.mkdtemp()) / 'android'
+module = root / 'sample'
+(module / 'src/main/res/drawable').mkdir(parents=True)
+(module / 'src/main/res/drawable/ic_launcher.xml').write_text('<vector/>', encoding='utf-8')
+assert [c['reference'] for c in m.resource_conflicts(module)] == []
+
+shared = root / 'branding/res/drawable'
+shared.mkdir(parents=True)
+(shared / 'ic_launcher.xml').write_text('<vector/>', encoding='utf-8')
+conflicts = m.resource_conflicts(module)
+assert [c['reference'] for c in conflicts] == ['drawable/ic_launcher'], conflicts
+# both files are named, the shared one by its resolved path rather than as "../branding"
+files = sorted(file.replace('\\\\', '/') for file in conflicts[0]['files'])
+assert files[0].endswith('branding/res/drawable/ic_launcher.xml'), files
+assert files[1].endswith('sample/src/main/res/drawable/ic_launcher.xml'), files
+assert len(conflicts[0]['directories']) == 2, conflicts[0]['directories']
+
+# The shared directory goes away and the two configurations of one resource are left:
+# an adaptive icon for API 26 and for API 33 is not a duplicate.
+(shared / 'ic_launcher.xml').unlink()
+for qualifier in ('mipmap-anydpi-v26', 'mipmap-anydpi-v33'):
+    directory = root / 'branding/res' / qualifier
+    directory.mkdir(parents=True)
+    (directory / 'ic_launcher.xml').write_text('<adaptive-icon/>', encoding='utf-8')
+assert m.resource_conflicts(module) == []
+# ... but a value resource the shared directory also declares is a duplicate.
+(module / 'src/main/res/values').mkdir(parents=True)
+(module / 'src/main/res/values/colors.xml').write_text('<resources><color name="tint">#000</color></resources>', encoding='utf-8')
+shared_values = root / 'branding/res/values'
+shared_values.mkdir(parents=True)
+(shared_values / 'colors.xml').write_text('<resources><color name="tint">#000</color></resources>', encoding='utf-8')
+assert [c['reference'] for c in m.resource_conflicts(module)] == ['color/tint']
+`;
+  const result = spawnSync(python, ['-c', program], { encoding: 'utf8', timeout: 30000 });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
+
 test('the loader asset tree carries nothing the Gradle task injects into the bundle itself', (t) => {
   if (!python) return t.skip('no python interpreter on PATH');
   const program = `

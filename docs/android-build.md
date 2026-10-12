@@ -129,6 +129,12 @@ not found`, hundreds of merge lines into a Gradle log; `scripts/build_android.py
 resolves every resource a manifest names against those directories in `preflight`, so the
 mismatch is named before Gradle is started.
 
+The other half of that check is the duplicate: a resource the shared directory and a
+module both define is not shadowed, it fails the merge with `Duplicate resources` naming
+both files. The manager's own `drawable/ic_launcher.xml` - the header glyph - was exactly
+that, and the header now takes the shared one, as the ported client does. `preflight`
+reports the pair before Gradle runs, and `tests/manifest-resources.test.mjs` holds it.
+
 ### 6. Write the loader's manifest
 
 `android/loader/src/main/` contains `java/` and nothing else. An application module
