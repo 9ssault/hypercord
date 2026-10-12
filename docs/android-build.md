@@ -119,16 +119,25 @@ android/manager/src/main/res/xml/data_extraction_rules.xml       (Android 12+ ba
 android/manager/src/main/res/values/colors.xml                   (only if the adaptive icon references a colour)
 ```
 
-The loader needs **no** resources: its controls are framework widgets and it
-declares no theme or icon.
+The loader needs **one**: its manifest names `@xml/data_extraction_rules` the same way,
+and that file belongs in the module's own tree at
+`android/loader/src/main/res/xml/data_extraction_rules.xml` - not in
+`android/branding/res/`, which both modules add to their resource source dirs and where
+the manager's copy of the same resource already lives. AAPT reports a missing one as
+`resource xml/data_extraction_rules (aka app.assault.loader:xml/data_extraction_rules)
+not found`, hundreds of merge lines into a Gradle log; `scripts/build_android.py` now
+resolves every resource a manifest names against those directories in `preflight`, so the
+mismatch is named before Gradle is started.
 
 ### 6. Write the loader's manifest
 
 `android/loader/src/main/` contains `java/` and nothing else. An application module
 without a manifest does not build. It must declare the package
 `app.assault.loader`, the Xposed entry points (`xposedmodule`, `xposedminversion`,
-`xposeddescription` meta-data) and nothing else - no activity, no launcher, no icon
-resource, because the module has no `res/`.
+`xposeddescription` meta-data), and the framework attributes an application needs:
+the launcher icon from `android/branding/res`, which both modules share, and the
+Android 12+ backup rules from the module's own `res/xml/` (step 5). No activity and no
+launcher of its own - the loader runs inside the client it patches.
 
 ### 7. Assemble the loader's ten assets
 
@@ -154,6 +163,14 @@ android/loader/src/main/assets/
 None of the ten exists anywhere in this repository today - not even `addons.js`,
 which the pin file called "generated". Nothing generates it: the assembly step is
 one of the missing inputs below, not an oversight in the build files.
+
+The bundle as the build checks it today is the list in `scripts/build_android.py`
+(`REQUIRED_LOADER_ASSETS`, nine entries): the Acorn notice was dropped, because nothing
+in this client uses Acorn, and the licence text is copied into the bundle by the loader's
+Gradle task from `android/licenses/Revenge-BSD-3-Clause.txt`. Nothing under
+`src/main/assets/licenses/` any more: a second source for one bundle entry fails the
+build with `no duplicate handling strategy has been set`, and both that and the
+resource resolution above are checked by `tests/manifest-resources.test.mjs`.
 
 ### 8. Produce the runtime and record its checksum
 
@@ -297,7 +314,8 @@ and that module needs its own `build.gradle` (library plugin).
 | `account-controls.js` | `android/loader/src/main/assets/account-controls.js` | loader | account controls |
 | `rich-presence.js` | `android/loader/src/main/assets/rich-presence.js` | loader | rich presence |
 | `history-export.js`, `html-export.js` | `android/loader/src/main/assets/` | loader | the two export scripts |
-| Licences | `android/loader/src/main/assets/licenses/Acorn-MIT.txt`, `licenses/Revenge-BSD-3-Clause.txt` | loader | required by the asset rules, and their text is not in the tree |
+| Loader resource | `android/loader/src/main/res/xml/data_extraction_rules.xml` | loader | the loader's manifest names `@xml/data_extraction_rules`; without it the resource link fails |
+| Licence | the vendored `android/licenses/Revenge-BSD-3-Clause.txt` | loader | required by the asset rules; the Gradle task copies it into the bundle, so the asset tree must not carry a second copy |
 
 ### Not build blockers, but acceptance gaps
 

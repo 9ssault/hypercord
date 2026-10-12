@@ -45,6 +45,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -403,6 +404,122 @@ def find_built_apk(module: str, variant: str) -> Path:
     )
 
 
+# ---------------------------------------------------------------------------
+# the resources the manifests name
+# ---------------------------------------------------------------------------
+# Each module's manifest is resolved against the resource directories Gradle will read,
+# before Gradle is started. This is the failure that is worst to read in a build log: a
+# missing `@xml/...` surfaces as `AAPT: error: resource xml/data_extraction_rules (aka
+# app.assault.loader:xml/data_extraction_rules) not found` in the middle of several
+# hundred resource-merging lines, and the fix is one absent file. Both the manifest and
+# the directories are in this tree, so the mismatch is named here instead.
+#
+# The directories are the build files' own: both modules add `../branding/res` to their
+# resource source dirs on top of the default `src/main/res`. A resource in either one
+# satisfies a reference - which is why the loader's `@mipmap/ic_launcher` comes from the
+# shared directory and its `@xml/data_extraction_rules` does not.
+MODULE_RESOURCE_DIRS = ("src/main/res", "../branding/res")
+
+# `@android:style/Theme...` is the platform's own resource and `@+id/...` declares one
+# rather than referring to one; neither is this project's to provide.
+MANIFEST_REFERENCE = re.compile(r"@(?!\+|\*?android:)([A-Za-z0-9_]+)/([A-Za-z0-9_.]+)")
+
+# A value resource is declared inside a file rather than named by it: `@string/app_name`
+# lives in `values/strings.xml`, not in `strings/app_name.xml`.
+VALUE_TYPES = ("string", "color", "dimen", "bool", "integer", "style", "array", "attr")
+VALUE_DECLARATION = re.compile(
+    r"<(string|color|dimen|bool|integer|style|array|attr)\s+name=\"([A-Za-z0-9_.]+)\""
+)
+
+
+def _resource_files(res_dir: Path) -> dict:
+    """Every `type/name` one resource directory defines, mapped to the file defining it."""
+    defined = {}
+    if not res_dir.is_dir():
+        return defined
+    for entry in sorted(res_dir.iterdir()):
+        if not entry.is_dir():
+            continue
+        # `mipmap-anydpi-v26` and `drawable-v26` are qualified forms of `mipmap` and
+        # `drawable`: the qualifier picks which one a device receives, not which
+        # resources exist.
+        resource_type = entry.name.split("-")[0]
+        is_values = entry.name == "values" or entry.name.startswith("values-")
+        for candidate in sorted(entry.rglob("*")):
+            if not candidate.is_file() or candidate.name.startswith("."):
+                continue
+            if is_values:
+                if candidate.suffix != ".xml":
+                    continue
+                text = candidate.read_text(encoding="utf-8", errors="replace")
+                for kind, name in VALUE_DECLARATION.findall(text):
+                    defined.setdefault(f"{kind}/{name}", candidate)
+                continue
+            defined.setdefault(f"{resource_type}/{candidate.stem}", candidate)
+    return defined
+
+
+# The loader's Gradle task composes its bundle from two places: the asset tree
+# (`src/main/assets`, minus the pinned runtime it rebuilds into `assault-runtime.js`) and
+# the vendored licence texts in `android/licenses`, which it copies into `licenses/`
+# itself. A path present in both is not a duplicate Gradle resolves on its own - it fails
+# the build with "Entry licenses/... is a duplicate but no duplicate handling strategy has
+# been set" - so the asset tree must not carry a second copy of what the task injects.
+TASK_INJECTED_ASSET_DIRS = ("licenses",)
+
+
+def loader_asset_collisions(module_dir: Path) -> list:
+    """Asset-tree files that collide with what the loader's Gradle task injects itself."""
+    assets = module_dir / "src" / "main" / "assets"
+    collisions = []
+    for name in TASK_INJECTED_ASSET_DIRS:
+        directory = assets / name
+        if not directory.is_dir():
+            continue
+        collisions.extend(
+            f"{name}/{candidate.relative_to(directory).as_posix()}"
+            for candidate in sorted(directory.rglob("*"))
+            if candidate.is_file() and not candidate.name.startswith(".")
+        )
+    return collisions
+
+
+def _reported_path(path: Path) -> str:
+    """A path as the message should name it: repository-relative when it is inside it."""
+    try:
+        return path.resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def manifest_resource_gaps(module_dir: Path) -> list:
+    """The resources a module's manifest names and the module cannot resolve."""
+    manifest = module_dir / "src" / "main" / "AndroidManifest.xml"
+    try:
+        text = manifest.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        # preflight reports the absent manifest on its own; there is nothing to resolve
+        # against yet, and one blocker per problem is enough.
+        return []
+    directories = [module_dir / part for part in MODULE_RESOURCE_DIRS]
+    defined = {}
+    for directory in directories:
+        defined.update(_resource_files(directory))
+    gaps = []
+    for resource_type, name in dict.fromkeys(MANIFEST_REFERENCE.findall(text)):
+        if f"{resource_type}/{name}" in defined:
+            continue
+        gaps.append(
+            {
+                "reference": f"{resource_type}/{name}",
+                "type": resource_type,
+                "name": name,
+                "directories": [_reported_path(directory) for directory in directories],
+            }
+        )
+    return gaps
+
+
 def preflight(modules, gradle="gradle") -> list:
     """Everything that makes the build impossible, before Gradle is even started."""
     blockers = []
@@ -437,6 +554,31 @@ def preflight(modules, gradle="gradle") -> list:
             ANDROID_DIR / module / "build.gradle.kts"
         ).is_file():
             blockers.append(f"android/{module}/build.gradle is missing")
+    if "loader" in modules and (ANDROID_DIR / "loader" / "src" / "main" / "assets").is_dir():
+        for collision in loader_asset_collisions(ANDROID_DIR / "loader"):
+            blockers.append(
+                f"android/loader/src/main/assets/{collision} is also injected by the "
+                "loader's Gradle task, which copies the vendored licence texts from "
+                "android/licenses into the bundle: two sources for one bundle entry fail "
+                "the build (\"no duplicate handling strategy has been set\"). Keep the "
+                "asset tree free of what the task adds."
+            )
+    # A resource the manifest names and the module does not have is a packaging failure
+    # with a compiling-looking build around it, so it is named here rather than left to
+    # AAPT, which reports it as "resource ... not found" among the merge tasks.
+    for module in modules:
+        for gap in manifest_resource_gaps(ANDROID_DIR / module):
+            where = " or ".join(gap["directories"])
+            expected = (
+                f"values*/ values file declaring <{gap['type']} name=\"{gap['name']}\">"
+                if gap["type"] in VALUE_TYPES
+                else f"{gap['type']}/{gap['name']}.xml"
+            )
+            blockers.append(
+                f"android/{module}/src/main/AndroidManifest.xml names @{gap['reference']} "
+                f"and no resource provides it: looked for {expected} (or a qualified "
+                f"{gap['type']}-* directory naming it) in {where}"
+            )
     if not os.environ.get("ANDROID_HOME") and not os.environ.get("ANDROID_SDK_ROOT"):
         blockers.append("ANDROID_HOME (or ANDROID_SDK_ROOT) is not set, so no SDK")
     return blockers

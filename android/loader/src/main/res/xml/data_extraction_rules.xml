@@ -1,0 +1,33 @@
+<!-- language: XML, file: android/loader/src/main/res/xml/data_extraction_rules.xml
+
+     The loader's manifest names `android:dataExtractionRules="@xml/data_extraction_rules"`,
+     so the resource has to exist in a directory the loader's resource merge reads. It lives
+     here, in the module's own `src/main/res/`, and deliberately *not* in
+     `android/branding/res/` - which both modules add to their resource source dirs: the
+     manager ships its own copy under `android/manager/src/main/res/xml/`, and a second copy
+     in a directory the manager also reads is a duplicate-resource failure, not a shared
+     file. Omitting this file is what AAPT reports as
+     `error: resource xml/data_extraction_rules (aka app.assault.loader:xml/data_extraction_rules) not found`.
+
+     Android 12+ replaced `fullBackupContent` with this file, and the manifest sets both to
+     "nothing". The loader keeps the patched client and the files it downloads in its private
+     storage, and a backup that carried them to another device would restore state this
+     module never chose to keep. Both directions are excluded, because a device transfer
+     moves the same bytes a cloud backup would. The domains are listed one by one rather than
+     relying on a catch-all, so a new directory is a deliberate decision rather than an
+     accident. `external` is not among them on purpose: nothing the loader writes is on
+     external storage, and a domain that cannot be written holds nothing to exclude. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

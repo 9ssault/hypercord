@@ -139,7 +139,7 @@ Nothing here is Discord's code, and none of it is copied from another client:
 - **LSPatch v1.2** ([github.com/JingMatrix/LSPatch](https://github.com/JingMatrix/LSPatch/tree/v1.2), GPL-3.0): the APK patcher and the embedded runtime. The pinned patcher JAR is separated into Java code and opaque injection assets, and `android/manager/src/main/java/org/lsposed/patch/ApkPatcher.java` is the single patched source that replaces its dependency counterpart.
 - **Revenge v1.11.6** ([github.com/revenge-mod/revenge-bundle](https://github.com/revenge-mod/revenge-bundle/tree/v1.11.6), BSD-3-Clause): the native React Native plugin and theme runtime the loader injects, which is why the plugin and theme UI lives under Discord's own Settings.
 - **Xposed API 82** (Apache-2.0): the compile-only hook API the loader is built against.
-- **Acorn** (MIT): the licence text the loader packages as `licenses/Acorn-MIT.txt`; `tests/loader-assets.test.mjs` is the suite that names it.
+- **Revenge's licence text** (BSD-3-Clause): the notice the loader ships in its bundle as `licenses/Revenge-BSD-3-Clause.txt`, copied in by the loader's Gradle task from `android/licenses/`; `tests/loader-assets.test.mjs` is the suite that refuses a bundle without it. There is no Acorn notice, because nothing in this client uses Acorn.
 - **Ours.** The addon interpreter and its manager screens (`plugins/index.js`, `plugins/sandbox.js`, `themes/index.js`, `core/`, `utils/`), the loader's capture and control code, `scripts/patch_runtime.py`, and everything written in this document. The dialect those addons are written in is specified in [addon-framework.md](addon-framework.md), with working examples at `plugins/examples/welcome.txt` and `themes/examples/midnight.txt`.
 - **Kept identifiers are not provenance.** The `assault` / `assault-addon` / `assault-addons` / `assault-scripts` schemes, the `app.assault.*` package ids and the on-device `assault-*` journals stay as they are because code in both halves and data already on a device use them; only display text is branded Hypercord. The note at the top of this file lists them.
 - **Other clients' catalogues are not vendored either.** The addon sources listed above are third-party catalogues the browser can find and open; nothing from them is copied into the client, and only this client's own addon dialect installs.
@@ -149,7 +149,7 @@ Nothing here is Discord's code, and none of it is copied from another client:
 - [LSPatch v1.2](https://github.com/JingMatrix/LSPatch/tree/v1.2): native APK patcher and embedded runtime, GPL-3.0.
 - [Revenge v1.11.6](https://github.com/revenge-mod/revenge-bundle/tree/v1.11.6): native React Native plugin/theme runtime, BSD-3-Clause.
 - Xposed API 82: compile-only API, Apache-2.0.
-- Exact dependencies and checksums: `scripts/android-dependencies.json`. License texts: `android/licenses/`. **Neither is in this tree as it stands**, and `android/LICENSE` is not either: the notices above record what the bundled sources are licensed under, not copies of their licences.
+- Exact dependencies and checksums: `scripts/android-dependencies.json`. Licence texts for the bundled third-party code: `android/licenses/`. The Android implementation's own GPL-3.0 notice: `android/LICENSE`, and the provenance notes in `android/THIRD_PARTY.md`.
 
 The new Android implementation is provided under GPL-3.0; see `android/LICENSE`. Revenge and Xposed retain their own notices. The code does not imply endorsement by these projects.
 
