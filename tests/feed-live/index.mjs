@@ -51,6 +51,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,24 +120,65 @@ function feedFileName() {
   return "latest.yml";
 }
 
-/** The offer: this platform's own feed, one patch version newer, naming a real artifact. */
+/**
+ * The offer: this platform's own feed, one patch above the newest version in play, naming a real
+ * artifact.
+ *
+ * "Newest in play" and not "the feed's version", because `dist/` is not built as one set here:
+ * the channel file is written by the *installers* step and the unpacked app by `pack`, so a tree
+ * that was packed after a version bump carries a client newer than its own `latest.yml`. An offer
+ * equal to the running app is one electron-updater ignores *by design* (`isUpdateAvailable` is a
+ * strict compare), and the run would then report a stall instead of the loop it exists to prove.
+ * Taking the higher of the two - the channel file and the tree's own package.json, which is what
+ * the unpacked app was packed from - makes the offer strictly newer in either order.
+ */
 function offerFrom(feedPath) {
   const real = fs.readFileSync(feedPath, "utf8");
   const version = String(real.match(/^version:\s*(.+)$/m)?.[1] || "").trim();
   const artifact = String(real.match(/^path:\s*(.+)$/m)?.[1] || "").trim();
+  let tree = "";
+  try {
+    tree = String(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version || "").trim();
+  } catch {
+    /* no readable package.json: the channel file stands on its own */
+  }
   const [major, minor, patch] = version.split(".").map(Number);
   if (!version || [major, minor, patch].some((part) => Number.isNaN(part))) return { error: "its version is not readable (" + version + ")" };
   if (!artifact) return { error: "it names no artifact to download" };
-  return { real, artifact, version, offered: major + "." + minor + "." + (patch + 1) };
+  const [tmajor, tminor, tpatch] = tree.split(".").map(Number);
+  const treeIsNewer =
+    !Number.isNaN(tmajor) && !Number.isNaN(tminor) && !Number.isNaN(tpatch) && (tmajor > major || (tmajor === major && (tminor > minor || (tminor === minor && tpatch > patch))));
+  const base = treeIsNewer ? tree : version;
+  const [bmajor, bminor, bpatch] = base.split(".").map(Number);
+  return { real, artifact, version, tree, base, offered: bmajor + "." + bminor + "." + (bpatch + 1) };
 }
 
 /** Ask the running client the question its own settings page asks. */
 async function evaluate(wsUrl, expression) {
   const socket = new WebSocket(wsUrl);
   try {
+    // Bounded, because a handshake that neither opens nor errors would otherwise hold the
+    // polling loop past its deadline: the deadline is only read between iterations, so one
+    // unbounded await turns "nothing answered" into a hang, and a hang reported by the job as
+    // "skipped" is worse than a failure with a reason.
     await new Promise((resolve, reject) => {
-      socket.addEventListener("open", resolve, { once: true });
-      socket.addEventListener("error", () => reject(new Error("the debugging socket refused")), { once: true });
+      const timer = setTimeout(() => reject(new Error("the debugging socket did not open")), 6000);
+      socket.addEventListener(
+        "open",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+      socket.addEventListener(
+        "error",
+        () => {
+          clearTimeout(timer);
+          reject(new Error("the debugging socket refused"));
+        },
+        { once: true },
+      );
     });
     const reply = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("the page did not answer")), 15000);
@@ -160,8 +202,19 @@ async function evaluate(wsUrl, expression) {
   }
 }
 
+/** The port the client will be told to debug on, and nobody else's. */
+async function freePort() {
+  const probe = net.createServer();
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const port = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  return port;
+}
+
 async function pageTarget(debugPort) {
-  const res = await fetch("http://127.0.0.1:" + debugPort + "/json/list");
+  // bounded for the same reason as the socket below: a request that stalls must be retried,
+  // not waited on (a run killed mid-suite leaves a client behind that holds this port)
+  const res = await fetch("http://127.0.0.1:" + debugPort + "/json/list", { signal: AbortSignal.timeout(4000) });
   const list = await res.json();
   return (Array.isArray(list) ? list : []).find((row) => row.type === "page" && row.webSocketDebuggerUrl) || null;
 }
@@ -272,13 +325,16 @@ async function run() {
   }
 
   console.log("# driving " + path.relative(root, exe).split(path.sep).join("/"));
-  console.log("# " + feedName + " says " + offer.version + ", the offer says " + offer.offered + " (via " + offer.artifact + ")");
+  console.log("# " + feedName + " says " + offer.version + ", the tree says " + (offer.tree || "(unreadable)") + ", the offer says " + offer.offered + " (via " + offer.artifact + ")");
+  if (offer.base !== offer.version) say("the packed app is newer than its own " + feedName + " (the channel file is written by the installers and the app by `pack`), so the offer is built one patch above the app, not above the feed");
 
   const feed = offer.real.replace(/^version:\s*.+$/m, "version: " + offer.offered);
   const requests = [];
   const { server, port } = await startFeedServer(dist, feedName, feed, requests);
   const base = "http://127.0.0.1:" + port + "/";
-  const debugPort = Number(arg("port", "9411"));
+  // a free port rather than a fixed one: a client left behind by an interrupted run (or by the
+  // user's own) would otherwise answer for ours and the state read would be of another build
+  const debugPort = Number(arg("port", "0")) || (await freePort());
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-live-"));
   const lines = [];
 
