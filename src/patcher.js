@@ -218,7 +218,12 @@ export function listInstalls(opts = {}) {
       const resources = path.join(root, "resources");
       if (!looksLikeInstall(resources, exists)) continue;
       const id = /canary/i.test(root) ? "canary" : /ptb/i.test(root) ? "ptb" : "stable";
-      const channel = LINUX_CONFIG_CHANNELS.find((c) => c.id === id);
+      const channel = LINUX_CONFIG_CHANNELS.find((c) => c.id === id) || LINUX_CONFIG_CHANNELS[0];
+      // The binary inside the root when it is there, which is the rule the
+      // config-directory branch above already follows: a bare name is resolved through
+      // PATH, and a machine with more than one Discord would then start a different copy
+      // than the one that was just patched.
+      const binary = exists(path.join(root, "Discord")) ? path.join(root, "Discord") : channel.binary;
       out.push(
         makeInstall({
           channel: id,
@@ -226,8 +231,8 @@ export function listInstalls(opts = {}) {
           version: "",
           root,
           resources,
-          executable: channel.binary,
-          launchCommand: { cmd: channel.binary, args: [] },
+          executable: binary,
+          launchCommand: { cmd: binary, args: [] },
           exists,
         }),
       );
@@ -480,6 +485,14 @@ export function launch(install, opts = {}) {
   const present = opts.exists || defaultExists;
   if (path.isAbsolute(command.cmd) && !present(command.cmd)) {
     return { ok: false, error: "the Discord executable is not here: " + command.cmd };
+  }
+  // A macOS install is started by asking the Finder to open the bundle, so `open` is
+  // the command and the bundle travels as an argument: the command always exists and
+  // the thing that can be missing is the bundle. Started anyway, `open` resolves the
+  // name and can bring up a different copy of Discord than the one that was patched,
+  // so the bundle is checked the same way an absolute command is.
+  if (install.appBundle && !present(install.appBundle)) {
+    return { ok: false, error: "the Discord bundle is not here: " + install.appBundle };
   }
   try {
     const child = spawnImpl(command.cmd, command.args || [], { detached: true, stdio: "ignore", env: { ...process.env, ...(opts.env || {}) } });

@@ -3,7 +3,13 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { requireJava } from './support/toolchain.mjs';
+// The Java tools are resolved rather than named bare: CI has a JDK on PATH and a workstation
+// often has one only inside an IDE or under JAVA_HOME, where a bare `javac` fails with
+// spawnSync ENOENT - a fact about the machine that says nothing about the transport below.
+// See tests/support/toolchain.mjs; a machine with no JDK still fails, with that message.
 test('native HTTPS transport rejects redirects, wrong checksums, malformed UTF8, missing/oversized/truncated bodies', () => {
+  const tools = requireJava('javac', 'java');
   const dir = mkdtempSync(join(tmpdir(), 'assault-addon-transport-'));
   try {
     const source = join(dir, 'AddonTransferTest.java');
@@ -65,7 +71,7 @@ public class AddonTransferTest {
   if(timeouts.get()!=3)throw new AssertionError("successful upload deadline was not cancelled");
  }
 }`);
-    execFileSync('javac', ['-d', dir, resolve('android/loader/src/main/java/app/assault/loader/AddonTransfer.java'), source]);
-    execFileSync('java', ['-cp', dir, 'app.assault.loader.AddonTransferTest']);
+    execFileSync(tools.javac, ['-d', dir, resolve('android/loader/src/main/java/app/assault/loader/AddonTransfer.java'), source]);
+    execFileSync(tools.java, ['-cp', dir, 'app.assault.loader.AddonTransferTest']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

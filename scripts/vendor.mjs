@@ -142,7 +142,31 @@ const KEEP = [
   /Vendetta/,
   /fork of/i,
   /@equicord\//i,
+  // A badge, a donor list or a hall-of-fame entry belongs to the person wearing it. Renaming
+  // one would not be a rebrand, it would be a claim about somebody else's badge.
+  /Badge|Donor|Contribut|Translator/,
+  // The command user Discord registers this client's app commands against. It is an identity,
+  // not a title: renaming it leaves every command registered twice, once under a name that no
+  // longer answers.
+  /username:\s*"Equicord"/,
+  // The dev banner's own template variables, which are spelled with upstream's name
+  // ({equicordIcon}, {equicordVersion}) and are part of that plugin's documented vocabulary.
+  /\{equicord/,
 ];
+
+/**
+ * Files inside the renderer that name upstream as their *subject* rather than as a title:
+ * the badge and donor lists, the dev banner preset that is upstream's own template, and the
+ * platform tags that describe somebody else's client in a member list. What they say is true
+ * about the project they name, so the rebrand leaves them and the audit says why.
+ */
+const ATTRIBUTED = [
+  path.join("src", "equicordplugins", "showBadgesInChat"),
+  path.join("src", "plugins", "_api", "badges"),
+  path.join("src", "equicordplugins", "discordDevBanner"),
+  path.join("src", "plugins", "platformIndicators"),
+  path.join("src", "plugins", "xsOverlay"),
+].map((rel) => path.join(core, rel));
 
 // about.html is the About/credits page: its whole job is to name upstream, so the
 // only thing rebranded in it is the product heading, and it is exempt from the
@@ -194,7 +218,16 @@ function rebrandText(text) {
 // Only source and page files are eligible. LICENSE, LICENSE.md, README.md and the
 // rest of the upstream documentation are never opened, which is what keeps the
 // GPL attribution intact by construction as well as by audit.
-const ELIGIBLE = [path.join(core, "package.json"), ...walk(path.join(core, "src", "main"))];
+//
+// The client's own chrome is eligible too, and not only the desktop half: the settings section
+// that says "Equicord Settings" is drawn by the *renderer*, so a rebrand that stopped at
+// src/main left the one heading a person actually sees wearing upstream's name. What is
+// excluded is the handful of files above, which name upstream as their subject, and the
+// documentation, which is upstream's own text about upstream.
+const ELIGIBLE = [
+  path.join(core, "package.json"),
+  ...new Set(walk(path.join(core, "src")).filter((file) => !ATTRIBUTED.some((dir) => file.startsWith(dir + path.sep)))),
+];
 
 let rewritten = 0;
 let hits = 0;
@@ -237,8 +270,8 @@ if (!problems) {
       left.push(path.relative(root, file).split(path.sep).join("/") + ": " + line.trim().slice(0, 120));
     }
   }
-  log("rebrand audit: " + kept + " line(s) keep naming upstream on purpose (links, credits, licence, data paths, identifiers)");
-  log("rebrand audit: " + ELIGIBLE.length + " file(s) under src/main + package.json checked for display strings");
+  log("rebrand audit: " + kept + " line(s) keep naming upstream on purpose (links, credits, licence, data paths, identifiers, badges)");
+  log("rebrand audit: " + ELIGIBLE.length + " file(s) of the client's own source checked for display strings");
   for (const line of left.slice(0, 12)) fail("a display string still says Equicord - " + line);
   if (left.length > 12) fail("...and " + (left.length - 12) + " more");
 
@@ -276,7 +309,7 @@ const SET = { name: "Hyper", description: "the Hypercord set, on by default" };
 
 // Only these are on the first time: everything else in the catalogue is one
 // click away, present and discoverable, and costs nothing while it is off.
-const HYPER_ON = new Set(["hyperBridge", "hyperAccounts", "hyperPanes", "hypercordRPC"]);
+const HYPER_ON = new Set(["hyperBridge", "hyperAccounts", "hyperPanes", "hypercordRPC", "hyperBeef"]);
 
 // Upstream writes `authors: [Devs.Ven, Devs.AutumnVN]`, so the names live in the
 // Devs map rather than in the plugin. Resolve them there, and keep the raw
@@ -321,21 +354,40 @@ function metaOf(pluginDir) {
       if (known && !authors.includes(known.name)) authors.push(known.name);
     }
   }
+  // Upstream declares its own categories as `tags: ["Privacy", "Utility"]`, and they are
+  // the whole reason a browser of hundreds of plugins is navigable: the tag a plugin
+  // carried upstream is the tag somebody looking for it searches by, so it is copied
+  // rather than guessed. Our own plugins declare no tags, and are given the one category
+  // that is ours to give.
+  const tags = [];
+  const tagBlock = /tags:\s*\[([^\]]*)\]/.exec(src);
+  if (tagBlock) {
+    for (const hit of tagBlock[1].matchAll(/"([^"]+)"/g)) tags.push(hit[1]);
+  }
+  // The plugin's own name, which is the name the runtime keys it by, and upstream's rule is that
+  // it is the first property of the definePlugin call. Taking the first `name:` anywhere in the
+  // file instead picked up a nested setting's label for nine plugins - "Picture library" for
+  // betterImageEditor, "Clyde" for voiceJoinMessages, "Discord" for webPWA - which is a card
+  // titled with the wrong thing and a switch handed to the runtime under a name it does not read.
+  const at = src.indexOf("definePlugin({");
+  const declared = at === -1 ? "" : (/name:\s*"([^"]+)"/.exec(src.slice(at, at + 500)) || [])[1] || "";
   const id = path.basename(pluginDir);
-  const name = pick("name") || id;
+  const name = declared || pick("name") || id;
+  const source = id.startsWith("hyper") ? "hypercord" : "upstream";
   return {
     id,
     name,
     description: pick("description"),
     authors,
     authorRefs,
+    tags: tags.length ? tags : source === "hypercord" ? ["Hyper"] : [],
     version: "",
     entry: path.relative(root, entry).split(path.sep).join("/"),
     built: false,
     builtin: true,
     deps: [],
     defaultOn: HYPER_ON.has(id),
-    source: id.startsWith("hyper") ? "hypercord" : "upstream",
+    source,
     defaultOnSet: HYPER_ON.has(id) ? SET.name : "",
   };
 }
@@ -385,10 +437,64 @@ function themeSection(entries) {
       { id: "online", description: "a theme fetched once, at the moment it is installed, then read from disk - never on a timer" },
       { id: "quick", description: "one quick-CSS string edited in the manager window" },
     ],
-    refuses: ["</style>", "<script", "@import", "javascript:", "expression(", "behavior:"],
+    refuses: ["</style>", "<script", "an @import that is not an allow-listed https url", "javascript:", "expression(", "behavior:"],
     vendored,
     themePlugins,
   };
+}
+
+/**
+ * Compare the catalogue this tree describes with the one committed beside it.
+ *
+ * A check that only counted entries is what let the file drift: the committed
+ * catalogue was missing a plugin the tree has and carried a stale description for
+ * another, and nothing said so, because a count does not notice either. Failures name
+ * the ids and the fix, since "the catalogue is out of date" is not something a person
+ * can act on. `generatedAt` and the two provenance commits are the only fields left
+ * out: they record when and where this ran, and nothing else depends on them.
+ */
+function compareCatalogue(generated) {
+  const file = path.join(root, "plugins", "manifest.json");
+  let committed = null;
+  try {
+    committed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    committed = null;
+  }
+  if (!committed) {
+    fail("plugins/manifest.json is missing or unreadable - run `npm run vendor`");
+    return;
+  }
+  const stable = (manifest) => {
+    const copy = { ...manifest };
+    delete copy.generatedAt;
+    if (copy.provenance && typeof copy.provenance === "object") {
+      copy.provenance = { core: copy.provenance.core, merged: copy.provenance.merged };
+    }
+    return copy;
+  };
+  if (JSON.stringify(stable(committed)) === JSON.stringify(stable(generated))) {
+    log("catalogue: the committed manifest matches this tree");
+    return;
+  }
+  const before = problems;
+  const byId = (manifest) => new Map((manifest.plugins || []).map((p) => [String((p && p.id) || ""), p]));
+  const shipped = byId(committed);
+  const tree = byId(generated);
+  for (const [id, entry] of tree) {
+    if (!shipped.has(id)) fail("plugins/manifest.json is missing " + id + " - run `npm run vendor`");
+    else if (JSON.stringify(shipped.get(id)) !== JSON.stringify(entry)) fail("plugins/manifest.json has stale metadata for " + id + " - run `npm run vendor`");
+  }
+  for (const id of shipped.keys()) {
+    if (!tree.has(id)) fail("plugins/manifest.json lists " + id + ", which this tree does not describe - run `npm run vendor`");
+  }
+  if (JSON.stringify(stable(committed).defaults) !== JSON.stringify(stable(generated).defaults)) {
+    fail("plugins/manifest.json has a stale default set - run `npm run vendor`");
+  }
+  if (JSON.stringify(stable(committed).themes) !== JSON.stringify(stable(generated).themes)) {
+    fail("plugins/manifest.json has a stale themes section - run `npm run vendor`");
+  }
+  if (problems === before) fail("plugins/manifest.json differs from this tree - run `npm run vendor`");
 }
 
 if (!problems) {
@@ -425,6 +531,10 @@ if (!problems) {
   log("catalogue: " + manifest.plugins.length + " plugin(s), " + on + " on by default");
   if (!manifest.plugins.length) fail("the catalogue came out empty - is vendor/equicord cloned?");
   if (on > 6) fail("more than six plugins default on - that is not the Hypercord set");
+  // The catalogue is the artifact everything reads (the plugin host, the Plugins
+  // page), so the check compares it rather than trusting it to have been regenerated
+  // when a plugin was added or renamed.
+  if (checkOnly) compareCatalogue(manifest);
 }
 
 console.log("");

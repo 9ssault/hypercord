@@ -200,6 +200,44 @@ fs.writeFileSync(storeFile, "{ this is not json");
 ok("a corrupt store reads as empty instead of throwing", store.list().length === 0 && store.get("selftest") === "");
 ok("and it can be written again", store.put("selftest", TOKEN_A).ok === true && store.get("selftest") === TOKEN_A);
 
+/* ---- 12. the identity and the label a page shows ------------------------ */
+
+// The Accounts page shows a name and an avatar next to every stored key, so the store has
+// to carry both - and the two rules that matter are that the identity is public data (it
+// never goes through the cipher, unlike the token it belongs to) and that a re-store or a
+// rename cannot quietly lose it.
+const IDENTITY = {
+  id: "123456789012345678",
+  username: "lycia",
+  name: "Lycia",
+  avatar: "https://cdn.discordapp.com/avatars/123456789012345678/abc.png?size=64",
+};
+store.put("selftest", TOKEN_A, { label: "main", identity: IDENTITY });
+const withIdentity = (store.list() || [])[0] || {};
+ok("a stored key carries the identity it was stored with", JSON.stringify(withIdentity.identity) === JSON.stringify(IDENTITY), JSON.stringify(withIdentity.identity));
+ok("the identity is written to the file, and the key still is not", onDisk().includes("cdn.discordapp.com") && !onDisk().includes("AbCdEfGhIjKlMnOpQrStUvWxYz"), "");
+
+store.put("selftest", TOKEN_A, {});
+ok("re-storing the same key keeps what was known about the account", ((store.list() || [])[0] || {}).identity.id === IDENTITY.id, JSON.stringify(((store.list() || [])[0] || {}).identity));
+const relabelledAgain = store.put("selftest", TOKEN_A, { label: "backup" });
+ok("and a label can be given with it", relabelledAgain.ok === true && ((store.list() || [])[0] || {}).label === "backup", JSON.stringify(relabelledAgain));
+
+const renamed = store.rename("selftest", "the alt");
+ok("renaming changes the label and nothing else", renamed.ok === true && renamed.label === "the alt" && ((store.list() || [])[0] || {}).label === "the alt", JSON.stringify(renamed));
+ok("and the key behind it is untouched", store.get("selftest") === TOKEN_A);
+const clearedLabel = store.rename("selftest", "   ");
+ok("an empty rename clears the label rather than storing whitespace", clearedLabel.ok === true && clearedLabel.label === "" && ((store.list() || [])[0] || {}).label === "", JSON.stringify(clearedLabel));
+ok("renaming an account that is not stored is a refusal", store.rename("nobody", "x").ok === false, JSON.stringify(store.rename("nobody", "x")));
+
+const learned = store.setIdentity("selftest", { id: "5", username: "someone" });
+ok("an identity can be learned later, which is what testing a key does", learned.ok === true, JSON.stringify(learned));
+const afterLearn = ((store.list() || [])[0] || {}).identity || {};
+ok("and it is normalized to the four fields", afterLearn.id === "5" && afterLearn.username === "someone" && afterLearn.name === "" && afterLearn.avatar === "", JSON.stringify(afterLearn));
+ok("the name and avatar it already had are replaced only when one is given", store.setIdentity("selftest", IDENTITY).ok === true && ((store.list() || [])[0] || {}).identity.avatar === IDENTITY.avatar, "");
+ok("an identity for an account that is not stored is refused", store.setIdentity("nobody", IDENTITY).ok === false, JSON.stringify(store.setIdentity("nobody", IDENTITY)));
+ok("and an identity that is not plain data is refused", store.setIdentity("selftest", "not an object").ok === false, JSON.stringify(store.setIdentity("selftest", "not an object")));
+ok("the store is back to the one key these checks are about", store.size() === 1 && store.get("selftest") === TOKEN_A, JSON.stringify({ size: store.size() }));
+
 /* ---- 11. the temp file is not left behind ------------------------------- */
 
 ok("no .tmp file is left next to the store", !fs.existsSync(storeFile + ".tmp"));

@@ -50,6 +50,7 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
                             try(Writer out=new OutputStreamWriter(new FileOutputStream(globals),java.nio.charset.StandardCharsets.UTF_8)) { out.write("globalThis.__PYON_LOADER__="+Appearance.identity()+";globalThis.__ASSAULT_CONFIG__="+config+";"); }
                             XposedBridge.invokeOriginalMethod(file,call.thisObject,new Object[]{globals.getPath(),globals.getPath(),call.args[2]});
                             var resources=XModuleResources.createInstance(modulePath,null);
+                            loadOptionalAddons(assets,call.thisObject,resources.getAssets(),call.args[2]);
                             XposedBridge.invokeOriginalMethod(assets,call.thisObject,new Object[]{resources.getAssets(),"assets://assault-runtime.js",call.args[2]});
                             for(String script:new String[]{"rich-presence.js","account-controls.js","history-export.js", "html-export.js","assault.js"})
                                 XposedBridge.invokeOriginalMethod(assets,call.thisObject,new Object[]{resources.getAssets(),"assets://"+script,call.args[2]});
@@ -90,6 +91,30 @@ public final class AssaultLoader implements IXposedHookLoadPackage, IXposedHookZ
             }
         });
     }
+    /**
+     * The addon bundle, loaded on its own so that it cannot take the client with it.
+     *
+     * `assets://addons.js` is what builds the Addons, Themes and Code-runner screens and none
+     * of the client's existing behaviour depends on it: a client whose addon bundle failed to
+     * evaluate still has everything the runtime itself provides. The runtime scripts below are
+     * therefore loaded after this, in their own call, and a failure here is reported as exactly
+     * that - a sentence naming the addon screens, on the controls panel, with the error in the
+     * log - instead of being reported as a failed injection of the runtime itself. That
+     * distinction is the difference between "enable safe mode" and "update the manager and
+     * prepare the client again", and it is only available while the two loads are separate.
+     *
+     * It was dropped when the client was ported in and restored here: without this call the
+     * addon screens were never loaded at all - the asset was shipped and never evaluated - and
+     * a broken addon bundle was indistinguishable from a broken runtime.
+     */
+    private void loadOptionalAddons(Method assets,Object instance,AssetManager resources,Object synchronous) {
+        try { XposedBridge.invokeOriginalMethod(assets,instance,new Object[]{resources,"assets://addons.js",synchronous}); }
+        catch(Throwable error) {
+            failure="Addon screens could not load. Existing runtime features remain available; update Hypercord Manager and prepare the client again.";
+            XposedBridge.log(error);
+        }
+    }
+
     private static void hookCallback(Class<?> type,String name,Class<?>[] args,XC_MethodHook hook) {
         while(type!=null) {
             try{XposedBridge.hookMethod(type.getDeclaredMethod(name,args),hook);return;}

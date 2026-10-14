@@ -3,9 +3,15 @@ import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, delimiter } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { requireJava } from './support/toolchain.mjs';
 test('client manifest query rewrite preserves existing package visibility and app attributes', () => {
   const dir = mkdtempSync(join(tmpdir(), 'assault-script-visibility-'));
   try {
+    // The Java tools are resolved rather than named bare, so a machine whose JDK is not on PATH
+    // can still run this check; a missing toolchain is a refusal that names what is missing, never
+    // a silent pass (see tests/support/toolchain.mjs, and the `python3` resolution in
+    // tests/manifest-resources.test.mjs for the same reasoning).
+    const tools = requireJava('javac', 'java');
     const source = readFileSync('android/manager/src/main/java/org/lsposed/patch/ApkPatcher.java', 'utf8');
     const start = source.indexOf('        pxb.android.axml.AxmlWriter writer =');
     const finish = source.indexOf('        return writer.toByteArray();', start) + '        return writer.toByteArray();'.length;
@@ -41,7 +47,7 @@ public class VisibilityTest {
  }
 }`);
     const dependency = resolve('android/deps/lspatch.jar');
-    execFileSync('javac', ['-cp', dependency, '-d', dir, join(dir, 'VisibilityTest.java')]);
-    execFileSync('java', ['-cp', [dir, dependency].join(delimiter), 'VisibilityTest']);
+    execFileSync(tools.javac, ['-cp', dependency, '-d', dir, join(dir, 'VisibilityTest.java')]);
+    execFileSync(tools.java, ['-cp', [dir, dependency].join(delimiter), 'VisibilityTest']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

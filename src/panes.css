@@ -19,10 +19,11 @@
  * There is no window here. The sheet is a page *inside* Discord's settings: its
  * section list is Discord's own sidebar (src/preload.cjs adds one entry per section),
  * its geometry is Discord's settings content column (the four `--hc-panes-*` numbers
- * the preload measures), and it paints no surface of its own - Discord's column is
- * already behind it, and a second background on top of it is what makes a page look
- * like a panel someone dropped on the client. A page opened without that measurement
- * has no size at all, so nothing of ours can ever be drawn over the client.
+ * the preload measures), and it paints that column's own surface - the same
+ * `--background-primary` Discord paints it with - so a Hypercord page reads as the
+ * settings page it stands in for, with nothing of Discord's other pages showing
+ * through the text. A page opened without that measurement has no size at all and is
+ * never shown, so nothing of ours can be drawn over the client.
 
  * Nothing here is animated on a timer and nothing outside `#hypercord-panes` is touched.
  */
@@ -39,13 +40,24 @@
   z-index: 2147483000;
   display: none;
   flex-direction: column;
-  /* Discord's own type, inherited rather than named: a named stack is how a page ends up
-     in a different font from the settings it sits in. */
-  font: inherit;
+  /* Discord's own type, out of Discord's own variable. Named rather than inherited, and
+     that is the whole of a bug worth remembering: this sheet is attached to the document
+     element, which is *above* the element Discord types (`body`), so `font: inherit`
+     inherited the browser's default and every page was drawn in Times New Roman while
+     the settings around it were in gg sans - the page looked like somebody else's UI.
+     The variable is read rather than the stack written out, so a theme that changes the
+     client's own font changes this page with it, and the stack after the comma is only
+     for a release that renames the variable. */
+  font-family: var(--font-primary, "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif);
   font-size: 14px;
   line-height: 1.375;
   text-align: left;
-  background: none;
+  /* Discord's own settings surface, not nothing. This is the column our page *is*:
+     without a background the settings page underneath shows through the text, which
+     reads as a broken overlay rather than a section of settings. The fallback is
+     Discord's own dark surface, so a release that renames the variable still paints
+     something and the page never becomes transparent again. */
+  background: var(--background-primary, #313338);
   color: var(--hc-text, var(--text-normal, #dbdee1));
   overflow-y: auto;
 }
@@ -99,6 +111,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* a page area, so a plugin's own page can cover it without covering the status
+     line above it - which is where a field reports that it was saved */
+  position: relative;
 }
 
 /* ---- a page in Discord's settings ---------------------------------------- */
@@ -199,6 +214,16 @@
   margin-top: 4px;
 }
 
+/* Renaming an account is the same shape as replacing a key, and it is put in the card's
+   own column rather than beside the buttons: the width of the settings column is all a
+   name needs, and the row's buttons do not move when the field opens. */
+#hypercord-panes .token-rename {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
 #hypercord-panes textarea {
   width: 100%;
   resize: vertical;
@@ -243,8 +268,360 @@
   cursor: not-allowed;
 }
 
+/* ---- the plugin browser: a grid of cards --------------------------------- */
+
+/* The filter row: the search box takes the room it needs, everything else sits
+   beside it on one line, which is the shape a browser of hundreds of things wants -
+   search first, the rest out of the way. One track per control is what keeps them on
+   that one line: an unstyled count of children would drop the last one onto a row of
+   its own, and the plugin row carries four (search, filter, Refresh, Restart). */
+#hypercord-panes .filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+#hypercord-panes #hp-pluginFilters {
+  grid-template-columns: minmax(160px, 1fr) auto auto auto;
+}
+
+/* Discord's own select, in Discord's own fill and radius */
+#hypercord-panes select,
+#hypercord-panes .select {
+  background: var(--hc-bg-input, var(--input-background, var(--background-tertiary, #1e1f22)));
+  color: var(--hc-text, var(--text-normal, #dbdee1));
+  border: 1px solid var(--hc-border, var(--input-border, transparent));
+  border-radius: 3px;
+  padding: 8px 10px;
+  font: inherit;
+  max-width: 220px;
+}
+
+/* The category row: the categories the plugins themselves carry, as chips, the busiest
+   first. A browser of hundreds is narrowed by what a plugin is as often as by its name. */
+#hypercord-panes .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#hypercord-panes .chip {
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+#hypercord-panes .chip:hover {
+  background: var(--hc-bg-raised, var(--background-modifier-hover, rgba(78, 80, 88, 0.16)));
+  color: var(--hc-text, var(--text-normal, #dbdee1));
+}
+
+/* the chip that is on, and the button rule above it is an attribute selector more
+   specific than a bare class - hence button.chip.on and not .chip.on */
+#hypercord-panes button.chip.on {
+  background: var(--hc-accent, var(--brand-experiment, #5865f2));
+  color: var(--hc-on-accent, var(--white-500, #ffffff));
+}
+
+/* ---- the runtime's own pages -------------------------------------------- */
+
+/* Where the vendored runtime draws its own plugin and theme browser, when this window has
+   one (`hp-runtimePlugins`, `hp-runtimeThemes`; src/panes.js mounts it). Nothing is styled
+   here on purpose: the tab brings its own markup and its own stylesheet, and the only thing
+   this page owes it is the room the view's padding already gives it - a page padded by both
+   would sit a second indent inside the column Discord lays out. So this block is the
+   container, not the styling: it exists to say that the empty div in src/panes.html is a
+   mount point rather than something to be hidden, and to keep the grid it replaces from
+   being drawn underneath it. */
+#hypercord-panes .runtime-browser {
+  display: block;
+  min-width: 0;
+}
+
+/* Cards wide enough to read, in as many columns as the settings column fits. The
+   grid is the page: a search that matches three plugins shows three cards rather
+   than three rows in a list of hundreds. */
+#hypercord-panes .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  align-content: start;
+  margin-top: 4px;
+}
+
+#hypercord-panes .addon {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--hc-border, var(--border-subtle, var(--background-modifier-accent, rgba(78, 80, 88, 0.48))));
+  border-radius: 8px;
+  background: var(--hc-bg-raised, var(--card-background-default, var(--background-secondary, #2b2d31)));
+  transition: background 0.1s ease-out, border-color 0.1s ease-out;
+}
+
+#hypercord-panes .addon:hover {
+  background: var(--hc-bg-input, var(--background-modifier-hover, rgba(78, 80, 88, 0.16)));
+  border-color: var(--hc-accent, var(--brand-experiment, #5865f2));
+}
+
+#hypercord-panes .addon-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+#hypercord-panes .addon-who {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#hypercord-panes .addon-name-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* The name is the way into a plugin's settings, so it is a button - and it is drawn
+   as the name it is rather than as a button wearing a name. */
+#hypercord-panes .addon-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes button.addon-name:hover {
+  text-decoration: underline;
+}
+
+#hypercord-panes .addon-meta,
+#hypercord-panes .addon-note {
+  margin: 0;
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .addon-tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* the small icon buttons on a card: the cog that opens a plugin's settings, and
+   whatever a theme keeps there */
+#hypercord-panes .icon-button {
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+#hypercord-panes .icon-button:hover {
+  background: var(--hc-bg-input, var(--background-modifier-hover, rgba(78, 80, 88, 0.16)));
+  color: var(--hc-text, var(--interactive-icon-active, #f2f3f5));
+}
+
+#hypercord-panes .icon-button.cog {
+  font-size: 16px;
+}
+
+/* The switch, in the client's own shape: a grey pill with the knob on the left when
+   it is off, the brand colour with the knob on the right when it is on. The pill is
+   the whole control, so nothing about it depends on where inside it was pressed. */
+#hypercord-panes .switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--hc-bg-input, var(--switch-background, var(--background-tertiary, #80848e)));
+  cursor: pointer;
+  transition: background 0.15s ease-out;
+}
+
+#hypercord-panes .switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--hc-on-accent, #ffffff);
+  transition: transform 0.15s ease-out;
+}
+
+#hypercord-panes .switch.on {
+  background: var(--hc-good, var(--green-360, var(--text-positive, #23a55a)));
+}
+
+#hypercord-panes .switch.on .knob {
+  transform: translateX(16px);
+}
+
+#hypercord-panes .switch[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The button rule above paints every button the brand colour, and it is one
+   attribute selector more specific than a bare class. These are the three buttons
+   that are not primary ones: the switch, the name, and the icon buttons. */
+#hypercord-panes button.switch {
+  background: var(--hc-bg-input, var(--switch-background, var(--background-tertiary, #80848e)));
+}
+
+#hypercord-panes button.switch.on {
+  background: var(--hc-good, var(--green-360, var(--text-positive, #23a55a)));
+}
+
+#hypercord-panes button.icon-button,
+#hypercord-panes button.addon-name {
+  background: none;
+}
+
+#hypercord-panes button.icon-button:hover {
+  background: var(--hc-bg-input, var(--background-modifier-hover, rgba(78, 80, 88, 0.16)));
+}
+
+/* ---- one plugin's page ---------------------------------------------------- */
+
+/* It covers the page area while it is up: the grid it was opened from is still
+   behind it, so Back is a reload of the same list rather than a navigation - and
+   the status line stays above it, because that is where a saved field reports
+   itself. */
+#hypercord-panes #hp-pluginDetail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 20px 40px 60px;
+  background: var(--background-primary, #313338);
+}
+
+#hypercord-panes .detail-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+#hypercord-panes .detail-head .back {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--hc-bg-input, var(--button-secondary-background, #4e5058));
+  color: var(--hc-text, var(--white-500, #ffffff));
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#hypercord-panes .detail-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .detail-state {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* One setting: the words on one side, the control on the other, and a hairline
+   between two of them - the row the client uses for its own settings, which is what
+   makes a page of a plugin's settings readable at a glance. */
+#hypercord-panes .settings-form .setting {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hc-border, var(--background-modifier-accent, rgba(78, 80, 88, 0.48)));
+}
+
+#hypercord-panes .settings-form .setting:last-child {
+  border-bottom: 0;
+}
+
+#hypercord-panes .setting-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#hypercord-panes .setting-label {
+  display: block;
+  font-weight: 600;
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
+}
+
+#hypercord-panes .setting-note {
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+#hypercord-panes .setting-control {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#hypercord-panes .setting-control input[type="text"] {
+  flex: 0 0 auto;
+  min-width: 140px;
+  max-width: 240px;
+}
+
+#hypercord-panes .slider {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#hypercord-panes .slider input[type="range"] {
+  width: 160px;
+  accent-color: var(--hc-accent, var(--brand-experiment, #5865f2));
+}
+
+#hypercord-panes .slider-value {
+  min-width: 2.5em;
+  text-align: right;
+  color: var(--hc-text-muted, var(--text-muted, #949ba4));
+  font-variant-numeric: tabular-nums;
+}
+
 /* Discord does not box a list of settings: it stacks rows and separates them with a
-   hairline, so that is what a list of plugins, keys or accounts is here. */
+   hairline, so that is what a list of keys or accounts is here. */
 #hypercord-panes .list {
   flex: 1 1 auto;
   min-height: 0;
@@ -296,6 +673,26 @@
   color: var(--hc-text-faint, var(--text-muted, #949ba4));
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+/* An account's avatar, when the row has one. It is fixed and round, so a row with a
+   picture and a row without are the same height and a list of accounts does not jump
+   about as identities are learned - the fill behind it covers the moment before a slow
+   image arrives, so the row never looks broken while it is fetching. */
+/* A picture that did not arrive is taken out of the layout rather than left as the browser's
+   broken-image placeholder: the card keeps its name and its actions, and the gap that is left
+   is the gap a card with no picture has. See the error handler in src/panes.js. */
+#hypercord-panes .card-avatar-gone {
+  display: none;
+}
+
+#hypercord-panes .card-avatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
 }
 
 #hypercord-panes .card-actions {
@@ -362,20 +759,6 @@
   flex: 0 0 auto;
 }
 
-/* The settings drawer belongs to the sheet, not to one page: both plugin pages open it,
-   so it sits beside whichever page is showing rather than inside it. In Discord's
-   settings it becomes the right-hand column Discord itself uses for a page's details. */
-#hypercord-panes #hp-pluginSettings {
-  flex: 0 0 320px;
-  max-width: 45%;
-  border: 0;
-  border-left: 1px solid var(--hc-border, var(--background-modifier-accent, #3f4147));
-  border-radius: 0;
-  overflow-y: auto;
-  margin: 0;
-  padding: 14px 0 14px 16px;
-}
-
 #hypercord-panes .settings-form {
   display: flex;
   flex-direction: column;
@@ -405,4 +788,91 @@
 #hypercord-panes .field .note {
   color: var(--hc-text-faint, var(--text-muted, #949ba4));
   font-size: 12px;
+}
+
+/* ---- the quick account switcher ------------------------------------------- */
+
+/* A row of faces at the top of the Accounts page: the page's whole reason for existing
+   is one click wide, and the row scrolls sideways rather than wrapping, so ten accounts
+   cannot push the page about. The strip is only in the document while there is an
+   account to switch to, so nothing here has an empty state to style. */
+#hypercord-panes .account-switcher {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0 4px;
+}
+
+#hypercord-panes .account-chip {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
+  color: var(--hc-text, var(--header-primary, #f2f3f5));
+  cursor: pointer;
+}
+
+/* The rule that paints every button the brand colour is one attribute selector more
+   specific than a bare class, so the chip is named the same way the switch is. */
+#hypercord-panes button.account-chip {
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
+}
+
+#hypercord-panes .account-chip:hover {
+  border-color: var(--hc-accent, var(--brand-experiment, #5865f2));
+}
+
+/* The picture and the letter take the same slot: a row of accounts with and without
+   avatars is one even line rather than a ragged one, and an account nothing has checked
+   is not an empty circle where a face should be. */
+#hypercord-panes .account-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--hc-bg-input, var(--background-secondary-alt, #232428));
+}
+
+#hypercord-panes .account-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* The account this client is signed in as: a ring *and* a tick, so it is not marked by
+   colour alone. It stays a button - disabling it would take it out of the tab order for
+   no gain - and its click does nothing. */
+#hypercord-panes .account-chip.current {
+  border-color: var(--hc-good, var(--text-positive, #23a55a));
+}
+
+#hypercord-panes .account-tick {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--hc-good, var(--text-positive, #23a55a));
+  color: var(--hc-on-accent, var(--white-500, #fff));
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Keyboard-reachable on its own ring, in the client's own focus colour: the sheet is
+   navigated by tabbing, and a face with no visible focus is a face nobody can press. */
+#hypercord-panes .account-chip:focus-visible {
+  outline: 2px solid var(--hc-accent, var(--brand-experiment, #5865f2));
+  outline-offset: 2px;
 }

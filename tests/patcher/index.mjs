@@ -104,12 +104,25 @@ const linux = makeInstall("linux-cfg");
 ok("linux discovery finds a config-layout install", linux.found.ok === true, JSON.stringify(linux.found.error));
 ok("linux discovery reads the version out of app-<version>", linux.found.ok && linux.found.install.version === "1.0.136", linux.found.install && linux.found.install.version);
 ok("linux discovery hands over the binary", linux.found.ok && linux.found.install.executable === path.join(path.dirname(linux.resources), "Discord"), linux.found.install && linux.found.install.executable);
+ok("linux starts the exact binary inside the install it patched", linux.found.ok && linux.found.install.launchCommand.cmd === linux.found.install.executable && path.isAbsolute(linux.found.install.launchCommand.cmd), JSON.stringify(linux.found.install && linux.found.install.launchCommand));
 
 const pkgRoot = path.join(root, "pkgroot", "discord");
 fs.mkdirSync(path.join(pkgRoot, "resources"), { recursive: true });
 fs.writeFileSync(path.join(pkgRoot, "resources", "app.asar"), ENTRY_BYTES);
+// the deb/tar layout keeps the binary beside `resources`, which is the one that has
+// to be started: a bare `discord` goes through PATH and can be another copy entirely
+fs.writeFileSync(path.join(pkgRoot, "Discord"), "not really a binary");
 const pkg = findDiscord({ platform: "linux", env: { XDG_CONFIG_HOME: path.join(root, "empty-cfg") }, home: root, packageRoots: [pkgRoot], flatpakFiles: [] });
 ok("a package-managed install is found too", pkg.ok === true && pkg.install.root === pkgRoot, JSON.stringify(pkg.error));
+ok("and it starts the binary in its own root rather than whatever PATH resolves", pkg.ok && pkg.install.launchCommand.cmd === path.join(pkgRoot, "Discord"), JSON.stringify(pkg.install && pkg.install.launchCommand));
+
+// the same rule the other way round: with no binary in the root, the documented name
+// is what is left, because refusing to start is worse than the shell resolving it
+const bareRoot = path.join(root, "pkgroot-bare", "discord");
+fs.mkdirSync(path.join(bareRoot, "resources"), { recursive: true });
+fs.writeFileSync(path.join(bareRoot, "resources", "app.asar"), ENTRY_BYTES);
+const bare = findDiscord({ platform: "linux", env: { XDG_CONFIG_HOME: path.join(root, "empty-cfg") }, home: root, packageRoots: [bareRoot], flatpakFiles: [] });
+ok("with no binary beside the resources it falls back to the command name", bare.ok && bare.install.launchCommand.cmd === "discord", JSON.stringify(bare.install && bare.install.launchCommand));
 
 const flatpakApp = path.join(root, "flatpak", "com.discordapp.Discord");
 const flatpakResources = path.join(flatpakApp, "current", "active", "files", "discord", "resources");
@@ -119,6 +132,7 @@ const flatpakOptions = { platform: "linux", env: { XDG_CONFIG_HOME: path.join(ro
 const flat = findDiscord(flatpakOptions);
 ok("a flatpak deployment is found", flat.ok === true && flat.install.root === path.join(flatpakApp, "current", "active", "files", "discord"), JSON.stringify(flat.error));
 ok("flatpak is started through flatpak run", flat.ok && flat.install.launchCommand.cmd === "flatpak" && flat.install.launchCommand.args[1] === "com.discordapp.Discord", JSON.stringify(flat.install && flat.install.launchCommand));
+ok("and its resources are the deployment's own directory", flat.ok && flat.install.resources === flatpakResources, flat.install && flat.install.resources);
 
 const macResources = path.join(root, "Applications", "Discord.app", "Contents", "Resources");
 fs.mkdirSync(macResources, { recursive: true });
@@ -128,6 +142,19 @@ const mac = findDiscord({ platform: "darwin", env: {}, home: root, appBases: [pa
 ok("macos discovery reads the bundle", mac.ok === true && /Discord\.app$/.test(mac.install.appBundle), JSON.stringify(mac.error));
 ok("macos discovery reads the version from the plist", mac.ok && mac.install.version === "1.2.3", mac.install && mac.install.version);
 ok("macos installs are started with open -a", mac.ok && mac.install.launchCommand.cmd === "open" && mac.install.launchCommand.args[0] === "-a", JSON.stringify(mac.install && mac.install.launchCommand));
+ok("macos hands over the bundle's own resources directory", mac.ok && mac.install.resources === macResources && mac.install.root === path.join(root, "Applications", "Discord.app"), mac.install && mac.install.resources);
+ok("and starts that exact bundle, not one the Finder resolves by name", mac.ok && mac.install.launchCommand.args[1] === mac.install.appBundle && path.isAbsolute(mac.install.appBundle), JSON.stringify(mac.install && mac.install.launchCommand.args));
+
+// A second channel on macOS is a second bundle, and the same order decides between
+// them as on Windows. The bundle name *is* the channel, so getting this wrong would
+// mean patching PTB and starting stable.
+const macPtbResources = path.join(root, "Applications", "Discord PTB.app", "Contents", "Resources");
+fs.mkdirSync(macPtbResources, { recursive: true });
+fs.writeFileSync(path.join(macPtbResources, "app.asar"), ENTRY_BYTES_OLD);
+fs.writeFileSync(path.join(root, "Applications", "Discord PTB.app", "Contents", "Info.plist"), "<key>CFBundleShortVersionString</key><string>1.2.2</string>");
+const macBoth = findDiscord({ platform: "darwin", env: {}, home: root, appBases: [path.join(root, "Applications")] });
+ok("macos lists every bundle it found", macBoth.installs.length === 2 && macBoth.installs.map((one) => one.channel).join(",") === "stable,ptb", JSON.stringify(macBoth.installs.map((one) => one.channel)));
+ok("and stable is the one it would patch", macBoth.ok && macBoth.install.channel === "stable" && macBoth.install.version === "1.2.3", macBoth.install && macBoth.install.channel);
 
 const none = findDiscord({ platform: "linux", env: { XDG_CONFIG_HOME: path.join(root, "nothing") }, home: root, packageRoots: [], flatpakFiles: [] });
 ok("no install reports a reason instead of throwing", none.ok === false && none.error.length > 0, JSON.stringify(none.error));
@@ -201,6 +228,65 @@ const failedPatch = patch(broken, { loader: loaderFile });
 ok("a patch that cannot finish reports the failure", failedPatch.ok === false && /rolled back/.test(failedPatch.error), JSON.stringify(failedPatch));
 ok("and it rolls the rename back", fs.existsSync(path.join(e.resources, "app.asar")) && !fs.existsSync(path.join(e.resources, "hypercord.app.asar")));
 ok("so the client is exactly as it was found", fs.readFileSync(path.join(e.resources, "app.asar")).equals(before) && inspect(e.found.install).state === "clean");
+
+/* ---- 2b. the same round trip, on every platform ------------------------- */
+
+/**
+ * The whole round trip on one install, whatever platform it came from: inspect,
+ * patch, what the patch recorded, and unpatch putting the directory back exactly as
+ * it was. The patch used to be exercised on the Linux config layout alone, which is
+ * how a patch that only works where it was written goes unnoticed: a macOS bundle and
+ * the two Linux shapes each hold a different tree.
+ *
+ * `version` is what the manifest must record, or null to skip that half - the
+ * discovery above reports its own failures, and a stand-in install keeps the patch
+ * checks running so one problem does not lose the run.
+ */
+function roundTrip(platform, install, { version }) {
+  const archive = path.join(install.resources, "app.asar");
+  const bytes = fs.readFileSync(archive);
+  const clean = tree(install.resources);
+  ok(platform + ": the install inspects as clean", inspect(install).state === "clean", inspect(install).state);
+  const done = patch(install, { loader: loaderFile });
+  ok(platform + ": it patches", done.ok === true, JSON.stringify(done.error));
+  const manifest = JSON.parse(fs.readFileSync(install.manifest, "utf8"));
+  ok(
+    platform + ": the manifest records the loader, the channel and the version",
+    manifest.tool === "hypercord" && manifest.loader === loaderFile && manifest.channel === "stable" && (version === null || manifest.version === version),
+    JSON.stringify({ tool: manifest.tool, loader: manifest.loader, channel: manifest.channel, version: manifest.version }),
+  );
+  const entry = fs.readFileSync(path.join(install.appDir, "index.js"), "utf8");
+  ok(
+    platform + ": the entry point requires that loader and hands off to the real client",
+    entry.includes("require(" + JSON.stringify(loaderFile) + ")") && entry.includes('module.exports = require("../hypercord.app.asar")'),
+    entry.split("\n")[2],
+  );
+  ok(platform + ": the install inspects as patched", inspect(install).state === "patched");
+  ok(platform + ": and the client's own archive is untouched", fs.readFileSync(path.join(install.resources, "hypercord.app.asar")).equals(bytes));
+  const back = unpatch(install);
+  ok(platform + ": unpatching restores the directory exactly", back.ok === true && tree(install.resources) === clean, tree(install.resources));
+}
+
+const standInResources = (resources) => ({
+  channel: "stable",
+  channelName: "Discord",
+  version: "",
+  root: path.dirname(resources),
+  resources,
+  appAsar: path.join(resources, "app.asar"),
+  originalAsar: path.join(resources, "hypercord.app.asar"),
+  appDir: path.join(resources, "app"),
+  manifest: path.join(resources, "app", "hypercord.json"),
+  executable: "",
+  appBundle: "",
+  launchCommand: { cmd: "discord", args: [] },
+  exists: (p) => fs.existsSync(p),
+});
+
+roundTrip("linux config", linux.found.ok ? linux.found.install : standInResources(linux.resources), { version: linux.found.ok ? "1.0.136" : null });
+roundTrip("linux package", pkg.ok ? pkg.install : standInResources(path.join(pkgRoot, "resources")), { version: pkg.ok ? "" : null });
+roundTrip("flatpak", flat.ok ? flat.install : standInResources(flatpakResources), { version: flat.ok ? "" : null });
+roundTrip("macos", macBoth.ok ? macBoth.install : standInResources(macResources), { version: macBoth.ok ? "1.2.3" : null });
 
 // what the patch bakes in, so a patched install has something to show without a
 // second file being found at launch time. The stylesheet is the whole payload now:
@@ -276,6 +362,26 @@ ok("a flatpak install goes through flatpak run", (() => {
 })());
 ok("a spawn that throws is reported", launch(winInstall, { spawnImpl: () => { throw new Error("nope"); } }).ok === false);
 
+// The two other platforms, started through the same injected spawn: Linux launches the
+// binary inside the install, and macOS goes through the Finder with the bundle it was
+// given, so what opens is the copy that was patched.
+const linuxInstall = linux.found.ok ? linux.found.install : standIn(path.join(root, "Discord"));
+const linuxCalls = [];
+const startedLinux = launch(linuxInstall, { spawnImpl: (cmd, args) => (linuxCalls.push([cmd, args]), { unref() {} }) });
+ok("a linux install is started directly, with no wrapper around it", startedLinux.ok === true && linuxCalls.length === 1 && /(^|[\\/])Discord$/.test(linuxCalls[0][0]), JSON.stringify(linuxCalls));
+const macOnce = mac.ok ? mac.install : macInstall;
+const macCalls = [];
+const startedMac = launch(macOnce, { spawnImpl: (cmd, args) => (macCalls.push([cmd, args]), { unref() {} }) });
+ok("a mac install is opened as its own bundle, not by name", startedMac.ok === true && macCalls.length === 1 && macCalls[0][0] === "open" && macCalls[0][1][1] === macOnce.appBundle, JSON.stringify(macCalls));
+
+// The bundle is the thing that can be gone, and `open` would otherwise fall back to
+// whichever copy the Finder finds first - so it is refused, and the refusal names the
+// bundle rather than the command that is always there.
+const goneBundlePath = path.join(root, "nowhere", "Discord.app");
+const goneBundle = { ...standIn("open", ["-a", goneBundlePath]), appBundle: goneBundlePath };
+const startedGone = launch(goneBundle, { spawnImpl: fakeSpawn });
+ok("launching a bundle that is not there is a message, not a throw", startedGone.ok === false && /bundle is not here/.test(startedGone.error), JSON.stringify(startedGone));
+
 /* ---- 4. the loader ------------------------------------------------------ */
 
 const script = loader.buildInjection({ css: ".a { color: red; }" });
@@ -287,7 +393,7 @@ ok("the injection carries the css as data", script.includes(JSON.stringify(".a {
 ok("the injection cannot break out of its own string", !loader.buildInjection({ css: 'x"; alert(1); "' }).includes('x"; alert(1); "'));
 ok("the entry source is what the patcher writes", entrySource("/x/loader.cjs").includes('require("/x/loader.cjs")'));
 
-function fakeWindow({ loading = false } = {}) {
+function fakeWindow({ loading = false, url = "https://discord.com/app" } = {}) {
   const executed = [];
   const once = [];
   return {
@@ -295,6 +401,7 @@ function fakeWindow({ loading = false } = {}) {
     webContents: {
       executed,
       isLoading: () => loading,
+      getURL: () => url,
       executeJavaScript: (s) => (executed.push(s), Promise.resolve({ ok: true })),
       once: (name, fn) => once.push({ name, fn }),
       fire: (name) => once.filter((h) => h.name === name).forEach((h) => h.fn()),
@@ -302,18 +409,31 @@ function fakeWindow({ loading = false } = {}) {
   };
 }
 
+// A window gets two scripts, each exactly once: the stylesheet, and the built plugin
+// runtime. They are counted apart, because "one script" stopped being the contract the day
+// the runtime was added - and a window that is not on Discord's page gets the stylesheet
+// alone, which is the other half of the same contract.
+//
+// The stylesheet is found by the id only it writes rather than by "creates a style element":
+// the runtime's own script creates one too (its own stylesheet, which ships beside its bundle
+// and is injected with it - see readRuntime in src/loader.cjs), so counting those would count
+// the runtime as a second copy of the theme.
+const stylesOf = (win) => win.webContents.executed.filter((s) => String(s).includes(loader.STYLE_ID));
+const runtimesOf = (win) => win.webContents.executed.filter((s) => String(s).includes("__hypercordRuntime"));
+const bothOnce = (win) => stylesOf(win).length === 1 && runtimesOf(win).length === 1;
+
 const first = fakeWindow();
 const app = { BrowserWindow: { getAllWindows: () => [first] }, on: (name, fn) => (app.handlers = { ...(app.handlers || {}), [name]: fn }), handlers: {} };
 const fireCreated = (win) => (app.handlers["browser-window-created"] || (() => {}))({}, win);
 const res = loader.attach(app, { css: "body{}", log: () => {} });
 ok("the loader attaches to a window that is already open", res.ok === true);
 await tick();
-ok("and injects into it exactly once", first.webContents.executed.length === 1, "executed " + first.webContents.executed.length);
+ok("and injects into it exactly once, the stylesheet and the runtime", bothOnce(first), "executed " + first.webContents.executed.length);
 
 const later = fakeWindow();
 fireCreated(later);
 await tick();
-ok("and into a window created afterwards", later.webContents.executed.length === 1, "executed " + later.webContents.executed.length);
+ok("and into a window created afterwards", bothOnce(later), "executed " + later.webContents.executed.length);
 
 const loading = fakeWindow({ loading: true });
 fireCreated(loading);
@@ -321,11 +441,16 @@ await tick();
 ok("a window still loading is waited for, not injected into", loading.webContents.executed.length === 0);
 loading.webContents.fire("did-finish-load");
 await tick();
-ok("and injected once its page is ready", loading.webContents.executed.length === 1);
+ok("and injected once its page is ready", bothOnce(loading));
 
 fireCreated(later);
 await tick();
-ok("a window is never injected into twice", later.webContents.executed.length === 1, "executed " + later.webContents.executed.length);
+ok("a window is never injected into twice", bothOnce(later), "executed " + later.webContents.executed.length);
+
+const helper = fakeWindow({ url: "about:blank" });
+fireCreated(helper);
+await tick();
+ok("a window that is not on Discord's page gets the styling and no runtime", stylesOf(helper).length === 1 && runtimesOf(helper).length === 0, JSON.stringify(helper.webContents.executed.map((s) => String(s).slice(0, 18))));
 
 const empty = loader.attach({ BrowserWindow: { getAllWindows: () => [] }, on: () => {} }, { css: "", log: () => {} });
 ok("with nothing to inject it attaches nothing and says so", empty.ok === true && empty.injected === 0 && empty.empty === true, JSON.stringify(empty));

@@ -15,6 +15,18 @@
 //     memory for this run when asked (memoryOnly), and otherwise refuses - it
 //     will not write something it cannot protect.
 //
+// Two things ride along with a token that are not secrets, and that is why they
+// are treated differently:
+//
+//   * **the identity** - the Discord user the token belongs to: id, username,
+//     display name and avatar URL. It is the same public data Discord itself
+//     shows, so it is stored in clear, never put through the cipher, and never
+//     redacted. It is what lets the Accounts page show a name and a picture
+//     beside each stored key without asking Discord again on every open;
+//   * **the label** - the owner's own name for an account ("main", "alt"), and
+//     nothing else. It is theirs to change with `rename()`, and an empty label is
+//     a real state rather than an error: the page falls back to the account id.
+//
 // The cipher is injected, so this module has no electron import and can be tested
 // as plain node. Its contract is two functions over *strings*:
 //
@@ -77,6 +89,33 @@ export function checkToken(token) {
   if (token.length < MIN_LENGTH) return { ok: false, error: "a token is shorter than " + MIN_LENGTH + " characters" };
   if (token.length > MAX_LENGTH) return { ok: false, error: "a token is longer than " + MAX_LENGTH + " characters" };
   return { ok: true };
+}
+
+/**
+ * The four public fields of a Discord user, normalized. Anything else is refused
+ * with a reason rather than half-stored: a row with a username and no id is a row
+ * that cannot say which account it describes.
+ */
+function normalizeIdentity(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "an identity is plain JSON: { id, username, name, avatar }" };
+  return {
+    ok: true,
+    identity: {
+      id: String(value.id || ""),
+      username: String(value.username || ""),
+      name: String(value.name || ""),
+      avatar: String(value.avatar || ""),
+    },
+  };
+}
+
+/** The identity a stored row can offer, or null when it has nothing worth showing. */
+function identityOrNull(value) {
+  const known = normalizeIdentity(value);
+  if (!known.ok) return null;
+  const { identity } = known;
+  if (!identity.id && !identity.username && !identity.name && !identity.avatar) return null;
+  return identity;
 }
 
 function checkAccount(account) {
@@ -143,16 +182,21 @@ export function createTokens({ userData = "", cipher = null, log = console.log, 
         updatedAt: Number(row.updatedAt || 0),
         fingerprint: String(row.fingerprint || ""),
         last4: String(row.last4 || ""),
+        // the public half of who this key signs in as, or null when nothing has
+        // looked it up yet - a page shows what it has and asks for the rest
+        identity: identityOrNull(row.identity),
       };
     });
   }
 
-  function put(account, token, { label = "", memoryOnly = false } = {}) {
+  function put(account, token, { label = "", memoryOnly = false, identity } = {}) {
     const name = checkAccount(String(account === undefined || account === null ? "" : account));
     if (!name.ok) return { ok: false, error: name.error };
     const id = String(account);
     const text = checkToken(token);
     if (!text.ok) return { ok: false, error: text.error };
+    const known = identity === undefined || identity === null ? null : normalizeIdentity(identity);
+    if (known && !known.ok) return { ok: false, error: known.error };
 
     const previous = entry(id);
     const next = {
@@ -161,6 +205,12 @@ export function createTokens({ userData = "", cipher = null, log = console.log, 
       fingerprint: fingerprint(token),
       last4: String(token).slice(-4),
     };
+    // A re-store of the same key keeps the identity this store already has: the caller
+    // that has not looked the token up yet must not be able to blank an avatar that was
+    // fetched last time, which is the difference between a name and an account id in
+    // the Accounts page.
+    const carried = known && known.ok ? known.identity : identityOrNull(previous && previous.identity);
+    if (carried) next.identity = carried;
 
     if (memoryOnly || !cipher) {
       if (!memoryOnly) {
@@ -222,6 +272,54 @@ export function createTokens({ userData = "", cipher = null, log = console.log, 
     return { ok: true, account: id };
   }
 
+  /**
+   * Write down who a stored token belongs to.
+   *
+   * Only the identity, and only for an account already in the store: this is what
+   * `tokens:test` and every successful sign-in leave behind, so the page can show a name
+   * and an avatar without a round trip, and it never touches the token itself.
+   */
+  function setIdentity(account, identity) {
+    const name = checkAccount(String(account === undefined || account === null ? "" : account));
+    if (!name.ok) return { ok: false, error: name.error };
+    const id = String(account);
+    const known = normalizeIdentity(identity);
+    if (!known.ok) return { ok: false, error: known.error };
+    const inMemory = memory.get(id);
+    if (inMemory) {
+      inMemory.identity = { ...known.identity };
+      return { ok: true, account: id, identity: { ...known.identity } };
+    }
+    const state = read();
+    if (!state.tokens[id]) return { ok: false, error: "no token stored for " + id };
+    state.tokens[id] = { ...state.tokens[id], identity: { ...known.identity } };
+    if (!write(state)) return { ok: false, error: "the store could not be written" };
+    return { ok: true, account: id, identity: { ...known.identity } };
+  }
+
+  /**
+   * The owner's own name for an account, changed on its own.
+   *
+   * An empty label clears it rather than being refused: "no label" is a real state, and
+   * the account id is what a page shows then.
+   */
+  function rename(account, label) {
+    const name = checkAccount(String(account === undefined || account === null ? "" : account));
+    if (!name.ok) return { ok: false, error: name.error };
+    const id = String(account);
+    const next = String(label === undefined || label === null ? "" : label).trim();
+    const inMemory = memory.get(id);
+    if (inMemory) {
+      inMemory.label = next;
+      return { ok: true, account: id, label: next };
+    }
+    const state = read();
+    if (!state.tokens[id]) return { ok: false, error: "no token stored for " + id };
+    state.tokens[id] = { ...state.tokens[id], label: next };
+    if (!write(state)) return { ok: false, error: "the store could not be written" };
+    return { ok: true, account: id, label: next };
+  }
+
   function forgetAll() {
     const state = read();
     const removed = Object.keys(state.tokens).length + memory.size;
@@ -244,6 +342,8 @@ export function createTokens({ userData = "", cipher = null, log = console.log, 
     has,
     remove,
     forgetAll,
+    setIdentity,
+    rename,
     fingerprint,
     mask,
     size: () => list().length,

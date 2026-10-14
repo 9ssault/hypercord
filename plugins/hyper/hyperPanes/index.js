@@ -1,13 +1,15 @@
 // language: JavaScript, file: plugins/hyper/hyperPanes/index.js
 //
-// The manager sheet, built into the Discord window: there is no second window, so
-// this plugin owns the one thing left for it to own - which view the sheet is
-// showing. It is opened on demand from Hypercord's own entries in Discord's
-// settings sidebar, or by a push from the shell, and the sheet is part of the
-// page whether or not it is open.
+// Hypercord's settings pages, built into Discord's own settings: this plugin owns the
+// one thing the pages cannot own themselves - the list of them, and which one is
+// showing. A page is opened from Hypercord's entries in Discord's settings sidebar, or
+// by a push from the shell, and it is part of the page whether or not it is open.
+//
+// The list is announced (`panes:views`), and src/preload.cjs turns it into one entry
+// per section in Discord's sidebar, so a page added here appears there on its own.
 export default {
   name: "hyperPanes",
-  description: "The Hypercord manager, built into the Discord window: user tokens, commands, plugins, themes, logs, accounts",
+  description: "Hypercord's settings pages, inside Discord's own settings: commands, plugins, Hyper plugins, beef, themes, logs, accounts, access keys",
   authors: ["Hypercord"],
   version: "1.0.0",
   defaultOn: true,
@@ -16,7 +18,9 @@ export default {
   ],
 
   start(ctx) {
-    const views = ["commands", "plugins", "hyper", "themes", "logs", "accounts", "tokens"];
+    // beef sits beside our own plugins: both are the control server's own functions
+    // rather than pieces of this client's setup
+    const views = ["commands", "plugins", "hyper", "beef", "themes", "logs", "accounts", "tokens"];
     let last = views.includes(String(ctx.setting("lastView"))) ? String(ctx.setting("lastView")) : "commands";
 
     function available() {

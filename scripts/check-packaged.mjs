@@ -187,12 +187,23 @@ try {
         passkeys: window.__hypercordPasskeys || "(none)",
         refusals: window.__hypercordPasskeyCalls || null,
         loginForm: Boolean(document.querySelector('form[class*="auth"]')),
+        // The built plugin runtime, and whether it can reach Discord's own modules - which is
+        // the difference between a client whose vendored plugins work and one whose cards say
+        // "no runtime". wreq is the webpack require the runtime patches: it is only set if
+        // the runtime was in the page before Discord defined its modules.
+        vencord: typeof window.Vencord,
+        plugins: window.Vencord && window.Vencord.Plugins && window.Vencord.Plugins.plugins ? Object.keys(window.Vencord.Plugins.plugins).length : 0,
+        wreq: window.Vencord && window.Vencord.Webpack ? typeof window.Vencord.Webpack.wreq : "(no webpack)",
+        // The runtime's stylesheet, which is a second file beside its bundle rather than part
+        // of it. Read as bytes, not as presence: a build that shipped an empty one would pass
+        // a boolean and fail the person looking at the pages.
+        runtimeCss: (() => { const node = document.getElementById("hypercord-runtime-css"); return node ? String(node.textContent || "").length : 0; })(),
       }))()`,
       );
       lastError = "";
       // with a fresh profile Discord's client redirects itself to its login page a
       // moment after /app renders, so that is what this waits for before reading
-      const settled = seen && seen.sheetMounted === "true" && seen.passkeys === "on-demand" && seen.prompt && (!fresh || seen.loginForm);
+      const settled = seen && seen.sheetMounted === "true" && seen.passkeys === "on-demand" && seen.prompt && seen.vencord === "object" && (!fresh || seen.loginForm);
       if (settled) break;
     } catch (err) {
       lastError = String((err && err.message) || err);
@@ -211,9 +222,22 @@ try {
   ok("the stylesheet the shell injects is in the page", seen.injectedCss === true);
   ok("the manager sheet is mounted in Discord's own page", seen.sheet && seen.sheetMounted === "true" && seen.sheetCss, "mounted " + seen.sheetMounted);
   ok("the manager's script ran", seen.sheetApi === "object", String(seen.sheetApi));
+  // The check that a build like this one needed: the runtime has to be *shipped* (it is packaged
+  // from vendor/runtime, not from the submodule) and it has to be in the page before Discord's
+  // own scripts - otherwise it lists every plugin and reaches not one Discord module, which is
+  // what "switched on and does nothing" looks like from the outside.
+  ok("the built plugin runtime is in the page", seen.vencord === "object" && seen.plugins > 300, String(seen.plugins) + " plugins");
+  ok("and it reached Discord's own webpack, so its plugins can do anything at all", seen.wreq === "function", String(seen.wreq));
+  // The half of the runtime that is not in its bundle: 218kb of `.vc-` rules that live in
+  // `browser.css`, beside `browser.js`, and that a client shipping only the script never puts
+  // in the page. Every surface the runtime owns is drawn with them - its plugin browser, its
+  // theme browser, its settings windows, its toasts - so a build without this is a build whose
+  // plugin browser is right in every count and unreadable on screen, which is exactly the
+  // failure this check is for.
+  ok("the runtime's own stylesheet is in the page", seen.runtimeCss > 100000, String(seen.runtimeCss) + " bytes of css");
   // One page per section the owner named, read off the markup the build shipped:
   // this is the check that a stale build cannot pass by having only some of them.
-  const wantedViews = ["commands", "plugins", "hyper", "themes", "logs", "accounts", "tokens"];
+  const wantedViews = ["commands", "plugins", "hyper", "beef", "themes", "logs", "accounts", "tokens"];
   ok("the manager carries a page per settings section", wantedViews.every((view) => seen.sheetViews.includes(view)) && seen.sheetViews.length === wantedViews.length, JSON.stringify(seen.sheetViews));
   ok("the token option is in the page", seen.prompt && seen.promptHasForm, "open " + String(seen.promptOpen));
   // The settings entry: the decision is asserted here, the placement itself needs a

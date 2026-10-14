@@ -42,14 +42,47 @@
   </section>
 
   <!-- plugins ----------------------------------------------------- -->
+  <!-- The catalogue, the way a plugin browser reads: a search field, a filter,
+       and a grid of cards - one plugin per card, the switch on the card itself,
+       and that plugin's own settings on the page behind its name. The filters
+       and the grid stand aside while a plugin is open, because a page of
+       settings is what is being read then. -->
+  <!-- The browser itself belongs to the runtime that owns the plugins, and this container is
+       where it is drawn: the vendored runtime's own plugin page, the same one every other
+       client of it shows - its search, its filters, its cards, its switches, its cogs. The
+       catalogue grid below is what a window with no runtime gets, and it is kept for exactly
+       that case; src/panes.js decides which of the two this window has. -->
   <section class="view" data-view="plugins">
     <h2>Plugins</h2>
-    <div class="row">
-      <input id="hp-pluginSearch" type="search" autocomplete="off" spellcheck="false" placeholder="filter by name or description" />
-      <button type="button" id="hp-pluginRefresh">Refresh</button>
+    <div id="hp-runtimePlugins" class="runtime-browser hidden"></div>
+    <div id="hp-pluginFallback">
+    <div class="filters" id="hp-pluginFilters">
+      <input id="hp-pluginSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search for a plugin&hellip;" />
+      <select id="hp-pluginFilter" class="filter" aria-label="Which plugins to show">
+        <option value="all">Show all</option>
+        <option value="enabled">Show enabled</option>
+        <option value="disabled">Show disabled</option>
+        <option value="ours">Show Hypercord</option>
+      </select>
+      <button type="button" id="hp-pluginRefresh" class="ghost">Refresh</button>
+      <!-- Some plugins patch Discord while it loads, so switching one on is a record that
+           the next start reads - the card says "restart to apply" and this is that restart,
+           here rather than in the tray where the person reading the card cannot see it. -->
+      <button
+        type="button"
+        id="hp-pluginRestart"
+        class="ghost"
+        title="Restart the client: what a plugin that patches Discord as it loads, or a change to Hypercord itself, needs"
+      >
+        Restart
+      </button>
     </div>
+    <!-- the categories the catalogue declares, as one row of chips: a browser of
+         hundreds needs to be narrowed by what a plugin *is*, not only by its name -->
+    <div id="hp-pluginCategories" class="chips" role="group" aria-label="Plugin categories"></div>
     <p id="hp-pluginSummary" class="hint"></p>
-    <div id="hp-pluginList" class="list" role="list"></div>
+    <div id="hp-pluginList" class="grid" role="list"></div>
+    </div>
   </section>
 
   <!-- our own plugins ---------------------------------------------- -->
@@ -57,23 +90,66 @@
     <h2>Hyper plugins</h2>
     <p class="hint">Our own plugins, rather than the 366 vendored ones: they are part of Hypercord itself, so they are already here and "off" only means not started.</p>
     <p id="hp-hyperSummary" class="hint"></p>
-    <div id="hp-hyperList" class="list" role="list"></div>
+    <div id="hp-hyperList" class="grid" role="list"></div>
+  </section>
+
+  <!-- beef -------------------------------------------------------- -->
+  <!-- The one page a plugin owns: the beef plugin describes its own section as
+       data (`section()`) and declares which of its functions this page may call,
+       so the markup below is empty on purpose and src/panes.js renders the
+       description it is handed - see the beef section there. -->
+  <section class="view" data-view="beef">
+    <h2>Beef</h2>
+    <p id="hp-beefIntro" class="hint"></p>
+    <p id="hp-beefReason" class="hint"></p>
+    <div class="row">
+      <button type="button" id="hp-beefRefresh">Refresh</button>
+    </div>
+    <h3>The generator</h3>
+    <div id="hp-beefState" class="list" role="list"></div>
+    <h3>Beef functions</h3>
+    <div id="hp-beefActions" class="row"></div>
+    <div id="hp-beefInput" class="row hidden"></div>
+    <h3>Last beef</h3>
+    <div id="hp-beefLast" class="list" role="list"></div>
+    <pre id="hp-beefOut" class="out" aria-live="polite"></pre>
+    <h3>Settings</h3>
+    <form id="hp-beefSettings" class="settings-form"></form>
   </section>
 
   <!-- themes ------------------------------------------------------ -->
   <section class="view" data-view="themes">
     <h2>Themes</h2>
+    <!-- the runtime's own theme page when this window has one, for the same reason the plugin
+         page above is its own: the themes and the quick css in it are the runtime's, and this
+         sheet drawing a second copy of them is what let the two disagree. What stays below is
+         Hypercord's own theme folder, which the runtime knows nothing about. -->
+    <div id="hp-runtimeThemes" class="runtime-browser hidden"></div>
+    <div id="hp-themeFallback">
     <p class="hint">CSS only, injected at one point. An unused theme is never read.</p>
     <form id="hp-themeForm" class="row">
       <input id="hp-themeSource" type="text" autocomplete="off" spellcheck="false" placeholder="a theme file path, or an https:// theme url" />
       <input id="hp-themeName" type="text" autocomplete="off" spellcheck="false" placeholder="name (optional)" />
       <button type="submit">Install</button>
     </form>
-    <div id="hp-themeList" class="list" role="list"></div>
+    <div id="hp-themeList" class="grid" role="list"></div>
+
+    <!-- the library: a browser of published themes, read when Load is pressed. Nothing
+         here is fetched until then, and a theme installed from here is fetched once,
+         like one installed from a link. -->
+    <h3>Browse the theme library</h3>
+    <div class="filters" id="hp-themeLibraryFilters">
+      <input id="hp-themeLibrarySearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search the library&hellip;" />
+      <button type="button" id="hp-themeLibraryLoad" class="ghost">Load the library</button>
+    </div>
+    <p id="hp-themeLibraryNote" class="hint"></p>
+    <div id="hp-themeLibrary" class="grid" role="list"></div>
+
     <h3>Quick CSS</h3>
     <textarea id="hp-quickCss" spellcheck="false" rows="6" placeholder="/* one-off css, no install needed */"></textarea>
     <div class="row">
       <button type="button" id="hp-quickSave">Save quick CSS</button>
+    </div>
     </div>
   </section>
 
@@ -122,14 +198,19 @@
     </div>
   </section>
 
-  <!-- the settings drawer: shared by every view that has per-plugin
-       settings, so it is not nested inside one of them -->
-  <div id="hp-pluginSettings" class="settings hidden">
-    <h3 id="hp-settingsTitle">Settings</h3>
-    <form id="hp-settingsForm" class="settings-form"></form>
-    <div class="row">
-      <button type="button" id="hp-settingsSave">Save</button>
-      <button type="button" id="hp-settingsClose" class="ghost">Close</button>
+  <!-- one plugin's own page: the name, what it is, and the fields it declares. It
+       belongs to the sheet rather than to the catalogue, because both plugin pages
+       open it - and it covers the page area while it is up, the way one of
+       Discord's own settings subpages covers the page it was opened from. The
+       status line stays above it, because that is where a saved field reports
+       itself. -->
+  <div id="hp-pluginDetail" class="detail hidden">
+    <div class="detail-head">
+      <button type="button" id="hp-detailBack" class="back" title="Back to the list" aria-label="Back to the list">&#8592;</button>
+      <span id="hp-detailTitle" class="detail-title"></span>
+      <span id="hp-detailState" class="detail-state"></span>
     </div>
+    <p id="hp-detailNote" class="hint"></p>
+    <form id="hp-settingsForm" class="settings-form"></form>
   </div>
 </main>

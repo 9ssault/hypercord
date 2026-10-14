@@ -45,8 +45,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
 
-/** What the build actually packages: see the `files` list in package.json. */
-export const SHIPPED = ["src", "plugins", "pwa", "package.json"];
+/**
+ * What the build actually packages: see the `files` list in package.json.
+ *
+ * `vendor/runtime` is the built plugin runtime, and it is in this list because a release has to
+ * carry it: the vendored tree it is built from is a submodule and is not packaged, so a packed
+ * client without this file has no runtime and no plugin of the catalogue can run. Listing it
+ * here is also what makes a *stale* runtime a refusal rather than a silent shipment.
+ */
+export const SHIPPED = ["src", "plugins", "pwa", "vendor/runtime", "package.json"];
 
 /** The packed app's asar, wherever electron-builder put it on this platform. */
 export function packedAsar() {

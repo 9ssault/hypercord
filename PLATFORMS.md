@@ -49,6 +49,37 @@ refuses an unsigned replacement. `src/updater.js` is covered by
 `npm run test:updater`, which stubs `app.isPackaged` and drives every path -
 including proving that a downloaded update says nothing to the user.
 
+## Running the patched client, per platform
+
+The same command on all three - there is no platform-specific way to do this:
+
+```bash
+npm start -- --attach
+```
+
+`src/patcher.js` finds an install, renames `app.asar` to `hypercord.app.asar`
+(never rewriting it, so unpatch is byte-exact) and writes a `resources/app` entry
+point that requires `src/loader.cjs`. What differs is only where the install is
+found and how it is started:
+
+| Platform | Where the install is found | How it is started |
+| --- | --- | --- |
+| **Windows** | `%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`, the newest version first | that install's own `Discord.exe`, detached |
+| **macOS** | `/Applications` and `~/Applications`, `Discord{ PTB, Canary}.app`; the version comes out of `Contents/Info.plist` | `open -a <the bundle>` - the bundle path, never the name, so the copy that opens is the copy that was patched |
+| **Linux** | `$XDG_CONFIG_HOME` (or `~/.config`)/`discord{,ptb,canary}`/`app-<v>/resources`, the package roots (`/usr/share/discord`, `/opt/Discord`, `/usr/lib/discord`, `/usr/lib64/discord`), and Flatpak deployments under `/var/lib/flatpak/app` and `~/.local/share/flatpak/app` | the binary inside the install - `app-<v>/Discord`, or `Discord` beside `resources` for a package-managed one; a Flatpak deployment through `flatpak run <app-id>` |
+
+On every platform: PTB and Canary are found as well, stable is preferred over them,
+the newest version wins inside a channel, a `resources/app` that is not ours is
+refused rather than touched, an install whose original was moved aside but has no
+entry point is repaired, and with no Discord installed the Electron window *is* the
+client. `--attach` only decides whether a real install is patched; the fallback
+window needs no flag.
+
+All three branches are covered by `tests/patcher/index.mjs`, which discovers each
+layout from injected paths and then runs the whole round trip on it - inspect, patch,
+what the manifest recorded, and unpatch restoring the directory exactly. What that
+does and does not prove is spelled out under "Compatibility review" below.
+
 ## Building each target
 
 ```bash
@@ -132,12 +163,19 @@ options, `tests/patcher/index.mjs` drives all three branches from any host.
    `build.mac.identity: null` would make a local mac build fail immediately and
    plainly instead of at packaging time; a real release needs a developer identity,
    `CSC_*` or notarisation credentials, none of which are in this tree.
-3. The patched-Discord path is exercised on Windows only. The `darwin` and Linux
-   branches of `listInstalls` run under the unit suite with injected paths, but no run
-   against a real macOS or Linux Discord install is recorded anywhere in this
-   repository, and Flatpak deployments vary between distros - the code already tries
-   a documented inner name and then whatever is actually in the directory. Treated as
-   unverified, not as working.
+3. No run against a real macOS or Linux Discord install is recorded anywhere in this
+   repository. What *is* covered: `tests/patcher/index.mjs` discovers every layout from
+   injected paths - Windows `%LOCALAPPDATA%`, a macOS bundle with its `Info.plist`, the
+   Linux config directory, a package root and a Flatpak deployment - and then runs the
+   whole round trip on each of them: `inspect` clean, `patch`, the manifest recording
+   the loader, the channel and the version, the entry point requiring that loader and
+   handing off to the real client, the client's own archive byte-identical, and
+   `unpatch` putting the directory back exactly as it was. What no test can prove from
+   this host is that a given distro's Discord tree looks like the one discovery
+   expects: Flatpak deployments vary between distros (the code tries a documented inner
+   name and then whatever is actually in the directory), and the macOS bundle is only
+   checked against the layout this repository knows. Verified in the layout, not on the
+   machine - the distinction is the point.
 4. macOS AppImage-equivalents do not exist, and the `deb` does not self-update: that
    is `electron-builder`'s shape, not a bug, but it means "updates on all platforms" is
    true for `nsis`, `portable`, `AppImage` and a signed `zip`-based macOS build, and

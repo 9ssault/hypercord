@@ -23,6 +23,17 @@
 //
 // No timer of any kind: the generator is read when the section is opened and when
 // a caller asks, so an idle client is not talking to anything.
+//
+// The server is not the only way to answer, and on a machine where none is configured
+// it is not the way at all. The client carries the same beef engine in its own process
+// (src/beef.js) and the host hands it to plugins as `ctx.local.beef`: the generator it
+// loads from the client's data directory, its reload, its install and rollback, the line
+// lab and the last beef it recorded. So every function below has two paths - the routes
+// above when a control server is configured, and this process when one is not - and the
+// local engine returns the same field names the routes document, which is why both paths
+// feed the same `apply` and the section cannot tell them apart. What it does *not* do is
+// pretend: `start` draws lines here and posts nothing to Discord, and says so, while the
+// server path goes through the command box as it always did.
 export default {
   name: "hyperBeef",
   description: "Beef: the generator, its reload and rollback, the line lab and the last beef",
@@ -41,7 +52,9 @@ export default {
     // the section can never display a number the server did not report.
     const beef = {
       ready: false,
+      installed: false,
       categories: [],
+      declared: [],
       dropped: [],
       remapped: {},
       generations: 0,
@@ -49,14 +62,56 @@ export default {
       source: "",
       lastError: "",
       backup: null,
+      banks: 0,
+      log: 0,
       at: 0,
       reason: "",
     };
     let backup = null; // the rollback target, as metadata only
 
-    /** "no control server configured" is a normal state, not a failure. */
+    /**
+     * "No control server configured" is a normal state, not a failure - and it is not the
+     * same state as "the api object is missing". The host always builds an api (the caller
+     * may set a control URL later), so the question is whether that api has anywhere to
+     * send a request: `createApi` with no base URL answers every request with "no control
+     * server configured" rather than pretending, which is exactly the machine the local
+     * engine exists for. Asking the api its own base is the one reading that cannot drift
+     * from what a request would do.
+     */
     function unconfigured() {
-      return !ctx.api || typeof ctx.api.request !== "function";
+      if (!ctx.api || typeof ctx.api.request !== "function") return true;
+      return !String(ctx.api.base || "");
+    }
+
+    /**
+     * The client's own engine, when this run has one. It is read live on every call
+     * rather than captured at start, the same way a setting is: the host builds it once
+     * per run, and a section that cached it would keep answering after it was gone.
+     */
+    function local() {
+      return ctx.local && ctx.local.beef && typeof ctx.local.beef.state === "function" ? ctx.local.beef : null;
+    }
+
+    /**
+     * Which path answers right now: the server when one is configured, the local engine
+     * when one is not, and neither when the run has neither - the one case where the
+     * section says so instead of showing an empty generator that looks like a broken one.
+     */
+    function via() {
+      if (!unconfigured()) return "control server";
+      return local() ? "local engine" : "";
+    }
+
+    /**
+     * What a local state means in the section's own words: a file that would not load, or
+     * categories the engine dropped, are the two things worth saying out loud.
+     */
+    function localReason(next) {
+      const failure = String((next && next.lastFailure) || "");
+      if (failure) return failure;
+      const dropped = next && Array.isArray(next.dropped) ? next.dropped : [];
+      if (dropped.length) return "dropped: " + dropped.join(", ");
+      return "";
     }
 
     function note(reason) {
@@ -69,13 +124,20 @@ export default {
     function apply(json) {
       if (!json || typeof json !== "object") return state();
       beef.ready = Boolean(json.ready);
+      beef.installed = Boolean(json.installed);
       beef.categories = Array.isArray(json.categories) ? json.categories.map(String) : [];
+      beef.declared = Array.isArray(json.declared) ? json.declared.map(String) : beef.declared;
       beef.dropped = Array.isArray(json.dropped) ? json.dropped.map(String) : [];
       beef.remapped = json.remapped && typeof json.remapped === "object" ? { ...json.remapped } : {};
       beef.generations = Number(json.generations) || 0;
       beef.reloadMs = Number(json.reloadMs) || 0;
-      beef.source = String(json.source || "");
+      // the local engine names the file it drew from (`sourceLabel`) and the server names
+      // a path (`source`): either way the field a person reads says where the lines come
+      // from, and "builtin banks" is a real answer rather than an empty one
+      beef.source = String(json.sourceLabel || json.source || "");
       beef.lastError = String(json.lastError || "");
+      beef.banks = Number(json.banks) || beef.banks;
+      beef.log = Number(json.log) || 0;
       backup = json.backup && typeof json.backup === "object" ? { ...json.backup } : backup;
       beef.backup = backup;
       beef.at = Date.now();
@@ -103,6 +165,15 @@ export default {
 
     /** Read the generator. The only call the section makes on its own. */
     async function refresh() {
+      const engine = local();
+      if (unconfigured() && engine) {
+        // no round trip and nothing to wait for: the engine is a few function calls in
+        // this process, so the section is filled before the caller gets the promise back
+        const next = engine.state();
+        apply(next);
+        note(localReason(next));
+        return state();
+      }
       if (unconfigured()) {
         note("no control server configured (beef runs on the control server's account bot)");
         return state();
@@ -119,6 +190,14 @@ export default {
 
     /** Take the generator on disk again, exactly like the dashboard's Reload. */
     async function reload() {
+      const engine = local();
+      if (unconfigured() && engine) {
+        const res = engine.reload();
+        apply(res);
+        note(res.error || localReason(res));
+        if (res.ok) ctx.log("beef generator reloaded (" + beef.categories.length + " categories, source " + beef.source + ")");
+        return { ok: res.ok === true, error: String(res.error || ""), ...state() };
+      }
       if (unconfigured()) return { ok: false, error: "no control server configured" };
       const res = await ask("/api/beef", { method: "POST", body: { action: "reload" } });
       if (res.ok && res.json) {
@@ -141,6 +220,17 @@ export default {
       const source = String(text === undefined || text === null ? "" : text);
       if (!source.trim()) return { ok: false, error: "nothing to install (the upload was empty)" };
       if (source.includes("\u0000")) return { ok: false, error: "the file looks like UTF-16 (it contains null bytes) - save it as UTF-8 and push again" };
+      const engine = local();
+      if (unconfigured() && engine) {
+        // the engine keeps one backup and writes the pushed text as the generator, so the
+        // push and the rollback below mean here exactly what they mean on the server - and
+        // a file that will not load is rolled back by the engine before this returns
+        const res = engine.install(source);
+        apply(res);
+        note(res.error || "");
+        if (res.ok) ctx.log("beef generator installed (" + beef.categories.length + " categories, source " + beef.source + ")");
+        return { ok: res.ok === true, error: String(res.error || ""), restored: res.restored, ...state() };
+      }
       if (unconfigured()) return { ok: false, error: "no control server configured" };
       const res = await ask("/api/beef/source", { method: "POST", body: { text: source, maxBytes: Number(maxBytes) || 0 }, timeout: 20000 });
       if (res.ok && res.json) {
@@ -156,6 +246,14 @@ export default {
 
     /** Put the copy the last accepted push replaced back. The server validates it. */
     async function rollback() {
+      const engine = local();
+      if (unconfigured() && engine) {
+        const res = engine.rollback();
+        apply(res);
+        note(res.error || "");
+        if (res.ok) ctx.log("beef generator rolled back (source " + beef.source + ")");
+        return { ok: res.ok === true, error: String(res.error || ""), ...state() };
+      }
       if (unconfigured()) return { ok: false, error: "no control server configured" };
       const res = await ask("/api/beef/source", { method: "POST", body: { action: "rollback" }, timeout: 20000 });
       if (res.ok && res.json) {
@@ -173,14 +271,37 @@ export default {
     async function inspect(text) {
       const line = String(text === undefined || text === null ? "" : text);
       if (!line.trim()) return { ok: false, error: "nothing to read (the line was empty)" };
+      const engine = local();
+      if (unconfigured() && engine) {
+        const res = engine.inspect(line);
+        if (res.ok) return { ok: true, read: res.read };
+        return { ok: false, error: String(res.error || "the line could not be read") };
+      }
       if (unconfigured()) return { ok: false, error: "no control server configured" };
       const res = await ask("/api/inspect?text=" + encodeURIComponent(line));
       if (res.ok && res.json) return { ok: true, read: res.json };
       return { ok: false, error: why(res) };
     }
 
-    /** The last beef, and the history the server keeps, trimmed to the setting. */
+    /**
+     * The last beef, and the history behind it, trimmed to the setting: the server's
+     * rolling history when there is a server, the client's own log file when there is not.
+     */
     async function last() {
+      const engine = local();
+      if (unconfigured() && engine) {
+        const wanted = Math.max(0, Math.min(20, Number(ctx.setting("history")) || 0));
+        const res = engine.last({ history: wanted });
+        if (!res.ok) {
+          return { ok: false, error: String(res.error || "the local engine could not read its log"), beef: null, history: [], total: 0 };
+        }
+        return {
+          ok: true,
+          beef: res.beef || null,
+          history: Array.isArray(res.history) ? res.history : [],
+          total: Number(res.total) || 0,
+        };
+      }
       if (unconfigured()) return { ok: false, error: "no control server configured", beef: null, history: [] };
       const res = await ask("/api/last-beef");
       if (!res.ok || !res.json) return { ok: false, error: why(res), beef: null, history: [] };
@@ -196,10 +317,24 @@ export default {
      * has no such route: it answers 404. So this goes through the command box, which
      * is the path that exists - `$b @user` is the same command a person types - and
      * the reply says which one was used rather than pretending the helper worked.
+     *
+     * With no server configured the client's own engine builds the beef here instead:
+     * the same routing and the same banks, recorded in this client's log, and nothing is
+     * sent to Discord - which the reply says rather than leaving a person to find out.
      */
     async function start(user) {
       const target = String(user === undefined || user === null ? "" : user).trim();
       if (!target) return { ok: false, error: "name the user to beef with" };
+      const engine = local();
+      if (unconfigured() && engine) {
+        // the lines are drawn here and the beef is recorded in this client's own log;
+        // nothing is posted to Discord from this path, which the reply says plainly
+        const res = engine.start(target, {});
+        if (!res.ok) return { ok: false, error: String(res.error || "the local engine could not build a beef"), via: "local engine" };
+        const drawn = Array.isArray(res.lines) ? res.lines.length : 0;
+        ctx.log("beef drawn against " + target + " (" + drawn + " lines, route " + res.route + ")");
+        return { ok: true, via: "local engine", beef: res, note: "the lines were drawn in this client and were not sent to Discord" };
+      }
       if (unconfigured() || typeof ctx.api.run !== "function") return { ok: false, error: "no control server configured" };
       const res = await ctx.api.run("beef", [target]);
       if (res.ok) return { ok: true, via: "command box (beef)", json: res.json || null };
@@ -211,11 +346,20 @@ export default {
       return {
         ...beef,
         categories: [...beef.categories],
+        declared: [...beef.declared],
         dropped: [...beef.dropped],
         remapped: { ...beef.remapped },
         backup: backup ? { ...backup } : null,
         droppedShown: ctx.setting("showDropped") !== false,
+        // which path answered, in the section's own data rather than only in the reason
+        // string: a page that shows an empty generator can then show why it is empty
+        answers: via() || "nothing configured",
       };
+    }
+
+    /** the start action's route: the command box on the server, the engine here */
+    function answeredRoute(asked) {
+      return asked ? "local engine: beef.start(user)" : "command box: beef <user>";
     }
 
     /**
@@ -225,6 +369,13 @@ export default {
      * one names the route it calls so a reader can check it.
      */
     function section() {
+      // the actions describe the call that will actually be made: the same function names
+      // against the local engine when it is what answers, so a reader is never told a
+      // route is live when a server is not
+      const answers = via();
+      const asked = answers === "local engine";
+      const needs = asked ? "local engine" : "control server";
+      const route = (server, here) => (asked ? here : server);
       return {
         id: "beef",
         title: "Beef",
@@ -235,13 +386,13 @@ export default {
           { key: "history", type: "number", label: "Past beefs listed", min: 0, max: 20 },
         ],
         actions: [
-          { id: "refresh", label: "Refresh", route: "GET /api/beef" },
-          { id: "reload", label: "Reload generator", route: "POST /api/beef", needs: "control server" },
-          { id: "rollback", label: "Roll back generator", route: "POST /api/beef/source", needs: "control server" },
-          { id: "install", label: "Install a generator", route: "POST /api/beef/source", needs: "control server", input: "source text" },
-          { id: "inspect", label: "Read a line", route: "GET /api/inspect", needs: "control server", input: "text" },
-          { id: "last", label: "Last beef", route: "GET /api/last-beef", needs: "control server" },
-          { id: "start", label: "Beef with a user", route: "command box: beef <user>", needs: "control server" },
+          { id: "refresh", label: "Refresh", route: route("GET /api/beef", "local engine: beef.state()") },
+          { id: "reload", label: "Reload generator", route: route("POST /api/beef", "local engine: beef.reload()"), needs },
+          { id: "rollback", label: "Roll back generator", route: route("POST /api/beef/source", "local engine: beef.rollback()"), needs },
+          { id: "install", label: "Install a generator", route: route("POST /api/beef/source", "local engine: beef.install()"), needs, input: "source text" },
+          { id: "inspect", label: "Read a line", route: route("GET /api/inspect", "local engine: beef.inspect()"), needs, input: "text" },
+          { id: "last", label: "Last beef", route: route("GET /api/last-beef", "local engine: beef.last()"), needs },
+          { id: "start", label: "Beef with a user", route: answeredRoute(asked), needs },
         ],
         state: state(),
       };
@@ -258,7 +409,7 @@ export default {
     // is a crash path, so the first read reports its own failure
     refresh().catch((err) => note(String((err && err.message) || err)));
 
-    return { state, section, refresh, reload, install, rollback, inspect, last, start, setSetting };
+    return { state, section, refresh, reload, install, rollback, inspect, last, start, setSetting, via };
   },
 
   stop(ctx) {

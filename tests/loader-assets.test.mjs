@@ -4,6 +4,7 @@ import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { requireJava, requirePython } from './support/toolchain.mjs';
 test('loader publication rejects missing/empty assets, wrong entrypoints and duplicated runtime', () => {
   const python = `
 import importlib.util,tempfile,zipfile
@@ -29,11 +30,20 @@ with tempfile.TemporaryDirectory() as tmp:
   except (RuntimeError,KeyError):assert case!='valid',case
   else:assert case=='valid',case
 `;
-  const result = spawnSync('python3', ['-c', python], { encoding: 'utf8', timeout: 30000 });
+  // Resolved rather than named: CI runs `python3`, a Windows machine that installed Python
+  // from python.org has `python` and no alias, and this check builds APKs through the real
+  // script - a machine without either fails below with a sentence about the machine.
+  const result = spawnSync(requirePython(), ['-c', python], { encoding: 'utf8', timeout: 30000 });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
 });
 
 test('optional addon injection failure is reported and returns to the existing loader chain', () => {
+  // Both halves of this check are Java: the source it reads has to compile under a real
+  // `javac`, and the class it produces is run by a real `java`. The two come from the resolver
+  // (see tests/support/toolchain.mjs) so a JDK that is not on PATH - an IDE's bundled one, a
+  // `JAVA_HOME` - is still found; with none at all the check fails saying so, because a
+  // machine that cannot run it must not look like a machine it passed on.
+  const tools = requireJava('javac', 'java');
   const dir = mkdtempSync(join(tmpdir(), 'assault-loader-isolation-'));
   try {
     const source = readFileSync('android/loader/src/main/java/app/assault/loader/AssaultLoader.java', 'utf8');
@@ -59,7 +69,7 @@ public class LoaderIsolationTest {
   if(loader.failure==null||!(XposedBridge.logged instanceof LinkageError))throw new AssertionError("optional load failure was not reported");
  }
 }`);
-    execFileSync('javac', ['-d', dir, join(dir, 'LoaderIsolationTest.java')]);
-    execFileSync('java', ['-cp', dir, 'LoaderIsolationTest']);
+    execFileSync(tools.javac, ['-d', dir, join(dir, 'LoaderIsolationTest.java')]);
+    execFileSync(tools.java, ['-cp', dir, 'LoaderIsolationTest']);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

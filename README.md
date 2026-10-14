@@ -63,15 +63,17 @@ Two paths, and the shell picks the better one:
    `<style>` element into Discord's own windows - the themes and the styles for the
    two pieces of Hypercord that live in Discord's tree - and nothing else.
 2. **The fallback window.** No Discord installed: `src/main.js` opens Discord web
-   with the same preload, settings pages and plugin host.
-
-Everything of ours lives inside Discord's own window: the token option under its
+   with the same preload, settings pages and plugin host.Everything of ours lives inside Discord's own window: the token option under its
 login fields, and Hypercord's settings as **pages inside Discord's own settings** -
-one entry per section in Discord's sidebar (commands, plugins, our own Hyper
-plugins, themes, logs, accounts, access keys), rendered in Discord's settings
-content column, wearing Discord's own classes and its own colour variables so the
-client's theme styles them. There is no second window, no overlay rail and no sheet
-of our own to find or raise; leaving Discord's settings leaves these pages with it.
+one entry per section (commands, plugins, our own Hyper plugins, themes, logs,
+accounts, access keys), added to Discord's own sidebar as a *copy* of one of its
+sections: their heading, their rows, their classes, so the client's own stylesheet
+and its theme lay the entries out and type them, and placed first in Discord's list
+of sections so they are on screen the moment settings opens. A client whose sidebar
+holds its rows itself gets the same entries beside them, wearing the class of the
+row they were built beside. The pages open in Discord's settings content column.
+There is no second window, no overlay rail and no sheet of our own to find or
+raise; leaving Discord's settings leaves these pages with it.
 
 ## Setup
 
@@ -92,6 +94,17 @@ npm start -- --attach         # patch a real Discord and start *that* as the cli
 npm run perf                  # --perf=45: the same client, measures each process, quits
 ```
 
+The five things we put inside a patched client - `src/injected.css`,
+`src/prompt.html`, `src/panes.html`, `src/panes.css` and `src/panes.js` - are
+*baked* into it at patch time: `src/patcher.js` writes them into the install's
+`resources/app/hypercord.json` and `src/loader.cjs` reads them from there. Editing
+one of them therefore needs `npm run dev:bake`, which writes the repository's
+current copies into every patched client without re-patching anything else;
+re-patching a client to pick up a paragraph of CSS is the step people stop doing.
+`src/loader.cjs`, `src/attach-preload.cjs` and `src/preload.cjs` are different:
+they are read from this repository live, when the client's window is created, so a
+restart is all they need.
+
 `--attach` needs an installed Discord. `src/patcher.js` looks under Windows
 `%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`, macOS
 `/Applications|~/Applications/Discord{ PTB, Canary}.app`, Linux
@@ -102,6 +115,21 @@ and writes a `resources/app` entry point that requires `src/loader.cjs`. A
 are left alone and refused rather than touched. With no Discord installed, the
 Electron window *is* the client, and nothing of ours starts at boot or stays
 resident: closing the window ends Hypercord.
+
+The same command works on all three platforms - `npm start -- --attach` - and only the
+paths and the way the client is started differ:
+
+| Platform | Where the install is found | How it is started |
+| --- | --- | --- |
+| Windows | `%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`, newest version first | that install's own `Discord.exe`, detached |
+| macOS | `/Applications` and `~/Applications`, `Discord{ PTB, Canary}.app`, version from `Contents/Info.plist` | `open -a <the bundle>` - the path, never the name, so the copy that opens is the one that was patched |
+| Linux | `$XDG_CONFIG_HOME` (or `~/.config`)/`discord{,ptb,canary}`/`app-<v>/resources`, the package roots and Flatpak deployments | the binary inside the install, or `flatpak run <app-id>` for a Flatpak one |
+
+Stable is preferred over PTB and Canary on every platform, a `resources/app` that is
+not ours is refused rather than touched, and `tests/patcher/index.mjs` runs the whole
+patch/unpatch round trip on each of the three layouts. [PLATFORMS.md](PLATFORMS.md) has
+the detail, plus the one honest gap: no run against a real macOS or Linux Discord
+install is recorded anywhere in this repository.
 
 ### Desktop - build it
 
@@ -141,26 +169,58 @@ It is a **Manager + Loader** pair, not a fork: Manager downloads Discord's own
 APK splits, verifies their signer and version, patches the Loader in with
 LSPatch, and hands the result to Android's package installer. The installed
 client runs Discord's own React Native UI, with the plugin and theme runtime
-under Discord's Settings under the Hypercord entry. Documented requirements:
-Java 21, Python 3.9+, Android SDK platform 36 and build-tools 36.0.0.
+under Discord's Settings under the Hypercord entry.
 
-**This tree cannot build the APK as it stands.** The commands the Android docs
-and CI name - `npm run build:addons`, `python3 scripts/build_android.py`,
-`npm run build`, `npm run release:zip`, `scripts/candidate_artifacts.py` - are
-not here: `scripts/` holds only `vendor.mjs`, `release.mjs`,
-`check-packaged.mjs`, `measure.mjs`, `make-icons.mjs` and `patch_runtime.py`,
-`android/` has no Gradle wrapper and no `build.gradle`/`settings.gradle`, and the
-Android project has no `package.json` of its own (so its `npm ci` cannot run
-either, and the repository has no lockfile). What *is* here: the Java sources
-(`android/manager`, `android/loader`), the JS runtime (`core/`, `utils/`,
-`plugins/`, `themes/`), the Android Node tests (`tests/*.test.mjs`, run one at a
-file with `node --test tests/<name>.test.mjs`), and the tag-triggered release
-workflow (`.github/workflows/android-release.yml`), which expects exactly the
-missing scripts. Treat the APK as source-only: no build is claimed, and the
-output path the docs name (`public/releases/Assault-Manager.apk`, kept for the
-reason in its branding note, and copied to `Hypercord-Manager.apk` /
-`Hypercord-Loader.apk` with `SHA256SUMS` by that workflow) is where a complete
-tree would put it.
+Toolchain, with the reason each number is that number - a toolchain list without
+one is a list somebody "fixes" downwards: **JDK 21** (`android/manager/build.gradle`
+sets `sourceCompatibility JavaVersion.VERSION_21`; `android/loader` compiles at 17,
+so 21 builds both. `scripts/build_android.py` reads the version of the `java` on
+`PATH` before Gradle starts and refuses an older one by name, because Gradle's own
+answer for it - `invalid source release: 21` - arrives after a minute of other
+tasks and reads like a source error), **Android SDK platform android-36 and
+build-tools 36.0.0** with `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) set (both modules
+are `compileSdk 36`; AGP fetches a missing platform itself once the SDK licences
+are accepted), and **Python 3.9+** on `PATH`, because the loader's `runtimeAssets`
+task runs `scripts/patch_runtime.py`. Gradle is the repository's own wrapper
+(`gradlew` / `gradlew.bat`, pinned to 8.13 in
+`gradle/wrapper/gradle-wrapper.properties`, with AGP 8.11.1 declared once in the
+root `build.gradle`), so there is no system Gradle to install. The interpreter is
+found rather than assumed - `python3`, then `python`, then `py -3`, each one *run*
+and asked for its version - so a Windows box that only has `python` is fine, and
+the Microsoft Store's `python3` alias is deliberately not accepted: it is on
+`PATH`, it fails when it runs, and its complaint mentions Python.
+
+```bash
+python scripts/build_android.py                 # the manager, release variant
+python scripts/build_android.py --all-variants  # manager and loader, release
+python scripts/build_android.py --variant debug # a debug build, unsigned
+python scripts/build_android.py --dry-run       # the plan, nothing run
+```
+
+`--modules manager,loader` builds a subset, `--output-dir` moves the copied
+candidates (default `release/candidate`), and each APK is left where Gradle put it,
+`android/<module>/build/outputs/apk/<variant>/`. Every run writes
+`release/acceptance.json`: what was built with its size and SHA-256, and - under
+`checks_not_run` - what was *not* checked, which is where an unsigned artifact says
+so instead of passing for a signed one.
+
+The one thing a release build refuses without is signing material.
+`android/signing.gradle` reads `HYPERCORD_KEYSTORE_PATH` and
+`HYPERCORD_SIGNING_PASSWORD` (with `HYPERCORD_KEY_ALIAS`, default `hypercord`, and
+`HYPERCORD_KEY_PASSWORD`, defaulting to the signing password), and without them it
+stops before any release work unless `HYPERCORD_ALLOW_UNSIGNED=1` asks for an
+unsigned release on purpose. That second one is a decision, not a shortcut, and
+the log says which happened: an unsigned APK installs, cannot update over an
+install signed with another key, and must not be published.
+
+Both modules build with exactly this and nothing else: the LSPatch code the manager
+patches with is `android/deps/lspatch.jar`, its icon and backup rules are
+`android/branding/res`, and neither needs a jar staged by hand. Nothing on the way
+is fabricated either - the loader's task copies the pinned upstream runtime,
+splices in the reviewed patch text, renames the display strings it finds, and
+**fails** when one of them is missing rather than shipping a half-rebranded
+bundle, and `scripts/build_android.py` inspects each APK it copies before it is
+recorded.
 
 Installing it, once built, is the flow in [docs/ANDROID-README.md](docs/ANDROID-README.md):
 
@@ -185,9 +245,56 @@ client can be installed from a browser as a web app. The route that serves it
   by `npm run vendor` into `plugins/manifest.json`, which is metadata only that
   the host reads; a plugin's code is imported the moment it is enabled and never
   before. `plugins/hyper/` holds our five, and they are the only ones on at
-  first run.
+  first run. The page that browses them is the familiar one - a grid of cards, a
+  switch on each card, a plugin's own settings behind its name - and the
+  categories are the tags upstream declared for each plugin, counted and offered
+  as chips (`Utility 133`, `Chat 105`, ...) beside the search box.
+  * **Two names for the same plugin.** The catalogue keys an entry by the
+    directory its source lives in (`accountPanelServerProfile`); the built
+    runtime keys the plugin, and its settings, by the plugin's own name
+    (`AccountPanelServerProfile`). Every lookup goes through that mapping
+    (`runtimeKeyFor` in `src/panes.js`, `runtimeKeysFor` in `src/loader.cjs`),
+    measured against the built bundle's own 372 keys: 345 of the 371 catalogue
+    entries are in this build, and the 26 that are not (platform variants like
+    `.desktop`, `.dev`, `.equibop`) say **not in this build** on their card rather
+    than blaming the window they are shown in.
+  * **One owner per switch.** The vendored catalogue is TypeScript source this
+    process cannot load, so the built runtime inside Discord's page is what runs
+    those plugins, and its own settings are the live answer to "is it on". That
+    store cannot keep anything - Discord's own page removes `localStorage` and
+    `sessionStorage` (measured), so a flag written there is forgotten on the next
+    start - which is why the *record* of the choice lives in
+    `plugins.state.json` (`src/plugin-host.js`) and `src/loader.cjs` hands it to
+    the runtime as the settings it starts from. A card, the runtime and the host
+    therefore read one thing rather than three copies of it, and the host never
+    claims to have started a plugin the runtime is running.
+  * **A plugin that patches Discord while it loads** cannot be switched in a page
+    that is already up. Its card says `restart to apply` instead of `running`,
+    the record is written first so the next start honors it, and the Plugins page
+    carries a **Restart** button (`client:relaunch` in `src/host.js`) so the
+    restart it needs is one press there rather than a hunt for the tray icon. It is
+    offered only while something is actually waiting - the reading is the runtime's
+    own "cannot switch live" plus the record disagreeing with what the page is
+    doing - and it says what: the label counts it and the tooltip names it, and the
+    summary under the filters says it too. With nothing waiting the button is
+    disabled rather than asking for a restart that would apply nothing.
+  * **Settings of a vendored plugin** are the plugin's own and are drawn by the
+    runtime that owns them: the card's cog opens that window rather than a form
+    assembled here, and a plugin that declares nothing gets no cog at all.
+  * **Hypercord's own pages are files on disk**, but not files the client reads
+    back: `src/panes.html`, `src/panes.css` and `src/panes.js` are handed to a
+    patched client as baked assets (`npm run dev:bake`, see *Desktop - run it*
+    above), because the loader is what carries them into Discord's page. A change
+    to them therefore needs a bake **and** a restart - by far the commonest
+    "my edit did nothing" in this tree. A restart is also what every plugin that
+    patches Discord while it loads needs, which is the case the **Restart** button
+    exists for.
 * **Themes.** Local `.theme.css` files, online themes by URL (fetched once, at
-  install time) and quick CSS, all through the one injection point in `src/themes.js`.
+  install time) and quick CSS, all through the one injection point in
+  `src/themes.js` - plus the published theme library, read when somebody presses
+  Load and trimmed to what a card shows. A theme installed from the library is
+  fetched once through the same door as a pasted URL, so there is one install
+  path, one sanitiser and no second code path to audit.
 * **Sources.** `addon-sources.json` is the catalogue of plugin and theme sources
   other clients publish - Aliucord's `manifest.json`, the Vendetta and Bunny
   plugin proxies, Revenge's `index.json`, Equicord's `Equibuilds` JSON, plus the
@@ -196,10 +303,12 @@ client can be installed from a browser as a web app. The route that serves it
   how to fetch it. The limit is honest: those plugins are written for *their*
   runtimes. This client installs only its own addon dialect (the bounded
   interpreter in [docs/addon-framework.md](docs/addon-framework.md): `.js`/`.txt`,
-  no loops, imports, async or prototype access), and the desktop host refuses a
-  TypeScript plugin body with "TypeScript source, not built" instead of
-  pretending. Sources are for browsing and fetching; what installs has to be in
-  this dialect.
+  no loops, imports, async or prototype access). A TypeScript *body* is not
+  something the host can load at all: the vendored catalogue's are run by the
+  built runtime (above - the host records the switch and the loader hands it
+  over), and anything else arriving from one of these catalogues has to be in
+  this dialect to be installable. Sources are for browsing and fetching; what
+  installs has to be in this dialect.
 
 ### Signing in with a token
 
@@ -290,17 +399,30 @@ hypercord/
   plugins/hyper/        the five Hyper plugins, and the set that is on by default
   plugins/manifest.json 371 entries of metadata: what the manager reads
   vendor/equicord       the vendored upstream core (GPL-3.0, licence kept verbatim)
-  tests/                plugin-host, themes, patcher (node); updater, preload (electron)
+  tests/                node: plugin-host, themes, patcher, tokens, signin, bridge,
+                        release, loader, host, beef, shipped; electron: updater,
+                        preload, baseline (see Tests)
   PERF.md               the budget and the real readings
 ```
 
 ## Tests
 
 ```bash
-npm test           # every suite, in one go
-npm run test:units # node: plugin-host, themes, patcher
-npm run test:electron # electron: updater, preload + panes injection
+npm test              # units, then the electron suites, in one go
+npm run test:units    # node: plugin-host, themes, patcher, tokens, signin,
+                      # bridge, release, loader, host, beef, shipped
+npm run test:electron # electron: updater, then preload
+npm run test:preload  # the injection path in a real window
+npm run test:updater
+npm run test:baseline # electron tests/baseline --perf=25: the RSS budget
 ```
+
+The electron suites need Electron and no display - every window they open is
+`show: false`. `test:preload` is the slow one, about a minute: it loads a dozen
+real windows (each a page standing in for Discord's, or a shape a release serves
+instead) and gives each one time to settle, because the things it checks - where a
+page lands, where a point inside it lands, which rows the entries wear - are
+answers the layout has to produce first.
 
 ## Licence
 
@@ -319,8 +441,7 @@ rollback), the preload (theme style element, the token option, the entries in
 Discord's settings, the pages mounted in Discord's content column) and the settings
 UI (all seven pages, real data, no page errors).
 
-Not yet true, and not claimed: the RSS budget in `PERF.md`, the vendored
-catalogue's TypeScript plugin *bodies* (the host refuses a `.ts`/`.tsx` entry with
-"TypeScript source, not built" rather than pretending - the upstream catalogue
-needs its own build step to become loadable JavaScript), the served `/discord`
-fallback, a signed installer, and the Android build.
+Not yet true, and not claimed: the RSS budget in `PERF.md`, the served `/discord`
+fallback, a signed desktop installer, and a *signed* Android APK - both Android
+modules build and produce APKs, but every one built so far is unsigned (see
+[docs/android-build.md](docs/android-build.md)), so nothing here is published.

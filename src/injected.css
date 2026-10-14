@@ -161,11 +161,15 @@
 
 /* ---- Hypercord's group in Discord's own settings sidebar ----------------- */
 
-/* The entries themselves are styled by Discord: src/preload.cjs gives each one the
-   element type, the role and the class attribute of Discord's own items, so they are
-   laid out, typed and coloured by the client's own stylesheet and read as one more
-   settings section - including under a third-party theme, which is the point. What is
-   left for Hypercord is only the break that makes the set a group of its own. */
+/* The entries are styled by Discord and nothing here touches them: where the client has
+   sections (src/preload.cjs, settingsNativeGroup) each entry *is* a copy of one of
+   Discord's own rows inside a copy of one of their sections, so the client's stylesheet
+   lays it out, types it, and hovers it - under a third-party theme too, which is the
+   point. The two rules below are for the other shape, the sidebar that holds its rows
+   itself and has nothing of Discord's to copy: there the group label and the break above
+   it are ours, and they carry our own ids (`#hypercord-settings-group`,
+   `#hypercord-settings-separator`) precisely because the copied group does not - an id
+   rule would otherwise win over the client's own heading styles on the native shape. */
 #hypercord-settings-separator {
   display: block;
   height: 1px;

@@ -512,7 +512,31 @@ public final class ApkPatcher {
             new ManifestEditor(in, os, property).processManifest();
         }
         os.flush();
-        return os.toByteArray();
+        // And one more pass over what it produced, to declare the manager as a package the
+        // patched app can see. Android 11 and later hide other packages unless they are named
+        // in <queries>, and this is how the running client is allowed to find app.assault.manager
+        // to prepare an app, read a prepared app's state, or hand a script to it. The pass is
+        // written as a copy-through: every node and attribute the manifest already had is
+        // passed on unchanged, and the <queries> entry is added as the manifest node ends, so an
+        // app's own visibility list and its application attributes survive the rewrite intact.
+        // (This rewrite is why the blanket QUERY_ALL_PACKAGES permission above is a fallback
+        // for the manager mode rather than the only thing making the manager reachable.)
+        pxb.android.axml.AxmlWriter writer = new pxb.android.axml.AxmlWriter();
+        new pxb.android.axml.AxmlReader(os.toByteArray()).accept(new pxb.android.axml.AxmlVisitor(writer) {
+            @Override public pxb.android.axml.NodeVisitor child(String ns, String name) {
+                pxb.android.axml.NodeVisitor node = super.child(ns, name);
+                if (!"manifest".equals(name)) return node;
+                return new pxb.android.axml.NodeVisitor(node) {
+                    @Override public void end() {
+                        pxb.android.axml.NodeVisitor queries = super.child(null, "queries");
+                        pxb.android.axml.NodeVisitor manager = queries.child(null, "package");
+                        manager.attr("http://schemas.android.com/apk/res/android", "name", 0x01010003, 3, "app.assault.manager");
+                        manager.end(); queries.end(); super.end();
+                    }
+                };
+            }
+        });
+        return writer.toByteArray();
     }
 
     /**

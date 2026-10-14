@@ -62,6 +62,31 @@ DEPENDENCIES = ROOT / "scripts" / "android-dependencies.json"
 # The two modules this repository builds, and the APK each one has to produce.
 MODULES = ("manager", "loader")
 
+# The JDK the modules compile under: android/manager/build.gradle sets sourceCompatibility
+# JavaVersion.VERSION_21 (android/loader is on 17, and 21 compiles both). The number is stated in
+# the module files and again here on purpose: with an older JDK the failure is not a message about
+# the JDK at all - Gradle runs a minute of other tasks first and then javac says "invalid source
+# release: 21", which reads as a bad source file. Saying it in the preflight is what makes it one
+# sentence about the toolchain instead, before any of that work happens.
+REQUIRED_JAVA = 21
+
+
+def java_release():
+    """The major version of the `java` on PATH, or None when it cannot be asked.
+
+    `java -version` writes its version to stderr and spells it two ways - `17.0.2` and
+    `1.8.0_402` - so both are read here, and a JDK that is merely old is reported as old rather
+    than as unreadable.
+    """
+    said = _capture(["java", "-version"]) or ""
+    found = re.search(r'version "(\d+)(?:\.(\d+))?', said)
+    if not found:
+        return None
+    major = int(found.group(1))
+    if major == 1 and found.group(2):
+        return int(found.group(2))
+    return major
+
 # ---------------------------------------------------------------------------
 # the loader's published asset bundle
 # ---------------------------------------------------------------------------
@@ -589,7 +614,24 @@ def preflight(modules, gradle="gradle") -> list:
             "The repository ships ./gradlew, which downloads the pinned distribution."
         )
     if shutil.which("java") is None:
-        blockers.append("java is not on PATH (JDK 17 or newer is required)")
+        blockers.append(
+            f"java is not on PATH (this build asks for JDK {REQUIRED_JAVA}: "
+            "android/manager/build.gradle sets sourceCompatibility JavaVersion.VERSION_21)"
+        )
+    else:
+        release = java_release()
+        if release is None:
+            blockers.append(
+                "java is on PATH but would not say which version it is, so whether it can compile "
+                f"the modules (which need {REQUIRED_JAVA}) is unknown"
+            )
+        elif release < REQUIRED_JAVA:
+            blockers.append(
+                f"java {release} is on PATH and the modules need {REQUIRED_JAVA}: "
+                "android/manager/build.gradle sets sourceCompatibility JavaVersion.VERSION_21, "
+                f"and an older JDK fails as javac's \"invalid source release: {REQUIRED_JAVA}\" "
+                "after Gradle has run everything else"
+            )
     for module in modules:
         if not (ANDROID_DIR / module / "build.gradle").is_file() and not (
             ANDROID_DIR / module / "build.gradle.kts"

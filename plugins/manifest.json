@@ -1,6 +1,6 @@
 {
  "name": "Hypercord",
- "generatedAt": "2026-10-11T19:19:11.221Z",
+ "generatedAt": "2026-10-13T22:48:14.002Z",
  "note": "metadata only: the plugin manager reads this, never plugin code",
  "provenance": {
   "core": "Equicord",
@@ -29,7 +29,7 @@
   "refuses": [
    "</style>",
    "<script",
-   "@import",
+   "an @import that is not an allow-listed https url",
    "javascript:",
    "expression(",
    "behavior:"
@@ -79,10 +79,12 @@
    "hyperBridge",
    "hyperAccounts",
    "hyperPanes",
-   "hypercordRPC"
+   "hypercordRPC",
+   "hyperBeef"
   ],
   "present": [
    "hyperAccounts",
+   "hyperBeef",
    "hyperBridge",
    "hypercordRPC",
    "hyperPanes"
@@ -100,6 +102,10 @@
    "authorRefs": [
     "Devs.Nuckyz",
     "Devs.relitrix"
+   ],
+   "tags": [
+    "Appearance",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/accountPanelServerProfile/index.tsx",
@@ -120,6 +126,7 @@
    "authorRefs": [
     "Devs.Lumap"
    ],
+   "tags": [],
    "version": "",
    "entry": "vendor/equicord/src/plugins/addAttachments/index.tsx",
    "built": false,
@@ -138,6 +145,9 @@
    ],
    "authorRefs": [
     "Devs.bastih18"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/advancedPermissions/index.tsx",
@@ -158,6 +168,10 @@
    "authorRefs": [
     "Devs.newwares"
    ],
+   "tags": [
+    "Customisation",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/altKrispSwitch/index.tsx",
    "built": false,
@@ -176,6 +190,10 @@
    ],
    "authorRefs": [
     "Devs.FieryFlames"
+   ],
+   "tags": [
+    "Appearance",
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/alwaysAnimate/index.ts",
@@ -196,6 +214,10 @@
    "authorRefs": [
     "Devs.thororen"
    ],
+   "tags": [
+    "Appearance",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/alwaysExpandProfiles/index.ts",
    "built": false,
@@ -214,6 +236,10 @@
    ],
    "authorRefs": [
     "Devs.surgedevs"
+   ],
+   "tags": [
+    "Appearance",
+    "Roles"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/alwaysExpandRoles/index.ts",
@@ -236,6 +262,9 @@
     "Devs.zt",
     "Devs.Trwy"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/alwaysTrust/index.tsx",
    "built": false,
@@ -257,6 +286,10 @@
     "Devs.ryanamay",
     "Devs.Mocha"
    ],
+   "tags": [
+    "Customisation",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/animalese/index.ts",
    "built": false,
@@ -275,6 +308,10 @@
    ],
    "authorRefs": [
     "Devs.fawn"
+   ],
+   "tags": [
+    "Privacy",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/anonymiseFileNames/index.tsx",
@@ -295,6 +332,10 @@
    "authorRefs": [
     "Devs.Ducko"
    ],
+   "tags": [
+    "Activity",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/arRPC.web/index.tsx",
    "built": false,
@@ -313,6 +354,10 @@
    ],
    "authorRefs": [
     "Devs.Joona"
+   ],
+   "tags": [
+    "Chat",
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/atSomeone/index.ts",
@@ -333,6 +378,10 @@
    "authorRefs": [
     "Devs.thororen"
    ],
+   "tags": [
+    "Activity",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/autoDndWhilePlaying.discordDesktop/index.ts",
    "built": false,
@@ -352,6 +401,10 @@
    "authorRefs": [
     "Devs.k304"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/autoJumpToMessage/index.ts",
    "built": false,
@@ -370,6 +423,10 @@
    ],
    "authorRefs": [
     "Devs.SSnowly"
+   ],
+   "tags": [
+    "Chat",
+    "Organisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/autoZipper/index.ts",
@@ -392,6 +449,10 @@
     "Devs.ImLvna",
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/bannersEverywhere/index.tsx",
    "built": false,
@@ -410,6 +471,11 @@
    ],
    "authorRefs": [
     "Devs.ThePirateStoner"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/baseDecoder/index.tsx",
@@ -436,6 +502,9 @@
     "Devs.AutumnVN",
     "Devs.thororen"
    ],
+   "tags": [
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterActivities/index.tsx",
    "built": false,
@@ -454,6 +523,11 @@
    ],
    "authorRefs": [
     "Devs.creations"
+   ],
+   "tags": [
+    "Appearance",
+    "Media",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterAudioPlayer/index.tsx",
@@ -476,6 +550,10 @@
     "Devs.Inbestigator",
     "Devs.yonn2222"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterBanReasons/index.tsx",
    "built": false,
@@ -495,6 +573,10 @@
    "authorRefs": [
     "Devs.TheArmagan"
    ],
+   "tags": [
+    "Appearance",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterBlockedUsers/index.tsx",
    "built": false,
@@ -513,6 +595,11 @@
    ],
    "authorRefs": [
     "Devs.thororen"
+   ],
+   "tags": [
+    "Appearance",
+    "Commands",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterCommands/index.ts",
@@ -536,6 +623,11 @@
     "Devs.juby",
     "Devs.AutumnVN",
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Organisation",
+    "Servers",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterFolders/index.tsx",
@@ -564,6 +656,10 @@
     "Devs.VillainsRule",
     "Devs.Davri"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterForwards/index.tsx",
    "built": false,
@@ -582,6 +678,11 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Accessibility",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterGifAltText/index.ts",
@@ -602,6 +703,10 @@
    "authorRefs": [
     "Devs.Samwich"
    ],
+   "tags": [
+    "Emotes",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterGifPicker/index.ts",
    "built": false,
@@ -613,7 +718,7 @@
   },
   {
    "id": "betterImageEditor",
-   "name": "Picture library",
+   "name": "BetterImageEditor",
    "description": "How many pictures to keep on each shelf.",
    "authors": [
     "heart_menace"
@@ -621,6 +726,7 @@
    "authorRefs": [
     "Devs.heart_menace"
    ],
+   "tags": [],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterImageEditor/index.tsx",
    "built": false,
@@ -642,6 +748,12 @@
     "Devs.iamme",
     "Devs.thororen"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterInvites/index.tsx",
    "built": false,
@@ -660,6 +772,10 @@
    ],
    "authorRefs": [
     "Devs.Joona"
+   ],
+   "tags": [
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/betterPlusReacts/index.ts",
@@ -684,6 +800,10 @@
     "Devs.goodbee",
     "Devs.nightmaresan"
    ],
+   "tags": [
+    "Roles",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterRoleContext/index.tsx",
    "built": false,
@@ -705,6 +825,10 @@
     "Devs.Ven",
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Roles",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterRoleDot/index.ts",
    "built": false,
@@ -724,6 +848,11 @@
    "authorRefs": [
     "Devs.amia"
    ],
+   "tags": [
+    "Notifications",
+    "Customisation",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterSessions/index.tsx",
    "built": false,
@@ -742,6 +871,11 @@
    ],
    "authorRefs": [
     "Devs.Kyuuhachi"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Organisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterSettings/index.tsx",
@@ -764,6 +898,10 @@
     "Devs.fawn",
     "Devs.Ven"
    ],
+   "tags": [
+    "Utility",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/betterUploadButton/index.ts",
    "built": false,
@@ -782,6 +920,10 @@
    ],
    "authorRefs": [
     "Devs.phil"
+   ],
+   "tags": [
+    "Media",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/biggerStreamPreview/index.tsx",
@@ -804,6 +946,11 @@
     "Devs.catcraft",
     "Devs.secp192k1"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Privacy"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/blockKeywords/index.tsx",
    "built": false,
@@ -822,6 +969,11 @@
    ],
    "authorRefs": [
     "Devs.D3SOX"
+   ],
+   "tags": [
+    "Privacy",
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/blockKrisp/index.ts",
@@ -842,6 +994,10 @@
    "authorRefs": [
     "Devs.Ven"
    ],
+   "tags": [
+    "Privacy",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/blurNsfw/index.ts",
    "built": false,
@@ -861,6 +1017,9 @@
    "authorRefs": [
     "Devs.thororen"
    ],
+   "tags": [
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/bypassPinPrompt/index.ts",
    "built": false,
@@ -872,13 +1031,19 @@
   },
   {
    "id": "bypassStatus",
-   "name": "guild",
+   "name": "BypassStatus",
    "description": "Guilds to let bypass (notified when pinged anywhere in guild)",
    "authors": [
     "Inbestigator"
    ],
    "authorRefs": [
     "Devs.Inbestigator"
+   ],
+   "tags": [
+    "Activity",
+    "Customisation",
+    "Notifications",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/bypassStatus/index.tsx",
@@ -903,6 +1068,10 @@
     "Devs.MaxHerbold",
     "Devs.D3SOX"
    ],
+   "tags": [
+    "Voice",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/callTimer/index.tsx",
    "built": false,
@@ -923,6 +1092,11 @@
    "authorRefs": [
     "Devs.creations",
     "Devs.thororen"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/channelBadges/index.tsx",
@@ -955,6 +1129,12 @@
     "Devs.justjxke",
     "Devs.keircn"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Organisation",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/channelTabs/index.tsx",
    "built": false,
@@ -976,6 +1156,9 @@
     "Devs.thororen",
     "Devs.creations"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/characterCounter/index.tsx",
    "built": false,
@@ -995,6 +1178,13 @@
    "authorRefs": [
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat",
+    "Emotes",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/cleanChannelName/index.tsx",
    "built": false,
@@ -1013,6 +1203,13 @@
    ],
    "authorRefs": [
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat",
+    "Organisation",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/cleanerChannelGroups/index.ts",
@@ -1035,6 +1232,10 @@
     "Devs.adryd",
     "Devs.thororen"
    ],
+   "tags": [
+    "Privacy",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/clearURLs/index.ts",
    "built": false,
@@ -1053,6 +1254,10 @@
    ],
    "authorRefs": [
     "Devs.prism"
+   ],
+   "tags": [
+    "Appearance",
+    "Roles"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/clickableRoles/index.tsx",
@@ -1075,6 +1280,9 @@
     "Devs.Samwich",
     "Devs.KamiRu"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/clientSideBlock/index.tsx",
    "built": false,
@@ -1093,6 +1301,10 @@
    ],
    "authorRefs": [
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/clientTheme/index.tsx",
@@ -1116,6 +1328,11 @@
     "Devs.niko",
     "Devs.Joona",
     "Devs.keircn"
+   ],
+   "tags": [
+    "Activity",
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/clipsEnhancements.discordDesktop/index.tsx",
@@ -1144,6 +1361,10 @@
     "Devs.Nyro",
     "Devs.Jahsohsani"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/clipUpload.desktop/index.tsx",
    "built": false,
@@ -1162,6 +1383,12 @@
    ],
    "authorRefs": [
     "Devs.benjii"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/collapsibleUi/index.tsx",
@@ -1182,6 +1409,10 @@
    "authorRefs": [
     "Devs.lewisakura"
    ],
+   "tags": [
+    "Appearance",
+    "Accessibility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/colorSighted/index.ts",
    "built": false,
@@ -1200,6 +1431,11 @@
    ],
    "authorRefs": [
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Customisation",
+    "Commands",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/commandPalette/index.tsx",
@@ -1222,6 +1458,11 @@
     "Devs.Nuckyz",
     "Devs.sadan"
    ],
+   "tags": [
+    "Developers",
+    "Console",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/consoleJanitor/index.tsx",
    "built": false,
@@ -1241,6 +1482,12 @@
    "authorRefs": [
     "Devs.Ven"
    ],
+   "tags": [
+    "Developers",
+    "Console",
+    "Shortcuts",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/consoleShortcuts/index.ts",
    "built": false,
@@ -1259,6 +1506,10 @@
    ],
    "authorRefs": [
     "Devs.camila314"
+   ],
+   "tags": [
+    "Appearance",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/contentWarning/index.tsx",
@@ -1281,6 +1532,10 @@
     "Devs.HappyEnderman",
     "Devs.Vishnya"
    ],
+   "tags": [
+    "Emotes",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/copyEmojiMarkdown/index.tsx",
    "built": false,
@@ -1301,6 +1556,9 @@
    "authorRefs": [
     "Devs.Obsidian",
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/copyFileContents/index.tsx",
@@ -1325,6 +1583,10 @@
     "Devs.Cortex",
     "Devs.Gir0fa"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/copyProfileColors/index.tsx",
    "built": false,
@@ -1343,6 +1605,10 @@
    ],
    "authorRefs": [
     "Devs.sadan"
+   ],
+   "tags": [
+    "Activity",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/copyStatusUrls/index.ts",
@@ -1365,6 +1631,10 @@
     "Devs.Ven",
     "Devs.Byeoon"
    ],
+   "tags": [
+    "Emotes",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/copyStickerLinks/index.tsx",
    "built": false,
@@ -1386,6 +1656,10 @@
     "Devs.Cortex",
     "Devs.castdrian"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/copyUserMention/index.tsx",
    "built": false,
@@ -1405,6 +1679,10 @@
    "authorRefs": [
     "Devs.castdrian"
    ],
+   "tags": [
+    "Utility",
+    "Friends"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/copyUserURLs/index.tsx",
    "built": false,
@@ -1423,6 +1701,10 @@
    ],
    "authorRefs": [
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Utility",
+    "Developers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/crashHandler/index.ts",
@@ -1449,6 +1731,11 @@
     "Devs.nexpid",
     "Devs.ZcraftElite"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/cursorBuddy/index.tsx",
    "built": false,
@@ -1460,7 +1747,7 @@
   },
   {
    "id": "customCommands",
-   "name": "ephemeral",
+   "name": "CustomCommands",
    "description": "Whether the response should only be visible to you",
    "authors": [
     "Vee",
@@ -1469,6 +1756,11 @@
    "authorRefs": [
     "Devs.Ven",
     "Devs.Luna"
+   ],
+   "tags": [
+    "Commands",
+    "Customisation",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/customCommands/index.ts",
@@ -1489,6 +1781,11 @@
    "authorRefs": [
     "Devs.sadan"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Organisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/customFolderIcons/index.tsx",
    "built": false,
@@ -1507,6 +1804,10 @@
    ],
    "authorRefs": [
     "Devs.newwares"
+   ],
+   "tags": [
+    "Activity",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/customIdle/index.ts",
@@ -1533,6 +1834,10 @@
     "Devs.nin0dev",
     "Devs.c0nnorgg"
    ],
+   "tags": [
+    "Activity",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/customRPC/index.tsx",
    "built": false,
@@ -1554,6 +1859,11 @@
     "Devs.ScattrdBlade",
     "Devs.TheKodeToad"
    ],
+   "tags": [
+    "Customisation",
+    "Notifications",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/customSounds/index.tsx",
    "built": false,
@@ -1574,6 +1884,10 @@
    "authorRefs": [
     "Devs.Kiri",
     "Devs.thororen"
+   ],
+   "tags": [
+    "Activity",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/customStatusTimeouts/index.tsx",
@@ -1600,6 +1914,10 @@
     "Devs.Suffocate",
     "Devs.Obsidian"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/customTimestamps/index.tsx",
    "built": false,
@@ -1619,6 +1937,11 @@
    "authorRefs": [
     "Devs.mochienya"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/customUserColors/index.tsx",
    "built": false,
@@ -1637,6 +1960,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/dearrow/index.tsx",
@@ -1663,6 +1990,10 @@
     "Devs.Kyuuhachi",
     "Devs.SomeAspy"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/declutter/index.tsx",
    "built": false,
@@ -1681,6 +2012,10 @@
    ],
    "authorRefs": [
     "Devs.FieryFlames"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/decor/index.tsx",
@@ -1703,6 +2038,10 @@
     "Devs.Ven",
     "Devs.sadan"
    ],
+   "tags": [
+    "Developers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/devCompanion.dev/index.tsx",
    "built": false,
@@ -1722,6 +2061,10 @@
    "authorRefs": [
     "Devs.Nuckyz"
    ],
+   "tags": [
+    "Voice",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/disableCallIdle/index.ts",
    "built": false,
@@ -1740,6 +2083,12 @@
    ],
    "authorRefs": [
     "Devs.Joona"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Media",
+    "Privacy"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/disableCameras/index.tsx",
@@ -1762,6 +2111,11 @@
     "Devs.KrystalSkull",
     "Devs.thororen"
    ],
+   "tags": [
+    "Appearance",
+    "Console",
+    "Developers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/discordDevBanner/index.tsx",
    "built": false,
@@ -1780,6 +2134,10 @@
    ],
    "authorRefs": [
     "Devs.Lexi"
+   ],
+   "tags": [
+    "Appearance",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/dontRoundMyTimestamps/index.ts",
@@ -1800,6 +2158,10 @@
    "authorRefs": [
     "Devs.dhopcs"
    ],
+   "tags": [
+    "Utility",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/downloadAllAttachments/index.tsx",
    "built": false,
@@ -1818,6 +2180,11 @@
    ],
    "authorRefs": [
     "Devs.PWall"
+   ],
+   "tags": [
+    "Customisation",
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/dragFavoriteEmotes/index.tsx",
@@ -1838,6 +2205,12 @@
    "authorRefs": [
     "Devs.justjxke"
    ],
+   "tags": [
+    "Chat",
+    "Servers",
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/dragify/index.tsx",
    "built": false,
@@ -1857,6 +2230,9 @@
    "authorRefs": [
     "Devs.prism"
    ],
+   "tags": [
+    "Developers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/elementHighlighter.dev/index.tsx",
    "built": false,
@@ -1875,6 +2251,9 @@
    ],
    "authorRefs": [
     "Devs.creations"
+   ],
+   "tags": [
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/equibopStreamFixes.equibop/index.tsx",
@@ -1917,6 +2296,11 @@
     "Devs.secp192k1",
     "Devs.tie"
    ],
+   "tags": [
+    "Appearance",
+    "Commands",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/equicordHelper/index.tsx",
    "built": false,
@@ -1937,6 +2321,10 @@
    "authorRefs": [
     "Devs.Ven",
     "Devs.AutumnVN"
+   ],
+   "tags": [
+    "Voice",
+    "Accessibility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/equicordToolbox/index.tsx",
@@ -1959,6 +2347,9 @@
     "Devs.SomeAspy",
     "Devs.thororen"
    ],
+   "tags": [
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/equissant/index.ts",
    "built": false,
@@ -1977,6 +2368,10 @@
    ],
    "authorRefs": [
     "Devs.prism"
+   ],
+   "tags": [
+    "Fun",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/exitSounds/index.tsx",
@@ -2005,6 +2400,10 @@
     "Devs.BanTheNons",
     "Devs.Nuckyz"
    ],
+   "tags": [
+    "Developers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/experiments/index.tsx",
    "built": false,
@@ -2025,6 +2424,10 @@
    "authorRefs": [
     "Devs.veygax",
     "Devs.dat_insanity"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/exportMessages/index.tsx",
@@ -2049,6 +2452,10 @@
     "Devs.Nuckyz",
     "Devs.scattagain"
    ],
+   "tags": [
+    "Emotes",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/expressionCloner/index.tsx",
    "built": false,
@@ -2067,6 +2474,10 @@
    ],
    "authorRefs": [
     "Devs.lewisakura"
+   ],
+   "tags": [
+    "Developers",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/f8break/index.ts",
@@ -2101,6 +2512,12 @@
     "Devs.AutumnVN",
     "Devs.sadan"
    ],
+   "tags": [
+    "Emotes",
+    "Appearance",
+    "Customisation",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fakeNitro/index.tsx",
    "built": false,
@@ -2122,6 +2539,10 @@
     "Devs.Alyxia",
     "Devs.Remty"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fakeProfileThemes/index.tsx",
    "built": false,
@@ -2140,6 +2561,10 @@
    ],
    "authorRefs": [
     "Devs.thororen"
+   ],
+   "tags": [
+    "Servers",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/fastDeleteChannels/index.tsx",
@@ -2164,6 +2589,10 @@
     "Devs.Ven",
     "Devs.justjxke"
    ],
+   "tags": [
+    "Emotes",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/favEmojiFirst/index.tsx",
    "built": false,
@@ -2184,6 +2613,11 @@
    "authorRefs": [
     "Devs.Davri",
     "Devs.nin0dev"
+   ],
+   "tags": [
+    "Chat",
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/favouriteAnything/index.tsx",
@@ -2208,6 +2642,9 @@
     "Devs.keircn",
     "Devs.ScattrdBlade"
    ],
+   "tags": [
+    "Media"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/fileUpload/index.tsx",
    "built": false,
@@ -2226,6 +2663,10 @@
    ],
    "authorRefs": [
     "Devs.newwares"
+   ],
+   "tags": [
+    "Chat",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/findReply/index.tsx",
@@ -2246,6 +2687,9 @@
    "authorRefs": [
     "Devs.Grzesiek11"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fixCodeblockGap/index.ts",
    "built": false,
@@ -2264,6 +2708,10 @@
    ],
    "authorRefs": [
     "Devs.thororen"
+   ],
+   "tags": [
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/fixFileExtensions/index.tsx",
@@ -2286,6 +2734,10 @@
     "Devs.Nuckyz",
     "Devs.Ven"
    ],
+   "tags": [
+    "Media",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fixImagesQuality/index.tsx",
    "built": false,
@@ -2304,6 +2756,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fixSpotifyEmbeds.desktop/index.tsx",
@@ -2326,6 +2782,10 @@
     "Devs.coolelectronics",
     "Devs.arHSM"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fixYoutubeEmbeds.desktop/index.tsx",
    "built": false,
@@ -2345,6 +2805,9 @@
    "authorRefs": [
     "Devs.TheArmagan"
    ],
+   "tags": [
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/followVoiceUser/index.tsx",
    "built": false,
@@ -2363,6 +2826,10 @@
    ],
    "authorRefs": [
     "Devs.vmohammad"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/fontLoader/index.tsx",
@@ -2385,6 +2852,11 @@
     "Devs.D3SOX",
     "Devs.Nickyux"
    ],
+   "tags": [
+    "Roles",
+    "Appearance",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/forceOwnerCrown/index.ts",
    "built": false,
@@ -2404,6 +2876,10 @@
    "authorRefs": [
     "Devs.Samwich"
    ],
+   "tags": [
+    "Shortcuts",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/frequentQuickSwitcher/index.tsx",
    "built": false,
@@ -2422,6 +2898,10 @@
    ],
    "authorRefs": [
     "Devs.HypedDomi"
+   ],
+   "tags": [
+    "Friends",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/friendCodes/index.tsx",
@@ -2444,6 +2924,10 @@
     "Devs.afn",
     "Devs.Dziurwa"
    ],
+   "tags": [
+    "Friends",
+    "Commands"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/friendInvites/index.ts",
    "built": false,
@@ -2465,6 +2949,9 @@
     "Devs.Samwich",
     "Devs.lucabeyer"
    ],
+   "tags": [
+    "Friends"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/friendshipRanks/index.tsx",
    "built": false,
@@ -2483,6 +2970,9 @@
    ],
    "authorRefs": [
     "Devs.Samwich"
+   ],
+   "tags": [
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/friendTags/index.tsx",
@@ -2505,6 +2995,9 @@
     "Devs.Ven",
     "Devs.Aria"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fullSearchContext/index.tsx",
    "built": false,
@@ -2524,6 +3017,10 @@
    "authorRefs": [
     "Devs.sadan"
    ],
+   "tags": [
+    "Shortcuts",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/fullUserInChatbox/index.tsx",
    "built": false,
@@ -2542,6 +3039,10 @@
    ],
    "authorRefs": [
     "Devs.mochienya"
+   ],
+   "tags": [
+    "Appearance",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/fullVcPfp/index.tsx",
@@ -2563,6 +3064,10 @@
    "authorRefs": [
     "Devs.Nuckyz",
     "Devs.RuukuLada"
+   ],
+   "tags": [
+    "Activity",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/gameActivityToggle/index.tsx",
@@ -2589,6 +3094,10 @@
     "Devs.justjxke",
     "Devs.iamme"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/ghosted/index.tsx",
    "built": false,
@@ -2607,6 +3116,10 @@
    ],
    "authorRefs": [
     "Devs.creations"
+   ],
+   "tags": [
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/gifCollections/index.tsx",
@@ -2629,6 +3142,10 @@
     "Devs.Leon135",
     "Devs.benjii"
    ],
+   "tags": [
+    "Emotes",
+    "Media"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/gifMaker/index.tsx",
    "built": false,
@@ -2647,6 +3164,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/gifPaste/index.ts",
@@ -2668,6 +3189,11 @@
    "authorRefs": [
     "Devs.Lunascape",
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/gifProviderSwitcher/index.tsx",
@@ -2692,6 +3218,9 @@
     "Devs.Panniku",
     "Devs.benjii"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/githubRepos/index.tsx",
    "built": false,
@@ -2715,6 +3244,9 @@
     "Devs.Wolfie",
     "Devs.thororen"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/globalBadges/index.tsx",
    "built": false,
@@ -2736,6 +3268,10 @@
     "Devs.Samwich",
     "Devs.KrystalSkull"
    ],
+   "tags": [
+    "Commands",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/googleThat/index.tsx",
    "built": false,
@@ -2754,6 +3290,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Emotes",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/greetStickerPicker/index.tsx",
@@ -2780,6 +3320,11 @@
     "Devs.Synth",
     "Devs.thororen"
    ],
+   "tags": [
+    "Emotes",
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/guildPickerDumper/index.tsx",
    "built": false,
@@ -2798,6 +3343,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Chat",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/hideAttachments/index.tsx",
@@ -2818,6 +3367,10 @@
    "authorRefs": [
     "Devs.iamme"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/hideChatButtons/index.tsx",
    "built": false,
@@ -2836,6 +3389,10 @@
    ],
    "authorRefs": [
     "Devs.yash"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/hideMessages/index.tsx",
@@ -2856,6 +3413,10 @@
    "authorRefs": [
     "Devs.bep"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/hideServers/index.tsx",
    "built": false,
@@ -2874,6 +3435,9 @@
    ],
    "authorRefs": [
     "Devs.Samwich"
+   ],
+   "tags": [
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/homeTyping/index.tsx",
@@ -2894,6 +3458,9 @@
    "authorRefs": [
     "Devs.ImLvna"
    ],
+   "tags": [
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/hopOn/index.tsx",
    "built": false,
@@ -2913,6 +3480,10 @@
    "authorRefs": [
     "Devs.nin0dev"
    ],
+   "tags": [
+    "Emotes",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/husk/index.tsx",
    "built": false,
@@ -2928,8 +3499,29 @@
    "description": "The accounts the control server knows, and logging this client in as one of them",
    "authors": [],
    "authorRefs": [],
+   "tags": [
+    "Hyper"
+   ],
    "version": "",
    "entry": "plugins/hyper/hyperAccounts/index.js",
+   "built": false,
+   "builtin": true,
+   "deps": [],
+   "defaultOn": true,
+   "source": "hypercord",
+   "defaultOnSet": "Hyper"
+  },
+  {
+   "id": "hyperBeef",
+   "name": "hyperBeef",
+   "description": "Beef: the generator, its reload and rollback, the line lab and the last beef",
+   "authors": [],
+   "authorRefs": [],
+   "tags": [
+    "Hyper"
+   ],
+   "version": "",
+   "entry": "plugins/hyper/hyperBeef/index.js",
    "built": false,
    "builtin": true,
    "deps": [],
@@ -2943,6 +3535,9 @@
    "description": "Keeps the link to the Hypercord control server and reports what state it is in",
    "authors": [],
    "authorRefs": [],
+   "tags": [
+    "Hyper"
+   ],
    "version": "",
    "entry": "plugins/hyper/hyperBridge/index.js",
    "built": false,
@@ -2958,6 +3553,9 @@
    "description": "Publishes this client's identity to the control server",
    "authors": [],
    "authorRefs": [],
+   "tags": [
+    "Hyper"
+   ],
    "version": "",
    "entry": "plugins/hyper/hypercordRPC/index.js",
    "built": false,
@@ -2970,9 +3568,12 @@
   {
    "id": "hyperPanes",
    "name": "hyperPanes",
-   "description": "The Hypercord panes window: commands, plugins, themes, logs, accounts",
+   "description": "Hypercord's settings pages, inside Discord's own settings: commands, plugins, Hyper plugins, beef, themes, logs, accounts, access keys",
    "authors": [],
    "authorRefs": [],
+   "tags": [
+    "Hyper"
+   ],
    "version": "",
    "entry": "plugins/hyper/hyperPanes/index.js",
    "built": false,
@@ -2992,6 +3593,9 @@
    "authorRefs": [
     "Devs.iamme"
    ],
+   "tags": [
+    "Developers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/iconViewer/index.tsx",
    "built": false,
@@ -3010,6 +3614,9 @@
    ],
    "authorRefs": [
     "Devs.SteelTech"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/idleAutoRestart/index.tsx",
@@ -3032,6 +3639,11 @@
     "Devs.Nuckyz",
     "Devs.Kylie"
    ],
+   "tags": [
+    "Activity",
+    "Privacy",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/ignoreActivities/index.tsx",
    "built": false,
@@ -3052,6 +3664,9 @@
    "authorRefs": [
     "Devs.TheArmagan",
     "Devs.thororen"
+   ],
+   "tags": [
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/ignoreCalls/index.tsx",
@@ -3074,6 +3689,10 @@
     "Devs.botato",
     "Devs.Nyako"
    ],
+   "tags": [
+    "Utility",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/iLoveSpam/index.ts",
    "built": false,
@@ -3092,6 +3711,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/imageFilename/index.ts",
@@ -3114,6 +3737,10 @@
     "Devs.Kyuuhachi",
     "Devs.Sqaaakoi"
    ],
+   "tags": [
+    "Media",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/imageLink/index.ts",
    "built": false,
@@ -3133,6 +3760,10 @@
    "authorRefs": [
     "Devs.Aria"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/imageZoom/index.tsx",
    "built": false,
@@ -3151,6 +3782,10 @@
    ],
    "authorRefs": [
     "Devs.Dolfies"
+   ],
+   "tags": [
+    "Friends",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/implicitRelationships/index.ts",
@@ -3173,6 +3808,9 @@
     "Devs.zyqunix",
     "Devs.BioTomateDE"
    ],
+   "tags": [
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/ingtoninator/index.tsx",
    "built": false,
@@ -3191,6 +3829,10 @@
    ],
    "authorRefs": [
     "Devs.nin0dev"
+   ],
+   "tags": [
+    "Commands",
+    "Roles"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/inRole/index.tsx",
@@ -3215,6 +3857,10 @@
     "Devs.thororen",
     "Devs.mart"
    ],
+   "tags": [
+    "Media",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/instantScreenshare/index.tsx",
    "built": false,
@@ -3234,6 +3880,9 @@
    "authorRefs": [
     "Devs.SammCheese"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/invisibleChat.desktop/index.tsx",
    "built": false,
@@ -3252,6 +3901,9 @@
    ],
    "authorRefs": [
     "Devs.VillainsRule"
+   ],
+   "tags": [
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/inviteDefaults/index.ts",
@@ -3273,6 +3925,10 @@
    "authorRefs": [
     "Devs.Grzesiek11",
     "Devs.jamesbt365"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/ircColors/index.ts",
@@ -3297,6 +3953,10 @@
     "Devs.keircn",
     "Devs.tt"
    ],
+   "tags": [
+    "Chat",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/iRememberYou/index.tsx",
    "built": false,
@@ -3318,6 +3978,10 @@
     "Devs.Samwich",
     "Devs.thororen"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/jumpTo/index.tsx",
    "built": false,
@@ -3337,6 +4001,10 @@
    "authorRefs": [
     "Devs.Nuckyz"
    ],
+   "tags": [
+    "Utility",
+    "Organisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/keepCurrentChannel/index.ts",
    "built": false,
@@ -3355,6 +4023,10 @@
    ],
    "authorRefs": [
     "Devs.Ethan"
+   ],
+   "tags": [
+    "Accessibility",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/keyboardNavigation/index.tsx",
@@ -3376,6 +4048,9 @@
    "authorRefs": [
     "Devs.HypedDomi",
     "Devs.Etorix"
+   ],
+   "tags": [
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/keyboardSounds/index.ts",
@@ -3400,6 +4075,7 @@
     "Devs.x3rt",
     "Devs.benjas333"
    ],
+   "tags": [],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/keywordNotify/index.tsx",
    "built": false,
@@ -3419,6 +4095,10 @@
    "authorRefs": [
     "Devs.Crxa"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/lastActive/index.tsx",
    "built": false,
@@ -3437,6 +4117,10 @@
    ],
    "authorRefs": [
     "Devs.KawaiianPizza"
+   ],
+   "tags": [
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/limitlessScreenshare/index.tsx",
@@ -3461,6 +4145,11 @@
     "Devs.KraXen72",
     "Devs.UlyssesZhan"
    ],
+   "tags": [
+    "Appearance",
+    "Fun",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/loadingQuotes/index.ts",
    "built": false,
@@ -3479,6 +4168,9 @@
    ],
    "authorRefs": [
     "Devs.nexpid"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/loginWithQR/index.tsx",
@@ -3499,6 +4191,10 @@
    "authorRefs": [
     "Devs.yafyx"
    ],
+   "tags": [
+    "Chat",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/markdownTables/index.tsx",
    "built": false,
@@ -3517,6 +4213,10 @@
    ],
    "authorRefs": [
     "Devs.D3SOX"
+   ],
+   "tags": [
+    "Chat",
+    "Media"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/mediaPlaybackSpeed/index.tsx",
@@ -3541,6 +4241,10 @@
     "Devs.Commandtechno",
     "Devs.Apexo"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/memberCount/index.tsx",
    "built": false,
@@ -3562,6 +4266,10 @@
     "Devs.Ven",
     "Devs.SerStars"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/mentionAvatars/index.tsx",
    "built": false,
@@ -3580,6 +4288,9 @@
    ],
    "authorRefs": [
     "Devs.port22exposed"
+   ],
+   "tags": [
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageBurst/index.ts",
@@ -3606,6 +4317,10 @@
     "Devs.ZcraftElite",
     "Devs.omaw"
    ],
+   "tags": [
+    "Chat",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/messageClickActions/index.ts",
    "built": false,
@@ -3624,6 +4339,10 @@
    ],
    "authorRefs": [
     "Devs.Hen"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageColors/index.tsx",
@@ -3644,6 +4363,10 @@
    "authorRefs": [
     "Devs.GroupXyz"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageFetchTimer/index.tsx",
    "built": false,
@@ -3662,6 +4385,10 @@
    ],
    "authorRefs": [
     "Devs.arHSM"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/messageLatency/index.tsx",
@@ -3686,6 +4413,10 @@
     "Devs.Ven",
     "Devs.RyanCaoDev"
    ],
+   "tags": [
+    "Chat",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/messageLinkEmbeds/index.tsx",
    "built": false,
@@ -3704,6 +4435,10 @@
    ],
    "authorRefs": [
     "Devs.Kyuuhachi"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageLinkTooltip/index.tsx",
@@ -3738,6 +4473,10 @@
     "Devs.justjxke",
     "Devs.f3tch"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/messageLogger/index.tsx",
    "built": false,
@@ -3758,6 +4497,10 @@
    "authorRefs": [
     "Devs.Aria",
     "Devs.keircn"
+   ],
+   "tags": [
+    "Chat",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageLoggerEnhanced/index.tsx",
@@ -3780,6 +4523,10 @@
     "Devs.cassie",
     "Devs.mochienya"
    ],
+   "tags": [
+    "Chat",
+    "Notifications"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageNotifier/index.ts",
    "built": false,
@@ -3801,6 +4548,10 @@
     "Devs.prism",
     "Devs.justjxke"
    ],
+   "tags": [
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messagePeek/index.tsx",
    "built": false,
@@ -3820,6 +4571,10 @@
    "authorRefs": [
     "Devs.creations"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/messageTranslate/index.tsx",
    "built": false,
@@ -3838,6 +4593,10 @@
    ],
    "authorRefs": [
     "Devs.benjii"
+   ],
+   "tags": [
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/micLoopbackTester/index.tsx",
@@ -3859,6 +4618,9 @@
    "authorRefs": [
     "Devs.Etorix",
     "Devs.korzi"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/middleClickTweaks/index.ts",
@@ -3902,6 +4664,11 @@
     "Devs.JacobTm",
     "Devs.voidbbg"
    ],
+   "tags": [
+    "Commands",
+    "Fun",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/moreCommands/index.ts",
    "built": false,
@@ -3925,6 +4692,12 @@
     "Devs.Sqaaakoi",
     "Devs.iamme"
    ],
+   "tags": [
+    "Emotes",
+    "Reactions",
+    "Customisation",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/moreQuickReactions/index.ts",
    "built": false,
@@ -3945,6 +4718,11 @@
    "authorRefs": [
     "Devs.Leko",
     "Devs.Arjix"
+   ],
+   "tags": [
+    "Chat",
+    "Emotes",
+    "Media"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/moreStickers/index.tsx",
@@ -3977,6 +4755,10 @@
     "Devs.Hen",
     "Devs.meowabyte"
    ],
+   "tags": [
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/moreUserTags/index.tsx",
    "built": false,
@@ -3997,6 +4779,9 @@
    "authorRefs": [
     "Devs.Megu",
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/moyai/index.ts",
@@ -4031,6 +4816,10 @@
     "Devs.vmohammad",
     "Devs.Joona"
    ],
+   "tags": [
+    "Media",
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/musicControls/index.tsx",
    "built": false,
@@ -4060,6 +4849,10 @@
     "Devs.blahajZip",
     "Devs.archeruwu"
    ],
+   "tags": [
+    "Activity",
+    "Media"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/musicRichPresence/index.tsx",
    "built": false,
@@ -4079,6 +4872,10 @@
    "authorRefs": [
     "Devs.amia"
    ],
+   "tags": [
+    "Friends",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/mutualGroupDMs/index.tsx",
    "built": false,
@@ -4097,6 +4894,9 @@
    ],
    "authorRefs": [
     "Devs.vappstar"
+   ],
+   "tags": [
+    "Media"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/neverPausePreviews/index.tsx",
@@ -4125,6 +4925,10 @@
     "Devs.Mopi",
     "Devs.GabiRP"
    ],
+   "tags": [
+    "Servers",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/newGuildSettings/index.tsx",
    "built": false,
@@ -4137,12 +4941,15 @@
   {
    "id": "newPluginsManager",
    "name": "NewPluginsManager",
-   "description": "Utility that notifies you when new plugins are added to Equicord",
+   "description": "Utility that notifies you when new plugins are added to Hypercord",
    "authors": [
     "Sqaaakoi"
    ],
    "authorRefs": [
     "Devs.Sqaaakoi"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/newPluginsManager/index.tsx",
@@ -4171,6 +4978,10 @@
     "Devs.Elvyra",
     "Devs.Etorix"
    ],
+   "tags": [
+    "Accessibility",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noBlockedMessages/index.ts",
    "built": false,
@@ -4189,6 +5000,9 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noDeepLinks.web/index.ts",
@@ -4209,6 +5023,10 @@
    "authorRefs": [
     "Devs.Ven"
    ],
+   "tags": [
+    "Developers",
+    "Console"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noDevtoolsWarning/index.ts",
    "built": false,
@@ -4227,6 +5045,9 @@
    ],
    "authorRefs": [
     "Devs.Cyn"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noF1/index.ts",
@@ -4247,6 +5068,10 @@
    "authorRefs": [
     "Devs.CatNoir"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noMaskedUrlPaste/index.ts",
    "built": false,
@@ -4265,6 +5090,9 @@
    ],
    "authorRefs": [
     "Devs.Darxoon"
+   ],
+   "tags": [
+    "Accessibility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noMiddleClickPaste/index.ts",
@@ -4285,6 +5113,11 @@
    "authorRefs": [
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Media",
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noMosaic/index.ts",
    "built": false,
@@ -4303,6 +5136,9 @@
    ],
    "authorRefs": [
     "Devs.thororen"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/noNitroUpsell/index.ts",
@@ -4323,6 +5159,10 @@
    "authorRefs": [
     "Devs.nekohaxx"
    ],
+   "tags": [
+    "Utility",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noOnboardingDelay/index.ts",
    "built": false,
@@ -4341,6 +5181,10 @@
    ],
    "authorRefs": [
     "Devs.amia"
+   ],
+   "tags": [
+    "Notifications",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noPendingCount/index.ts",
@@ -4361,6 +5205,9 @@
    "authorRefs": [
     "Devs.TheKodeToad"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noProfileThemes/index.ts",
    "built": false,
@@ -4379,6 +5226,10 @@
    ],
    "authorRefs": [
     "Devs.omaw"
+   ],
+   "tags": [
+    "Servers",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/noPushToTalk/index.ts",
@@ -4405,6 +5256,10 @@
     "Devs.pylix",
     "Devs.outfoxxed"
    ],
+   "tags": [
+    "Chat",
+    "Notifications"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noReplyMention/index.tsx",
    "built": false,
@@ -4423,6 +5278,9 @@
    ],
    "authorRefs": [
     "Devs.bb010g"
+   ],
+   "tags": [
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/normalizeMessageLinks/index.ts",
@@ -4443,6 +5301,11 @@
    "authorRefs": [
     "Devs.Samwich"
    ],
+   "tags": [
+    "Appearance",
+    "Fun",
+    "Roles"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/noRoleHeaders/index.ts",
    "built": false,
@@ -4461,6 +5324,10 @@
    ],
    "authorRefs": [
     "Devs.Cyn"
+   ],
+   "tags": [
+    "Privacy",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/noRPC.discordDesktop/index.ts",
@@ -4481,6 +5348,10 @@
    "authorRefs": [
     "Devs.UlyssesZhan"
    ],
+   "tags": [
+    "Emotes",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noServerEmojis/index.ts",
    "built": false,
@@ -4499,6 +5370,10 @@
    ],
    "authorRefs": [
     "Devs.rushii"
+   ],
+   "tags": [
+    "Notifications",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noSystemBadge.discordDesktop/index.ts",
@@ -4519,6 +5394,10 @@
    "authorRefs": [
     "Devs.Kyuuhachi"
    ],
+   "tags": [
+    "Appearance",
+    "Notifications"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/notificationTitle.discordDesktop/index.tsx",
    "built": false,
@@ -4537,6 +5416,10 @@
    ],
    "authorRefs": [
     "Devs.philipbry"
+   ],
+   "tags": [
+    "Notifications",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/notificationVolume/index.ts",
@@ -4557,6 +5440,9 @@
    "authorRefs": [
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noTypingAnimation/index.ts",
    "built": false,
@@ -4575,6 +5461,9 @@
    ],
    "authorRefs": [
     "Devs.Rini"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/noUnblockToJump/index.ts",
@@ -4597,6 +5486,10 @@
     "Devs.Ven",
     "Devs.adryd"
    ],
+   "tags": [
+    "Fun",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/oneko/index.ts",
    "built": false,
@@ -4615,6 +5508,10 @@
    ],
    "authorRefs": [
     "Devs.ProffDea"
+   ],
+   "tags": [
+    "Notifications",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/onePingPerDM/index.ts",
@@ -4637,6 +5534,9 @@
     "Devs.Ven",
     "Devs.surgedevs"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/openInApp/index.ts",
    "built": false,
@@ -4655,6 +5555,10 @@
    ],
    "authorRefs": [
     "Devs.SpikeHD"
+   ],
+   "tags": [
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/orbolayBridge/index.tsx",
@@ -4675,6 +5579,11 @@
    "authorRefs": [
     "Devs.Inbestigator"
    ],
+   "tags": [
+    "Servers",
+    "Organisation",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/overrideForumDefaults/index.tsx",
    "built": false,
@@ -4693,6 +5602,9 @@
    ],
    "authorRefs": [
     "Devs.UwUDev"
+   ],
+   "tags": [
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/partyMode/index.ts",
@@ -4715,6 +5627,9 @@
     "Devs.Dolfies",
     "Devs.amia"
    ],
+   "tags": [
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/pauseInvitesForever/index.tsx",
    "built": false,
@@ -4734,6 +5649,9 @@
    "authorRefs": [
     "Devs.omaw"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/pendingFriendRequest/index.tsx",
    "built": false,
@@ -4752,6 +5670,10 @@
    ],
    "authorRefs": [
     "Devs.lewisakura"
+   ],
+   "tags": [
+    "Servers",
+    "Roles"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/permissionFreeWill/index.ts",
@@ -4774,6 +5696,11 @@
     "Devs.Nuckyz",
     "Devs.Ven"
    ],
+   "tags": [
+    "Servers",
+    "Roles",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/permissionsViewer/index.tsx",
    "built": false,
@@ -4795,6 +5722,10 @@
     "Devs.Ven",
     "Devs.u32"
    ],
+   "tags": [
+    "Fun",
+    "Commands"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/petpet/index.ts",
    "built": false,
@@ -4813,6 +5744,10 @@
    ],
    "authorRefs": [
     "Devs.Lumap"
+   ],
+   "tags": [
+    "Media",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/pictureInPicture/index.tsx",
@@ -4835,6 +5770,10 @@
     "Devs.Ven",
     "Devs.Aria"
    ],
+   "tags": [
+    "Friends",
+    "Organisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/pinDms/index.tsx",
    "built": false,
@@ -4853,6 +5792,12 @@
    ],
    "authorRefs": [
     "Devs.smuki"
+   ],
+   "tags": [
+    "Chat",
+    "Friends",
+    "Notifications",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/pingNotifications/index.tsx",
@@ -4873,6 +5818,10 @@
    "authorRefs": [
     "Devs.iamme"
    ],
+   "tags": [
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/pinIcon/index.tsx",
    "built": false,
@@ -4891,6 +5840,10 @@
    ],
    "authorRefs": [
     "Devs.botato"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/plainFolderIcon/index.ts",
@@ -4919,6 +5872,9 @@
     "Devs.Ven",
     "Devs.neoarz"
    ],
+   "tags": [
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/platformIndicators/index.tsx",
    "built": false,
@@ -4939,6 +5895,9 @@
    "authorRefs": [
     "Devs.Drag",
     "Devs.neoarz"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/platformSpoofer/index.tsx",
@@ -4961,6 +5920,9 @@
     "Devs.Samwich",
     "Devs.WKoA"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/polishWording/index.ts",
    "built": false,
@@ -4979,6 +5941,10 @@
    ],
    "authorRefs": [
     "Devs.Aria"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/previewMessage/index.tsx",
@@ -5001,6 +5967,11 @@
     "Devs.omaw",
     "Devs.justjxke"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/profileSets/index.tsx",
    "built": false,
@@ -5020,6 +5991,12 @@
    "authorRefs": [
     "Devs.Etorix"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Privacy",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/questify/index.tsx",
    "built": false,
@@ -5038,6 +6015,10 @@
    ],
    "authorRefs": [
     "Devs.kemo"
+   ],
+   "tags": [
+    "Chat",
+    "Shortcuts"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/quickMention/index.tsx",
@@ -5062,6 +6043,10 @@
     "Devs.Ven",
     "Devs.pylix"
    ],
+   "tags": [
+    "Chat",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/quickReply/index.ts",
    "built": false,
@@ -5080,6 +6065,10 @@
    ],
    "authorRefs": [
     "Devs.prism"
+   ],
+   "tags": [
+    "Appearance",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/quickThemeSwitcher.discordDesktop/index.tsx",
@@ -5106,6 +6095,9 @@
     "Devs.neoarz",
     "Devs.prism"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/quoter/index.tsx",
    "built": false,
@@ -5129,6 +6121,10 @@
     "Devs.omaw",
     "Devs.thororen"
    ],
+   "tags": [
+    "Fun",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/randomVoice/index.tsx",
    "built": false,
@@ -5150,6 +6146,9 @@
     "Devs.Cyn",
     "Devs.maisymoe"
    ],
+   "tags": [
+    "Developers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/reactErrorDecoder/index.ts",
    "built": false,
@@ -5168,6 +6167,10 @@
    ],
    "authorRefs": [
     "Devs.Kurt"
+   ],
+   "tags": [
+    "Reactions",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/reactionTimestamps/index.tsx",
@@ -5190,6 +6193,10 @@
     "Devs.kemo",
     "Devs.KrystalSkull"
    ],
+   "tags": [
+    "Notifications",
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/readAllNotificationsButton/index.tsx",
    "built": false,
@@ -5201,13 +6208,17 @@
   },
   {
    "id": "recentDMSwitcher",
-   "name": "Unknown",
+   "name": "RecentDMSwitcher",
    "description": "Visual indicator style while cycling",
    "authors": [
     "mmeta"
    ],
    "authorRefs": [
     "Devs.mmeta"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/recentDMSwitcher/index.tsx",
@@ -5227,6 +6238,10 @@
    ],
    "authorRefs": [
     "Devs.nick"
+   ],
+   "tags": [
+    "Friends",
+    "Notifications"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/relationshipNotifier/index.ts",
@@ -5249,6 +6264,10 @@
     "Devs.MrDiamond",
     "Devs.meowabyte"
    ],
+   "tags": [
+    "Customisation",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/remix/index.tsx",
    "built": false,
@@ -5270,6 +6289,9 @@
     "Devs.Tolgchu",
     "Devs.thororen"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/repeatMessages/index.tsx",
    "built": false,
@@ -5290,6 +6312,10 @@
    "authorRefs": [
     "Devs.Moxxie",
     "Devs.Ethan"
+   ],
+   "tags": [
+    "Utility",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/replaceGoogleSearch/index.tsx",
@@ -5314,6 +6340,10 @@
     "Devs.MrDiamond",
     "Devs.keircn"
    ],
+   "tags": [
+    "Chat",
+    "Notifications"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/replyPingControl/index.ts",
    "built": false,
@@ -5333,6 +6363,10 @@
    "authorRefs": [
     "Devs.Kyuuhachi"
    ],
+   "tags": [
+    "Chat",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/replyTimestamp/index.tsx",
    "built": false,
@@ -5351,6 +6385,12 @@
    ],
    "authorRefs": [
     "Devs.whqwert"
+   ],
+   "tags": [
+    "Accessibility",
+    "Chat",
+    "Shortcuts",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/revealAllSpoilers/index.ts",
@@ -5373,6 +6413,10 @@
     "Devs.Ven",
     "Devs.Nuckyz"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/reverseImageSearch/index.tsx",
    "built": false,
@@ -5393,6 +6437,10 @@
    "authorRefs": [
     "Devs.mantikafasi",
     "Devs.Ven"
+   ],
+   "tags": [
+    "Friends",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/reviewDB/index.tsx",
@@ -5416,6 +6464,10 @@
     "Devs.cassie",
     "Devs.mochienya",
     "Devs.secp192k1"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/richMagnetLinks/index.tsx",
@@ -5454,6 +6506,9 @@
     "Devs.creations",
     "Devs.Star123451"
    ],
+   "tags": [
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/richPresence/index.tsx",
    "built": false,
@@ -5481,6 +6536,10 @@
     "Devs.Kyuuhachi",
     "Devs.jamesbt365"
    ],
+   "tags": [
+    "Roles",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/roleColorEverywhere/index.tsx",
    "built": false,
@@ -5502,6 +6561,9 @@
     "Devs.Nyako",
     "Devs.nin0dev"
    ],
+   "tags": [
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/rpcEditor/index.tsx",
    "built": false,
@@ -5514,12 +6576,16 @@
   {
    "id": "saveFavoriteGIFs",
    "name": "SaveFavoriteGIFs",
-   "description": "Show 'Save Favorite GIFs' button in Equicord Toolbox (Requires Reload)",
+   "description": "Show 'Save Favorite GIFs' button in Hypercord Toolbox (Requires Reload)",
    "authors": [
     "thororen"
    ],
    "authorRefs": [
     "Devs.thororen"
+   ],
+   "tags": [
+    "Emotes",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/saveFavoriteGIFs/index.tsx",
@@ -5542,6 +6608,10 @@
     "Devs.mmeta",
     "Devs.prism"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/scheduledMessages/index.tsx",
    "built": false,
@@ -5561,6 +6631,9 @@
    "authorRefs": [
     "Devs.AutumnVN"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/screenRecorder.equibop/index.tsx",
    "built": false,
@@ -5579,6 +6652,9 @@
    ],
    "authorRefs": [
     "Devs.Jaxx"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/searchFix/index.tsx",
@@ -5603,6 +6679,10 @@
     "Devs.FieryFlames",
     "Devs.RamziAH"
    ],
+   "tags": [
+    "Notifications",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/secretRingTone/index.ts",
    "built": false,
@@ -5626,6 +6706,9 @@
     "Devs.Willow",
     "Devs.kat"
    ],
+   "tags": [
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/sedEnhanced/index.ts",
    "built": false,
@@ -5644,6 +6727,10 @@
    ],
    "authorRefs": [
     "Devs.MaiKokain"
+   ],
+   "tags": [
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/sekaiStickers/index.tsx",
@@ -5668,6 +6755,10 @@
     "Devs.Tyler",
     "Devs.Grzesiek11"
    ],
+   "tags": [
+    "Chat",
+    "Commands"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/sendTimestamps/index.tsx",
    "built": false,
@@ -5691,6 +6782,10 @@
     "Devs.Nuckyz",
     "Devs.Z1xus"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/serverInfo/index.tsx",
    "built": false,
@@ -5712,6 +6807,10 @@
     "Devs.Rini",
     "Devs.Panniku"
    ],
+   "tags": [
+    "Servers",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/serverListIndicators/index.tsx",
    "built": false,
@@ -5730,6 +6829,10 @@
    ],
    "authorRefs": [
     "Devs.camila314"
+   ],
+   "tags": [
+    "Shortcuts",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/serverSearch/index.tsx",
@@ -5750,6 +6853,11 @@
    "authorRefs": [
     "Devs.Vap"
    ],
+   "tags": [
+    "Appearance",
+    "Chat",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/shikiCodeblocks.desktop/index.tsx",
    "built": false,
@@ -5768,6 +6876,10 @@
    ],
    "authorRefs": [
     "Devs.Nuckyz"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showAllMessageButtons/index.ts",
@@ -5790,6 +6902,10 @@
     "Devs.Inbestigator",
     "Devs.KrystalSkull"
    ],
+   "tags": [
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/showBadgesInChat/index.tsx",
    "built": false,
@@ -5808,6 +6924,10 @@
    ],
    "authorRefs": [
     "Devs.TheKodeToad"
+   ],
+   "tags": [
+    "Friends",
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showConnections/index.tsx",
@@ -5842,6 +6962,10 @@
     "Devs.Rini",
     "Devs.Oggetto"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showHiddenChannels/index.tsx",
    "built": false,
@@ -5861,6 +6985,10 @@
    "authorRefs": [
     "Devs.Dolfies"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showHiddenThings/index.ts",
    "built": false,
@@ -5879,6 +7007,10 @@
    ],
    "authorRefs": [
     "Devs.Suffocate"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/showMessageEmbeds/index.tsx",
@@ -5909,6 +7041,10 @@
     "Devs.prism",
     "Devs.penguinwokrs"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showMeYourName/index.tsx",
    "built": false,
@@ -5927,6 +7063,9 @@
    ],
    "authorRefs": [
     "Devs.VillainsRule"
+   ],
+   "tags": [
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/showResourceChannels/index.ts",
@@ -5947,6 +7086,12 @@
    "authorRefs": [
     "Devs.lucabeyer"
    ],
+   "tags": [
+    "Appearance",
+    "Chat",
+    "Roles",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/showRolesInChat/index.tsx",
    "built": false,
@@ -5965,6 +7110,9 @@
    ],
    "authorRefs": [
     "Devs.prism"
+   ],
+   "tags": [
+    "Activity"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/showSongName/index.tsx",
@@ -5987,6 +7135,10 @@
     "Devs.Ven",
     "Devs.Sqaaakoi"
    ],
+   "tags": [
+    "Servers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/showTimeoutDuration/index.tsx",
    "built": false,
@@ -5998,7 +7150,7 @@
   },
   {
    "id": "sidebarChat",
-   "name": "ForumChannel",
+   "name": "SidebarChat",
    "description": "Open a channel or DM as a sidebar or a popout.",
    "authors": [
     "Joona",
@@ -6007,6 +7159,11 @@
    "authorRefs": [
     "Devs.Joona",
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/sidebarChat/index.tsx",
@@ -6033,6 +7190,10 @@
     "Devs.ImBanana",
     "Devs.KrystalSkull"
    ],
+   "tags": [
+    "Appearance",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/signature/index.tsx",
    "built": false,
@@ -6051,6 +7212,9 @@
    ],
    "authorRefs": [
     "Devs.dka"
+   ],
+   "tags": [
+    "Notifications"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/silenceUsers/index.ts",
@@ -6074,6 +7238,10 @@
     "Devs.Nuckyz",
     "Devs.CatNoir",
     "Devs.Z1xus"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/silentMessageToggle/index.tsx",
@@ -6100,6 +7268,10 @@
     "Devs.ImBanana",
     "Devs.Etorix"
    ],
+   "tags": [
+    "Chat",
+    "Privacy"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/silentTyping/index.tsx",
    "built": false,
@@ -6120,6 +7292,9 @@
    "authorRefs": [
     "Devs.ZcraftElite",
     "Devs.square"
+   ],
+   "tags": [
+    "Appearance"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/snowfall/index.tsx",
@@ -6142,6 +7317,10 @@
     "Devs.nin0dev",
     "Devs.NassCT"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/songLink.desktop/index.tsx",
    "built": false,
@@ -6160,6 +7339,10 @@
    ],
    "authorRefs": [
     "Devs.nexpid"
+   ],
+   "tags": [
+    "Appearance",
+    "Media"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/songSpotlight.desktop/index.tsx",
@@ -6182,6 +7365,10 @@
     "Devs.Megu",
     "Devs.CallMeGii"
    ],
+   "tags": [
+    "Friends",
+    "Organisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/sortFriendRequests/index.tsx",
    "built": false,
@@ -6202,6 +7389,10 @@
    "authorRefs": [
     "Devs.Reycko",
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/splitLargeMessages/index.ts",
@@ -6230,6 +7421,10 @@
     "Devs.Av32000",
     "Devs.nin0dev"
    ],
+   "tags": [
+    "Media",
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/spotifyControls/index.tsx",
    "built": false,
@@ -6251,6 +7446,11 @@
     "Devs.Cyn",
     "Devs.Nuckyz"
    ],
+   "tags": [
+    "Media",
+    "Utility",
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/spotifyCrack/index.ts",
    "built": false,
@@ -6269,6 +7469,10 @@
    ],
    "authorRefs": [
     "Devs.katlyn"
+   ],
+   "tags": [
+    "Media",
+    "Commands"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/spotifyShareCommands/index.ts",
@@ -6289,6 +7493,9 @@
    "authorRefs": [
     "Devs.Megu"
    ],
+   "tags": [
+    "Developers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/startupTimings/index.tsx",
    "built": false,
@@ -6307,6 +7514,10 @@
    ],
    "authorRefs": [
     "Devs.iamme"
+   ],
+   "tags": [
+    "Activity",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/statusPresets/index.tsx",
@@ -6327,6 +7538,11 @@
    "authorRefs": [
     "Devs.smuki"
    ],
+   "tags": [
+    "Activity",
+    "Customisation",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/statusWhileActive.desktop/index.ts",
    "built": false,
@@ -6345,6 +7561,11 @@
    ],
    "authorRefs": [
     "Devs.niko"
+   ],
+   "tags": [
+    "Activity",
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/steamStatusSync/index.tsx",
@@ -6365,6 +7586,11 @@
    "authorRefs": [
     "Devs.Samwich"
    ],
+   "tags": [
+    "Chat",
+    "Emotes",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/stickerBlocker/index.tsx",
    "built": false,
@@ -6384,6 +7610,10 @@
    "authorRefs": [
     "Devs.ImBanana"
    ],
+   "tags": [
+    "Emotes",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/stickerPaste/index.ts",
    "built": false,
@@ -6402,6 +7632,9 @@
    ],
    "authorRefs": [
     "Devs.SobakinTech"
+   ],
+   "tags": [
+    "Notifications"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/stopAutoUnread/index.ts",
@@ -6424,6 +7657,10 @@
     "Devs.Moowi",
     "Devs.thororen"
    ],
+   "tags": [
+    "Friends",
+    "Fun"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/streaks/index.tsx",
    "built": false,
@@ -6443,6 +7680,10 @@
    "authorRefs": [
     "Devs.IcedMarina"
    ],
+   "tags": [
+    "Privacy",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/streamerModeOnStream/index.ts",
    "built": false,
@@ -6461,6 +7702,10 @@
    ],
    "authorRefs": [
     "Devs.davidkra230"
+   ],
+   "tags": [
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/streamingCodecDisabler/index.ts",
@@ -6483,6 +7728,10 @@
     "Devs.FieryFlames",
     "Devs.ant0n"
    ],
+   "tags": [
+    "Reactions",
+    "Emotes"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/superReactionTweaks/index.ts",
    "built": false,
@@ -6501,6 +7750,10 @@
    ],
    "authorRefs": [
     "Devs.Tolgchu"
+   ],
+   "tags": [
+    "Chat",
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/talkInReverse/index.tsx",
@@ -6527,6 +7780,11 @@
     "Devs.Etorix",
     "Devs.Ape"
    ],
+   "tags": [
+    "Chat",
+    "Customisation",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/textReplace/index.tsx",
    "built": false,
@@ -6548,6 +7806,10 @@
     "Devs.Ven",
     "Devs.Board"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/themeAttributes/index.ts",
    "built": false,
@@ -6567,6 +7829,10 @@
    "authorRefs": [
     "Devs.Fafa"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/themeLibrary/index.tsx",
    "built": false,
@@ -6585,6 +7851,11 @@
    ],
    "authorRefs": [
     "Devs.vmohammad"
+   ],
+   "tags": [
+    "Appearance",
+    "Chat",
+    "Media"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/tidalEmbeds/index.tsx",
@@ -6607,6 +7878,11 @@
     "Devs.Aria",
     "Devs.creations"
    ],
+   "tags": [
+    "Appearance",
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/timezones/index.tsx",
    "built": false,
@@ -6625,6 +7901,9 @@
    ],
    "authorRefs": [
     "Devs.Kyuuhachi"
+   ],
+   "tags": [
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/title/index.ts",
@@ -6649,6 +7928,11 @@
     "Devs.Ethan",
     "Devs.Buzzy"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Notifications"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/toastNotifications/index.tsx",
    "built": false,
@@ -6668,6 +7952,10 @@
    "authorRefs": [
     "Devs.mochienya"
    ],
+   "tags": [
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/toggleVideoBind/index.ts",
    "built": false,
@@ -6686,6 +7974,10 @@
    ],
    "authorRefs": [
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/toneIndicators/index.tsx",
@@ -6710,6 +8002,10 @@
     "Devs.AshtonMemer",
     "Devs.koish1"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/translate/index.tsx",
    "built": false,
@@ -6731,6 +8027,10 @@
     "Devs.Ven",
     "Devs.Prince527"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/translatePlus/index.tsx",
    "built": false,
@@ -6749,6 +8049,11 @@
    ],
    "authorRefs": [
     "Devs.yash"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/triviaAI/index.tsx",
@@ -6773,6 +8078,11 @@
     "Devs.fawn",
     "Devs.Sqaaakoi"
    ],
+   "tags": [
+    "Notifications",
+    "Appearance",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/typingIndicator/index.tsx",
    "built": false,
@@ -6796,6 +8106,10 @@
     "Devs.sadan",
     "Devs.MrDiamond"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/typingTweaks/index.tsx",
    "built": false,
@@ -6814,6 +8128,10 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/unindent/index.ts",
@@ -6834,6 +8152,9 @@
    "authorRefs": [
     "Devs.sadan"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/unitConverter/index.tsx",
    "built": false,
@@ -6852,6 +8173,11 @@
    ],
    "authorRefs": [
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Chat",
+    "Servers",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/universalMention/index.tsx",
@@ -6872,6 +8198,9 @@
    "authorRefs": [
     "Devs.thororen"
    ],
+   "tags": [
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/unlimitedAccounts/index.ts",
    "built": false,
@@ -6891,6 +8220,10 @@
    "authorRefs": [
     "Devs.nakoyasha"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/unlockedAvatarZoom/index.ts",
    "built": false,
@@ -6909,6 +8242,11 @@
    ],
    "authorRefs": [
     "Devs.Joona"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Servers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/unreadBadgeCount/index.tsx",
@@ -6931,6 +8269,10 @@
     "Devs.rad",
     "Devs.HypedDomi"
    ],
+   "tags": [
+    "Chat",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/unsuppressEmbeds/index.tsx",
    "built": false,
@@ -6949,6 +8291,10 @@
    ],
    "authorRefs": [
     "Devs.prism"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/urlHighlighter/index.tsx",
@@ -6975,6 +8321,10 @@
     "Devs.Ven",
     "Devs.Elvyra"
    ],
+   "tags": [
+    "Chat",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/userMessagesPronouns/index.ts",
    "built": false,
@@ -7000,6 +8350,11 @@
     "Devs.soapphia",
     "Devs.sketchmyname"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Servers"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/userpfp/index.tsx",
    "built": false,
@@ -7018,6 +8373,9 @@
    ],
    "authorRefs": [
     "Devs.nin0dev"
+   ],
+   "tags": [
+    "Developers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/userpluginInstaller.dev/index.tsx",
@@ -7041,6 +8399,11 @@
     "Devs.Nuckyz",
     "Devs.LordElias",
     "Devs.omaw"
+   ],
+   "tags": [
+    "Voice",
+    "Appearance",
+    "Friends"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/userVoiceShow/index.tsx",
@@ -7067,6 +8430,10 @@
     "Devs.pylix",
     "Devs.TheKodeToad"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/usrbg/index.tsx",
    "built": false,
@@ -7085,6 +8452,10 @@
    ],
    "authorRefs": [
     "Devs.newwares"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/validReply/index.ts",
@@ -7106,6 +8477,10 @@
    "authorRefs": [
     "Devs.Ven",
     "Devs.Dolfies"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/validUser/index.tsx",
@@ -7130,6 +8505,9 @@
     "Devs.D3SOX",
     "Devs.sadan"
    ],
+   "tags": [
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/vcDoubleClick/index.ts",
    "built": false,
@@ -7149,6 +8527,10 @@
    "authorRefs": [
     "Devs.Ven"
    ],
+   "tags": [
+    "Voice",
+    "Accessibility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/vcNarrator/index.tsx",
    "built": false,
@@ -7167,6 +8549,10 @@
    ],
    "authorRefs": [
     "Devs.nin0dev"
+   ],
+   "tags": [
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/vcPanelSettings/index.tsx",
@@ -7188,6 +8574,10 @@
    "authorRefs": [
     "Devs.Ven",
     "Devs.AutumnVN"
+   ],
+   "tags": [
+    "Utility",
+    "Developers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/vencordToolbox/index.tsx",
@@ -7214,6 +8604,11 @@
     "Devs.Nuckyz",
     "Devs.nyx"
    ],
+   "tags": [
+    "Media",
+    "Servers",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/viewIcons/index.tsx",
    "built": false,
@@ -7225,7 +8620,7 @@
   },
   {
    "id": "viewRaw",
-   "name": "Guild",
+   "name": "ViewRaw",
    "description": "Change the button to view the raw content/data of any message.",
    "authors": [
     "King Fish",
@@ -7238,6 +8633,10 @@
     "Devs.Ven",
     "Devs.rad",
     "Devs.ImLvna"
+   ],
+   "tags": [
+    "Chat",
+    "Developers"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/viewRaw/index.tsx",
@@ -7259,6 +8658,11 @@
    "authorRefs": [
     "Devs.nicola02nb",
     "Devs.omaw"
+   ],
+   "tags": [
+    "Servers",
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceButtons/index.tsx",
@@ -7289,6 +8693,11 @@
     "Devs.Fres",
     "Devs.amy"
    ],
+   "tags": [
+    "Servers",
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceChannelLog/index.tsx",
    "built": false,
@@ -7310,6 +8719,11 @@
     "Devs.D3SOX",
     "Devs.nickwoah"
    ],
+   "tags": [
+    "Chat",
+    "Servers",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceChatUtils/index.tsx",
    "built": false,
@@ -7329,6 +8743,10 @@
    "authorRefs": [
     "Devs.puv"
    ],
+   "tags": [
+    "Voice",
+    "Media"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/voiceDownload/index.tsx",
    "built": false,
@@ -7340,7 +8758,7 @@
   },
   {
    "id": "voiceJoinMessages",
-   "name": "Clyde",
+   "name": "VoiceJoinMessages",
    "description": "Recieve notifications in your friends' DMs when they join a voice channel",
    "authors": [
     "Sqaaakoi",
@@ -7349,6 +8767,11 @@
    "authorRefs": [
     "Devs.Sqaaakoi",
     "Devs.thororen"
+   ],
+   "tags": [
+    "Servers",
+    "Utility",
+    "Voice"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceJoinMessages/index.ts",
@@ -7373,6 +8796,9 @@
     "Devs.Vap",
     "Devs.Nickyux"
    ],
+   "tags": [
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/voiceMessages/index.tsx",
    "built": false,
@@ -7391,6 +8817,11 @@
    ],
    "authorRefs": [
     "Devs.ELJoOker"
+   ],
+   "tags": [
+    "Voice",
+    "Media",
+    "Chat"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceMessagesInBackground/index.tsx",
@@ -7413,6 +8844,12 @@
     "Devs.TheSun",
     "Devs.tt"
    ],
+   "tags": [
+    "Chat",
+    "Media",
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceMessageTranscriber.desktop/index.tsx",
    "built": false,
@@ -7434,6 +8871,11 @@
     "Devs.omaw",
     "Devs.keircn"
    ],
+   "tags": [
+    "Servers",
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceRejoin/index.tsx",
    "built": false,
@@ -7452,6 +8894,10 @@
    ],
    "authorRefs": [
     "Devs.Moowi"
+   ],
+   "tags": [
+    "Voice",
+    "Friends"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/voiceStats/index.tsx",
@@ -7474,6 +8920,10 @@
     "Devs.Nuckyz",
     "Devs.sadan"
    ],
+   "tags": [
+    "Voice",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/volumeBooster/index.ts",
    "built": false,
@@ -7495,6 +8945,11 @@
     "Devs.omaw",
     "Devs.prism"
    ],
+   "tags": [
+    "Servers",
+    "Utility",
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/waitForSlot/index.tsx",
    "built": false,
@@ -7513,6 +8968,9 @@
    ],
    "authorRefs": [
     "Devs.Ven"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/webContextMenus.web/index.ts",
@@ -7535,6 +8993,9 @@
     "Devs.Ven",
     "Devs.Davri"
    ],
+   "tags": [
+    "Shortcuts"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/webKeybinds.web/index.ts",
    "built": false,
@@ -7554,6 +9015,10 @@
    "authorRefs": [
     "Devs.Kyuuhachi"
    ],
+   "tags": [
+    "Developers",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/webpackTarball/index.tsx",
    "built": false,
@@ -7565,13 +9030,16 @@
   },
   {
    "id": "webPWA.browser",
-   "name": "Discord",
+   "name": "WebPWA",
    "description": "Imagine a place...",
    "authors": [
     "ThaUnknown_"
    ],
    "authorRefs": [
     "Devs.ThaUnknown"
+   ],
+   "tags": [
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/webPWA.browser/index.tsx",
@@ -7592,6 +9060,10 @@
    "authorRefs": [
     "Devs.ThaUnknown"
    ],
+   "tags": [
+    "Voice",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/webScreenShare.browser/index.tsx",
    "built": false,
@@ -7611,6 +9083,9 @@
    "authorRefs": [
     "Devs.Kaitlyn"
    ],
+   "tags": [
+    "Voice"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/webScreenShareFixes.web/index.ts",
    "built": false,
@@ -7622,13 +9097,17 @@
   },
   {
    "id": "whitelistedEmojis",
-   "name": "Whitelisted Emojis",
+   "name": "WhitelistedEmojis",
    "description": "Hide default Unicode emojis from the autocomplete unless whitelisted.",
    "authors": [
     "creations"
    ],
    "authorRefs": [
     "Devs.creations"
+   ],
+   "tags": [
+    "Chat",
+    "Emotes"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/whitelistedEmojis/index.tsx",
@@ -7655,6 +9134,11 @@
     "Devs.newwares",
     "Devs.paige"
    ],
+   "tags": [
+    "Reactions",
+    "Chat",
+    "Appearance"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/whoReacted/index.tsx",
    "built": false,
@@ -7676,6 +9160,9 @@
     "Devs.Fres",
     "Devs.thororen"
    ],
+   "tags": [
+    "Activity"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/whosWatching/index.tsx",
    "built": false,
@@ -7694,6 +9181,11 @@
    ],
    "authorRefs": [
     "Devs.nexpid"
+   ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Fun"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/wigglyText/index.tsx",
@@ -7716,6 +9208,11 @@
     "Devs.Samwich",
     "Devs.KrystalSkull"
    ],
+   "tags": [
+    "Appearance",
+    "Customisation",
+    "Chat"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/writeUpperCase/index.ts",
    "built": false,
@@ -7734,6 +9231,9 @@
    ],
    "authorRefs": [
     "Devs.Nyako"
+   ],
+   "tags": [
+    "Notifications"
    ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/xsOverlay/index.tsx",
@@ -7756,6 +9256,10 @@
     "Devs.ImLvna",
     "Devs.Ven"
    ],
+   "tags": [
+    "Media",
+    "Utility"
+   ],
    "version": "",
    "entry": "vendor/equicord/src/plugins/youtubeAdblock.desktop/index.ts",
    "built": false,
@@ -7774,6 +9278,10 @@
    ],
    "authorRefs": [
     "Devs.justjxke"
+   ],
+   "tags": [
+    "Chat",
+    "Utility"
    ],
    "version": "",
    "entry": "vendor/equicord/src/equicordplugins/zipPreview/index.tsx",

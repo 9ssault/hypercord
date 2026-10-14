@@ -164,8 +164,113 @@ const reloaded = themes.reload();
 ok("reload drops the theme whose file is gone", reloaded.dropped >= 1 && !themes.list().some((t) => t.id === "beta"), JSON.stringify(reloaded.dropped));
 ok("and the payload no longer carries it", !themes.css().includes("beta"));
 
+/* ---- 10. the library: read when asked for, cached, never fetched on its own --- */
+
+// The published themes a browser can list. The stand-in answers by URL, because the
+// library and a theme's CSS come from the same host with different paths: the index is
+// JSON, the file is CSS, and both go out through this one fetch.
+const LIBRARY = [
+  {
+    id: 47,
+    name: "DTM-08",
+    description: "a glossy theme",
+    author: { github_name: "XYZenix" },
+    tags: ["dark", "glossy"],
+    likes: 3,
+    downloads: 368,
+    release_date: "2021-05-06T12:27:37.177Z",
+    source: "https://github.com/XYZenix/DTM-08",
+  },
+  { id: 9, description: "no name: this row has nothing to show" },
+  "not an object at all",
+];
+
+let libraryCalls = 0;
+let libraryStatus = 200;
+const libraryCss = "/* library */\n.library { color: purple; }";
+const libraryFetch = async (url) => {
+  if (/\/themes$/.test(String(url))) {
+    libraryCalls += 1;
+    return { ok: libraryStatus === 200, status: libraryStatus, json: async () => LIBRARY, text: async () => JSON.stringify(LIBRARY) };
+  }
+  return { ok: true, status: 200, json: async () => ({}), text: async () => libraryCss };
+};
+
+const libraryHome = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-library-"));
+const library = createThemes({ userData: libraryHome, log: () => {}, fetchImpl: libraryFetch });
+
+ok("a client that is only looking at its own themes fetches nothing", library.fetchCount() === 0, String(library.fetchCount()));
+
+const first = await library.index();
+ok("the library is read when it is asked for", first.ok === true && first.themes.length === 1, JSON.stringify(first).slice(0, 200));
+const only = first.themes[0];
+ok("and trimmed to what a card shows", only.name === "DTM-08" && only.author === "XYZenix" && /glossy/.test(only.description), JSON.stringify(only));
+ok("with the documented download url, built from the id", only.download === "https://api.themes.equicord.org/download/47", only.download);
+ok("a row with no name is not a card", !first.themes.some((one) => one.download === "https://api.themes.equicord.org/download/9"), JSON.stringify(first.themes.map((one) => one.id)));
+ok("reading it once cost one request", libraryCalls === 1, String(libraryCalls));
+
+const cached = await library.index();
+ok("asking again is answered from what was read, not the network", cached.cached === true && libraryCalls === 1, JSON.stringify({ cached: cached.cached, calls: libraryCalls }));
+
+const forced = await library.index({ force: true });
+ok("Load forces a fresh read", forced.cached === false && libraryCalls === 2, JSON.stringify({ cached: forced.cached, calls: libraryCalls }));
+
+libraryStatus = 503;
+const refused = await library.index({ force: true });
+ok("a library that answers badly is an error, not an empty list", refused.ok === false && /503/.test(String(refused.error)), JSON.stringify(refused));
+libraryStatus = 200;
+
+// A theme installed from the library goes through the same door as a theme from a link:
+// fetched once, at the moment of install, then a file that rendering reads instead.
+const installed = await library.install(only.download, only.name);
+ok("a library theme installs like any other online theme", installed.ok === true && library.list().some((one) => one.id === installed.id), JSON.stringify(installed));
+const reads = library.fetchCount();
+library.setEnabled(installed.id, true);
+library.css();
+ok("and once installed, rendering it fetches nothing", library.fetchCount() === reads, String(library.fetchCount()));
+fs.rmSync(libraryHome, { recursive: true, force: true });
+
 fs.rmSync(home, { recursive: true, force: true });
 fs.rmSync(srcDir, { recursive: true, force: true });
+
+/* ---- 11. imports: allowed from the hosts themes really use, lifted to the top ------ */
+
+// Published themes import their own modules and their fonts, and refusing the statement
+// outright refused most of the library ("install Novum: @import is not allowed in a
+// theme"). So it is an allow-list now, and what is refused says which host was the problem.
+const googleFont = sanitizeCss('@import url("https://fonts.googleapis.com/css2?family=Inter");\n.x { color: red; }');
+ok("an https @import from a host themes use is allowed", googleFont.ok === true, JSON.stringify(googleFont));
+const bareString = sanitizeCss('@import "https://raw.githubusercontent.com/x/y/main/base.css";\n.y { color: blue; }');
+ok("the bare-string form is read the same way", bareString.ok === true, JSON.stringify(bareString));
+const strangerHost = sanitizeCss('@import url("https://evil.example/x.css");\n.z { color: green; }');
+ok(
+  "an @import from anywhere else is refused, and the message names the host",
+  strangerHost.ok === false && /evil\.example/.test(strangerHost.error),
+  JSON.stringify(strangerHost),
+);
+ok("a relative @import is refused", sanitizeCss('@import "x.css";\n.w { color: red; }').ok === false, JSON.stringify(sanitizeCss('@import "x.css";')));
+ok("a plain http @import is refused", sanitizeCss('@import url("http://fonts.googleapis.com/x.css");\n.v { color: red; }').ok === false, "");
+
+// The import has to survive the trip: CSS ignores an @import that is not before every other
+// rule, and this client injects one sheet rather than one element per theme.
+const importHome = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-import-"));
+fs.mkdirSync(path.join(importHome, "themes"), { recursive: true });
+fs.writeFileSync(
+  path.join(importHome, "themes", "fonted.theme.css"),
+  '@import url("https://fonts.googleapis.com/css?family=Inter");\n\n.fonted { color: red; }',
+);
+const importThemes = createThemes({ userData: importHome, log: () => {} });
+const installedImport = await importThemes.install("fonted.theme.css", "Fonted");
+ok("a theme that imports a font installs", installedImport.ok === true, JSON.stringify(installedImport));
+importThemes.setEnabled(installedImport.id, true);
+importThemes.setQuickCss(".quick { opacity: .5; }");
+const payload = importThemes.css();
+ok(
+  "and its @import is lifted to the top of the payload, where CSS will honour it",
+  payload.startsWith("@import") && /fonted/.test(payload) && /quick/.test(payload),
+  JSON.stringify(payload.slice(0, 140)),
+);
+fs.rmSync(importHome, { recursive: true, force: true });
 
 console.log("\npassed " + passed + "  failed " + failed);
 process.exit(failed === 0 ? 0 : 1);

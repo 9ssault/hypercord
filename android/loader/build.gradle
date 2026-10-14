@@ -3,6 +3,9 @@ plugins { id 'com.android.application' }
 abstract class BundleRuntime extends DefaultTask {
  @InputDirectory abstract DirectoryProperty getSourceDirectory()
  @OutputDirectory abstract DirectoryProperty getOutputDirectory()
+ // the interpreter that runs scripts/patch_runtime.py, resolved where the script can see the
+ // script's own methods and carried in as an input, so a build that changed interpreter rebuilds
+ @Input abstract Property<String> getPythonCommand()
  @TaskAction void bundle() {
   def source = sourceDirectory.get().asFile
   def output = outputDirectory.get().asFile
@@ -12,8 +15,9 @@ abstract class BundleRuntime extends DefaultTask {
    into(output)
   }
   def patched = new File(output, 'assault-runtime.js')
+  def interpreter = pythonCommand.get().trim().split(' ') as List
   project.exec {
-   commandLine 'python3', project.file('../../scripts/patch_runtime.py'), new File(source, 'revenge.js'), patched
+   commandLine interpreter + [project.file('../../scripts/patch_runtime.py'), new File(source, 'revenge.js'), patched]
   }
   def runtime = patched.getText('UTF-8')
   def labels = [
@@ -32,6 +36,41 @@ abstract class BundleRuntime extends DefaultTask {
   new File(output, 'assault-runtime.js').setText(runtime, 'UTF-8')
  }
 }
+// The interpreter the runtime patch runs under, found rather than assumed.
+//
+// It is not spelled the same everywhere: `python3` on Unix and on Windows installs that set their
+// aliases up, `python` on Windows, and on a Windows box whose only entry point is the launcher,
+// `py -3`. Hard-coding `python3` is what made this task fail on Windows with a 9009 ("not
+// recognized") - and since it fails inside a task, the build stops there and no APK is produced at
+// all, which reads as a broken loader rather than a missing interpreter.
+//
+// Each candidate is *run* rather than looked up, and what it must answer with is a version:
+// on Windows `python3` is often the Microsoft Store's execution alias, which exists on PATH,
+// fails with 9009 when it is run, and whose complaint ("Python was not found...") contains the
+// word Python - so "mentions python" accepts a name that cannot run anything, which is exactly
+// how this task still failed after the lookup was added.
+def pythonInterpreter() {
+ def candidates = [['python3'], ['python'], ['py', '-3']]
+ for (def candidate : candidates) {
+  try {
+   def probe = new ByteArrayOutputStream()
+   exec {
+    commandLine candidate + ['--version']
+    standardOutput = probe
+    errorOutput = probe
+    ignoreExitValue = true
+   }
+   if (probe.toString('UTF-8') ==~ /(?is).*\bpython\s+\d+(?:\.\d+)*.*/) return candidate
+  } catch (Exception ignored) {
+   // not installed under this name: try the next one
+  }
+ }
+ throw new GradleException(
+  'No Python interpreter found (tried ' + candidates.collect { it.join(' ') }.join(', ') + '), so ' +
+   'scripts/patch_runtime.py cannot be run and the runtime assets cannot be built'
+ )
+}
+
 def runtimeAssets = tasks.register('runtimeAssets', BundleRuntime) {
  inputs.file('../licenses/Revenge-BSD-3-Clause.txt')
  inputs.file('../../scripts/patch_runtime.py')
@@ -39,6 +78,7 @@ def runtimeAssets = tasks.register('runtimeAssets', BundleRuntime) {
  inputs.dir('../../scripts/runtime-patches')
  sourceDirectory = layout.projectDirectory.dir('src/main/assets')
  outputDirectory = layout.buildDirectory.dir('generated/runtimeAssets')
+ pythonCommand = pythonInterpreter().join(' ')
 }
 android {
  namespace 'app.assault.loader'

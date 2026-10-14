@@ -124,7 +124,12 @@ async function run() {
   const eventLines = [];
   const seen = [];
   const live = createUpdater({ log: (l) => eventLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: bare, everyMs: 60000 });
+  // what the updater attaches to wherever it goes, counted across every event: closing
+  // the client has to leave the same number behind, not merely stop the timers
+  const totalListeners = () => autoUpdater.eventNames().reduce((total, name) => total + autoUpdater.listenerCount(name), 0);
+  const listenersBeforeStart = totalListeners();
   live.start({ notify: (title, body) => seen.push([title, body]) });
+  ok("starting it is what attaches its listeners", totalListeners() > listenersBeforeStart, "before " + listenersBeforeStart + " after " + totalListeners());
   ok("a poll timer exists while running", live.state.timer !== null);
   ok("the update downloads itself with no prompt", autoUpdater.autoDownload === true);
   ok("the update installs itself on quit", autoUpdater.autoInstallOnAppQuit === true);
@@ -158,6 +163,19 @@ async function run() {
 
   live.stop();
   ok("stop() clears the poll timer", live.state.timer === null);
+  // the two things a quit used to leave running: the settle timeout scheduled at start,
+  // and the listeners on the shared autoUpdater - which is a module-level singleton, so a
+  // listener left behind outlives the window that installed it
+  ok("and the timeout start() scheduled for a quieter moment", !live.state.settle, String(live.state.settle));
+  ok("and the listeners it attached, so nothing is delivered after the stop", totalListeners() === listenersBeforeStart, "before " + listenersBeforeStart + " after " + totalListeners());
+  ok("describe() reports the stopped shape a page has to clone", live.describe().stopped === true && live.describe().onTimer === false && live.describe().onSettle === false && live.describe().timer === undefined, JSON.stringify(live.describe()));
+  const linesAtStop = eventLines.length;
+  autoUpdater.emit("error", new Error("delivered after the stop"));
+  ok("an event that arrives after the stop is ignored", live.state.error === "the feed said 500" && eventLines.length === linesAtStop, JSON.stringify(eventLines.slice(-2)));
+  live.start();
+  ok("and a stopped updater does not arm itself again", live.state.timer === null && live.describe().stopped === true, JSON.stringify(live.describe()));
+  const afterStop = await live.checkNow();
+  ok("a check after the stop is refused instead of reaching the feed", afterStop.ok === false && /stopped/.test(afterStop.error), JSON.stringify(afterStop));
 
   /* ---- 5. a development run must never update itself --------------------- */
 

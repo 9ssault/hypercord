@@ -3,11 +3,18 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { requireJava } from './support/toolchain.mjs';
+
+// The three tools this check runs come from tests/support/toolchain.mjs rather than from bare
+// names: a `keytool` that is not on PATH - it lives inside a JDK an IDE installed, which is
+// where a workstation's Java usually is - has to be found, and a machine with no JDK at all has
+// to fail with a sentence about the machine. A check that cannot run is not a check that passes.
 test('broker authenticates the local signer and decodes Termux success and failure codes', () => {
+  const tools = requireJava('keytool', 'javac', 'java');
   const dir = mkdtempSync(join(tmpdir(), 'assault-script-trust-'));
   try {
     mkdirSync(join(dir, 'keys'));
-    execFileSync('keytool', ['-genkeypair', '-alias', 'client', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '1', '-dname', 'CN=Synthetic Test', '-storepass', 'assault-local-key', '-keypass', 'assault-local-key', '-keystore', join(dir, 'keys/client-signing.bks')], { stdio: 'pipe' });
+    execFileSync(tools.keytool, ['-genkeypair', '-alias', 'client', '-keyalg', 'RSA', '-keysize', '2048', '-validity', '1', '-dname', 'CN=Synthetic Test', '-storepass', 'assault-local-key', '-keypass', 'assault-local-key', '-keystore', join(dir, 'keys/client-signing.bks')], { stdio: 'pipe' });
     const provider = readFileSync('android/manager/src/main/java/app/assault/manager/ScriptProvider.java', 'utf8');
     const method = provider.slice(provider.indexOf('    private void authorize()'), provider.indexOf('    @Override public Bundle call'));
     const truncated = provider.match(/    static boolean truncated[\s\S]*?\n    }/)[0];
@@ -46,7 +53,7 @@ public class TrustTest {
   context.pm.info.signingInfo=null;rejected(gate);
  }
 }`);
-    execFileSync('javac', ['-d', dir, join(dir, 'TrustTest.java')]);
-    execFileSync('java', ['-cp', dir, 'TrustTest', join(dir, 'keys')]);
+    execFileSync(tools.javac, ['-d', dir, join(dir, 'TrustTest.java')]);
+    execFileSync(tools.java, ['-cp', dir, 'TrustTest', join(dir, 'keys')]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -3,8 +3,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { requireJava } from './support/toolchain.mjs';
 
 test('document deadlines cancel providers, release sessions and reject late completion and resources', () => {
+  // The Java tools are resolved rather than named bare. `javac` and `java` are on PATH in the
+  // job that runs this, and usually somewhere else on a workstation - inside an IDE, or where
+  // JAVA_HOME points. tests/support/toolchain.mjs looks in those places and refuses with a
+  // readable message when the machine has no JDK at all: a check that compiles and runs the
+  // Java it covers must never pass by not running.
+  const tools = requireJava('javac', 'java');
   const dir = mkdtempSync(join(tmpdir(), 'assault-document-deadline-'));
   try {
     mkdirSync(join(dir, 'android/os'), { recursive: true });
@@ -45,7 +52,7 @@ public class DocumentDeadlineTest {
   if(worker.isAlive()||error.get()!=null||!late.closed||results.get()!=2||timeouts.get()!=1)throw new AssertionError("late completion changed state",error.get());
  }
 }`);
-    execFileSync('javac', ['-d', dir, signal, resolve('android/loader/src/main/java/app/assault/loader/DocumentTask.java'), source]);
-    execFileSync('java', ['-cp', dir, 'app.assault.loader.DocumentDeadlineTest'], { timeout: 10000 });
+    execFileSync(tools.javac, ['-d', dir, signal, resolve('android/loader/src/main/java/app/assault/loader/DocumentTask.java'), source]);
+    execFileSync(tools.java, ['-cp', dir, 'app.assault.loader.DocumentDeadlineTest'], { timeout: 10000 });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

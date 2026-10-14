@@ -22,12 +22,81 @@ import path from "node:path";
 
 const MAX_BYTES = 512 * 1024;
 
+/**
+ * Where a browser of themes reads from.
+ *
+ * The library is the only public theme index with a documented JSON API (Equicord's
+ * Equithemes), so it is the one this client reads. It is asked for when somebody presses
+ * Load, its reply is trimmed to the fields a card shows, and the trimmed list is kept in
+ * memory for a bounded time - there is no timer here, no background refresh, and nothing
+ * is fetched while nobody is looking at the page.
+ *
+ * A theme's CSS is *not* in that reply: the documented download URL for a theme's file is
+ * `/download/<id>`, and installing from here goes through exactly the same gate as
+ * installing from a link somebody pasted - one fetch at the moment of install, then a
+ * file on disk, and never the network again.
+ */
+const LIBRARY_URL = "https://api.themes.equicord.org/themes";
+const LIBRARY_DOWNLOAD = "https://api.themes.equicord.org/download/";
+const LIBRARY_PAGE = "https://themes.equicord.org/theme/";
+const LIBRARY_TTL_MS = 10 * 60 * 1000;
+
 // A theme is injected into the page as CSS, so the only things worth refusing
 // are the things that would let it act like anything other than CSS.
+/**
+ * Where a theme may `@import` from.
+ *
+ * Themes really do import: the published ones pull their own modules and their fonts in
+ * with `@import url(...)`, and refusing the statement outright refused most of the theme
+ * library - which is what "install Novum: @import is not allowed" was. So it is allowed
+ * from an allow-list rather than never: the hosts BetterDiscord's own publishing
+ * guidelines tell theme authors to use (GitHub, GitLab, Codeberg, Imgur, Discord, Google
+ * Fonts) plus the CDNs those projects serve from. What stays refused is an import from
+ * anywhere else, and the message names the host, because "not allowed" without a host is
+ * not something a person can act on.
+ */
+const IMPORT_HOSTS = new Set([
+  "fonts.googleapis.com",
+  "fonts.gstatic.com",
+  "github.com",
+  "raw.githubusercontent.com",
+  "gist.githubusercontent.com",
+  "cdn.jsdelivr.net",
+  "gitlab.com",
+  "codeberg.org",
+  "imgur.com",
+  "i.imgur.com",
+  "cdn.discordapp.com",
+  "media.discordapp.net",
+  "discord.com",
+]);
+
+const IMPORT_ALLOWED = [...IMPORT_HOSTS].slice(0, 8).join(", ");
+
+/** The first `@import` a theme may not make, or an empty string. */
+function importProblem(css) {
+  for (const statement of css.matchAll(/@import\s+([^;]*);?/gi)) {
+    const value = String(statement[1] || "").trim();
+    const wrapped = /^url\(\s*['"]?([^'")]*?)['"]?\s*\)$/i.exec(value) || /^['"]([^'"]*)['"]$/.exec(value);
+    const target = wrapped ? wrapped[1].trim() : "";
+    if (!target) return "an @import with nothing to import is not allowed in a theme";
+    if (!/^https:\/\//i.test(target)) return "@import must be an https url, and this one is " + target.slice(0, 60);
+    let host = "";
+    try {
+      host = new URL(target).hostname.toLowerCase();
+    } catch {
+      return "that @import is not a url: " + target.slice(0, 60);
+    }
+    if (!IMPORT_HOSTS.has(host)) {
+      return "@import from " + host + " is not allowed: a theme may import from " + IMPORT_ALLOWED + " and nowhere else";
+    }
+  }
+  return "";
+}
+
 const FORBIDDEN = [
   [/<\/style/i, "</style> is not allowed in a theme: it would end the style block"],
-  [/<script/i, "<script> is not allowed in a theme"],
-  [/@import/i, "@import is not allowed in a theme: it fetches at render time"],
+  [/<script/i, "<script is not allowed in a theme"],
   [/javascript:/i, "javascript: URLs are not allowed in a theme"],
   [/expression\s*\(/i, "CSS expression() is not allowed in a theme"],
   [/behavior\s*:/i, "the behavior property is not allowed in a theme"],
@@ -42,6 +111,8 @@ export function sanitizeCss(text) {
   for (const [pattern, why] of FORBIDDEN) {
     if (pattern.test(css)) return { ok: false, error: why };
   }
+  const badImport = importProblem(css);
+  if (badImport) return { ok: false, error: badImport };
   return { ok: true, css };
 }
 
@@ -103,6 +174,8 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
   const stateFile = path.join(home, "themes.state.json");
   let state = null;
   let fetchCalls = 0; // only the online install path may move this
+  let library = null; // the library index as it was read, with when it was read
+  let libraryError = "";
 
   function blank() {
     return { version: 1, order: [], themes: {}, quickCss: "" };
@@ -166,6 +239,50 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
     let n = 2;
     while (id in current.themes) id = wanted + "-" + n++;
     return id;
+  }
+
+  /**
+   * The library index, trimmed to what a card needs. `force` is what the page's Load
+   * button sends: the copy in memory is a convenience, never a lock.
+   */
+  async function index({ force = false } = {}) {
+    if (typeof fetchImpl !== "function") return { ok: false, error: "no fetch available to read the theme library" };
+    if (!force && library && Date.now() - library.at < LIBRARY_TTL_MS) {
+      return { ok: true, themes: library.themes, from: library.from, fetchedAt: library.at, cached: true };
+    }
+    try {
+      fetchCalls += 1;
+      const res = await fetchImpl(LIBRARY_URL, { headers: { accept: "application/json" } });
+      if (!res || !res.ok) return { ok: false, error: "the theme library answered " + ((res && res.status) || "nothing") };
+      const body = await res.json();
+      const rows = Array.isArray(body) ? body : Array.isArray(body && body.themes) ? body.themes : [];
+      const themes = rows
+        .map((row) => {
+          if (!row || typeof row !== "object") return null;
+          const id = row.id === undefined || row.id === null ? "" : String(row.id);
+          const person = row.author && typeof row.author === "object" ? String(row.author.github_name || row.author.discord_name || "") : String(row.author || "");
+          return {
+            id,
+            name: String(row.name || ""),
+            author: person,
+            description: String(row.description || ""),
+            tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
+            likes: Number(row.likes) || 0,
+            downloads: Number(row.downloads) || 0,
+            updated: String(row.last_updated || row.release_date || ""),
+            source: String(row.source || ""),
+            download: id ? LIBRARY_DOWNLOAD + id : "",
+            page: id ? LIBRARY_PAGE + id : "",
+          };
+        })
+        .filter((row) => row && row.name && row.download);
+      library = { at: Date.now(), themes, from: LIBRARY_URL };
+      log("[hypercord] theme library: " + themes.length + " theme(s) read");
+      return { ok: true, themes, from: LIBRARY_URL, fetchedAt: library.at, cached: false };
+    } catch (err) {
+      libraryError = String((err && err.message) || err).slice(0, 160);
+      return { ok: false, error: libraryError };
+    }
   }
 
   async function install(source, name = "") {
@@ -272,7 +389,18 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
       }
     }
     if (current.quickCss) parts.push(current.quickCss);
-    return parts.filter(Boolean).join("\n");
+    const body = parts.filter(Boolean).join("\n");
+    // The imports of every theme are lifted to the top of the payload, in the order they
+    // were found. CSS ignores an @import that is not before every other rule, and there is
+    // one injection point here rather than one style element per theme - so without this,
+    // a theme that imports its own module or its font would silently lose it, and the
+    // theme would read as half applied.
+    const imports = [];
+    const rest = body.replace(/@import\s+[^;]*;?/gi, (statement) => {
+      imports.push(statement.trim());
+      return "";
+    });
+    return imports.length ? imports.join("\n") + "\n" + rest.replace(/^\s*\n+/, "") : rest;
   }
 
   /** re-read the state from disk, and forget themes whose file has been removed */
@@ -315,6 +443,7 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
 
   return {
     list,
+    index,
     install,
     installDefault,
     remove,
