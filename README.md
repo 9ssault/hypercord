@@ -424,9 +424,12 @@ hypercord/
 npm test              # units, then the electron suites, in one go
 npm run test:units    # node: plugin-host, themes, patcher, tokens, signin,
                       # bridge, release, loader, host, beef, shipped
-npm run test:electron # electron: updater, then preload
+npm run test:electron # electron: updater, then preload, then feed-live
 npm run test:preload  # the injection path in a real window
 npm run test:updater
+npm run test:feed-live # the update loop, on a packed build and a feed of ours
+                      # (needs `npm run pack`, or the installers, first: with
+                      # neither it reports SKIPPED and exits 0)
 npm run test:baseline # electron tests/baseline --perf=25: the RSS budget
 ```
 

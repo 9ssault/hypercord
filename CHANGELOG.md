@@ -46,6 +46,13 @@ in the log - and then failed the download with `ENOENT ... app-update.yml`, whic
 like a broken feed. A feed override now writes the config it needs beside the client's own state
 and points the updater at it.
 
+That bug is covered by a suite rather than by hand now: `npm run test:feed-live` starts the packed
+build with `HYPERCORD_UPDATE_FEED` pointed at a local feed offering a version it does not have,
+reads the client's *own* update state until it reports the download, and ends the client before
+anything can install. Every desktop job of the release workflow runs it after the installers,
+because the failure it covers exists only in an artifact, and a runner with nothing to drive says
+`SKIPPED` instead of passing quietly.
+
 ### A feed per platform, and per architecture
 
 `electron-updater` names the channel file it asks for, and on Linux it names it per architecture

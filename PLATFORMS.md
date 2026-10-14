@@ -79,6 +79,21 @@ copy of ours that an update could replace. `src/updater.js` is covered by
 including the dev run, the two refusals above, a feed that cannot be reached, and
 proving that a downloaded update says nothing to the user.
 
+`npm run test:feed-live` is the half that suite cannot see, because it is not logic:
+it starts the **packed build** with `HYPERCORD_UPDATE_FEED` pointed at a local feed
+offering a version the build does not have, waits for the client's own update state
+to report the download, and then ends the client before it can install. It is the
+check that found the real bug - electron-updater reads the feed's *config* file
+whatever feed it was given, so a build that shipped none (a `--dir` pack) saw
+`update available`, then failed the download with `ENOENT ... app-update.yml`, which
+reads exactly like a broken feed. It runs on every desktop runner in the release
+workflow, after the installers, because the failure it covers only exists in an
+artifact. A run with nothing to drive (no packed build, or no channel file for this
+platform) prints `SKIPPED` and exits 0 instead of passing silently, and on Linux
+without `APPIMAGE` the packed build has no updater at all - electron-updater's own
+design - so what is asserted there is that it refuses, names the reason, and never
+asks the feed for anything.
+
 ## Running the patched client, per platform
 
 The same command on all three - there is no platform-specific way to do this:

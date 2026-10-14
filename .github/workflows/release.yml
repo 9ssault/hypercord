@@ -27,7 +27,10 @@
 # on *which* OS, is the difference between a fix and another guess. The Electron
 # suites (`tests/updater`, `tests/preload`) launch the real client, so they need a
 # display - Linux gets `xvfb-run` (installed below if the runner lacks it), Windows and
-# macOS runners have a session already.
+# macOS runners have a session already. The third one (`tests/feed-live`) drives the
+# *packed* build this job produces against a feed of ours, so it runs after the
+# installers rather than beside the other two: the failure it exists for - an update
+# found and then not downloaded - only exists in an artifact.
 #
 # A suite that cannot run on a runner is a *reported* outcome, never a silent pass and
 # never a failed release: each Electron step classifies its own failure. If the log
@@ -372,6 +375,61 @@ jobs:
         shell: bash
         run: ${{ matrix.list }}
 
+      # The update loop, on the artifact this job just produced. Why here and not with the other
+      # suites: they drive the *source* before anything is packed, and the failure this one covers
+      # is only in the artifact - a packed client was started against a feed offering a version it
+      # did not have, and the download died reading the feed config a build has to ship
+      # (`ENOENT ... resources/app-update.yml`), while every suite in the tree passed. It needs this
+      # platform's channel file and an artifact to offer, both written by the installers step
+      # above, and it kills the client the moment the download is reported, so nothing installs on
+      # the runner. A runner with nothing to drive reports SKIPPED and exits 0, which this step
+      # says out loud rather than counting as a pass.
+      - name: Run the feed suite (drives the packed build against a feed of ours)
+        shell: bash
+        env:
+          ELECTRON_ENABLE_LOGGING: '1'
+          ELECTRON_DISABLE_SANDBOX: ${{ matrix.sandbox }}
+          LABEL: ${{ matrix.label }}
+          DISPLAY_WRAPPER: ${{ matrix.display }}
+        run: |
+          log="$RUNNER_TEMP/feed.log"
+          status=0
+          # bounded exactly like the two suites that open a window: `timeout` does not exist on the
+          # macOS runners, so the bound is the shell's own watchdog (137/143 classified below)
+          $DISPLAY_WRAPPER npm run test:feed-live > "$log" 2>&1 &
+          suite=$!
+          ( sleep 480; kill -9 "$suite" 2>/dev/null ) &
+          watchdog=$!
+          wait "$suite" || status=$?
+          kill "$watchdog" 2>/dev/null || true
+          tail -40 "$log" || true
+          if [ "$status" -eq 0 ]; then
+            if grep -q "SKIPPED" "$log"; then
+              echo "the feed suite had nothing to drive on $LABEL (it says so above): reported, not counted as a pass"
+              grep -m1 "SKIPPED" "$log" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "the feed suite passed on $LABEL"
+            exit 0
+          fi
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ] || [ "$status" -eq 143 ]; then
+            echo "SKIPPED (cannot run on this runner): the feed suite did not finish within 8 minutes."
+            echo "| feed suite | skipped on $LABEL: timed out after 8 minutes |" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # `|| true`: with `bash -e` a grep that finds nothing would abort the step before it can
+          # print why the suite really failed.
+          reason=$(grep -Eim1 "cannot open display|Unable to open X display|Missing X server|Xvfb failed|no X11 display|Xlib|Failed to connect to the bus|sandbox helper binary|SUID sandbox|zygote_host_impl_linux|Failed to create a ProcessSingleton" "$log" || true)
+          if [ -n "$reason" ]; then
+            echo "SKIPPED (cannot run on this runner): the feed suite launches the packed client."
+            echo "  reason: $reason"
+            echo "| feed suite | skipped on $LABEL: $reason |" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "FAIL the feed suite failed on $LABEL for a reason that is not the display:"
+          tail -80 "$log"
+          exit "$status"
+
       # The suite logs travel with the artifacts so the release notes can state what ran
       # where without anyone reading three job logs. This runs after the build, so `dist`
       # exists; a log that is missing is not a failure - a runner that never reached a
@@ -384,7 +442,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          for suite in updater preload; do
+          for suite in updater preload feed; do
             src="$RUNNER_TEMP/$suite.log"
             if [ -f "$src" ]; then cp "$src" "dist/suite-$suite.log"; fi
           done
