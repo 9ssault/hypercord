@@ -225,6 +225,76 @@ if (host) {
   );
   electron.app.relaunch = hadRelaunch;
 
+  /* ---- 5d. the runtime's cloud requests, made by the shell -------------- */
+
+  // The runtime's cloud tab, and every settings sync it does, used to fetch from the page - where
+  // Discord's content-security policy refuses an origin it does not name, which is why that tab
+  // reported "Setup failed (couldn't retrieve OAuth configuration)" for a backend that answers
+  // perfectly well everywhere else. The request is made here now, and what this asserts is the
+  // boundary rather than the network: who may be asked, in which shape an answer comes back, and
+  // that a body crosses the IPC boundary as bytes.
+  const sent = [];
+  const replies = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    sent.push({ url: String(url), method: (init && init.method) || "", headers: (init && init.headers) || {}, body: init && init.body });
+    const next = replies.shift();
+    if (!next) throw new Error("this check did not say what the shell should be answered with");
+    return next;
+  };
+
+  const notAUrl = await call("runtime:request", "nonsense");
+  ok("a request that is not a URL is refused by name", notAUrl && notAUrl.ok === false && /not a URL/.test(notAUrl.error), JSON.stringify(notAUrl));
+
+  const insecure = await call("runtime:request", "http://cloud.equicord.org/v1/oauth/settings");
+  ok("and only https is served here, whatever the host is", insecure && insecure.ok === false && /only https/.test(insecure.error), JSON.stringify(insecure));
+
+  const elsewhere = await call("runtime:request", "https://example.com/v1/oauth/settings");
+  ok("a request to an origin that is not the client's cloud backend is refused", elsewhere && elsewhere.ok === false, JSON.stringify(elsewhere));
+  ok("and the refusal names the backends it would have served", /cloud[.]equicord[.]org/.test(elsewhere.error || "") && /api[.]vencord[.]dev/.test(elsewhere.error || ""), elsewhere.error);
+  ok("a refused request never reached the network", sent.length === 0, JSON.stringify(sent));
+
+  // The backend the runtime's own Cloud tab is set to comes out of its settings file, read on
+  // every request: a client switched to a self-hosted cloud has to reach *that* one, not only the
+  // two defaults - the tab writes that file and expects the next sync to go there.
+  const runtimeSettings = path.join(userData, "runtime.settings.json");
+  fs.mkdirSync(userData, { recursive: true });
+  fs.writeFileSync(runtimeSettings, JSON.stringify({ cloud: { url: "https://self.hosted.test/" } }));
+  replies.push(new Response(JSON.stringify({ clientId: "1234", redirectUri: "https://self.hosted.test/callback" }), { status: 200, headers: { "content-type": "application/json" } }));
+  const oauth = await call("runtime:request", "https://self.hosted.test/v1/oauth/settings", { method: "GET", headers: { Accept: "application/json" } });
+  ok("the configured backend is served, and its answer is the text a caller parses", oauth && oauth.ok === true && oauth.status === 200 && /redirectUri/.test(String(oauth.text || "")), JSON.stringify(oauth));
+  ok(
+    "and what went out is that origin, with the caller's own method and headers",
+    sent[0] && sent[0].url === "https://self.hosted.test/v1/oauth/settings" && sent[0].method === "GET" && sent[0].headers.Accept === "application/json",
+    JSON.stringify(sent[0]),
+  );
+
+  // A body crosses the boundary as bytes and a binary answer comes back as bytes: the synced
+  // settings are deflated before they are uploaded and inflated after they are fetched, so a body
+  // that travelled as a string would arrive corrupted and fail as "settings could not be imported".
+  replies.push(new Response(new Uint8Array([0x78, 0x9c, 0x00, 0xff]), { status: 200, headers: { "content-type": "application/octet-stream" } }));
+  const uploaded = await call("runtime:request", "https://self.hosted.test/v2/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    bodyBase64: Buffer.from("deflated").toString("base64"),
+  });
+  ok(
+    "the client's own body is handed to the request as the bytes it was",
+    sent[1] && Buffer.isBuffer(sent[1].body) && sent[1].body.toString("utf8") === "deflated" && sent[1].method === "POST",
+    JSON.stringify({ method: sent[1] && sent[1].method, body: sent[1] && String(sent[1].body) }),
+  );
+  ok(
+    "and an answer that is not text comes back as bytes, not as a mangled string",
+    uploaded && uploaded.ok === true && typeof uploaded.bodyBase64 === "string" && uploaded.text === undefined && Buffer.from(uploaded.bodyBase64, "base64").length === 4,
+    JSON.stringify(uploaded),
+  );
+
+  // and the settings file is what decides: remove it and the self-hosted backend goes with it
+  fs.rmSync(runtimeSettings);
+  const afterRemoval = await call("runtime:request", "https://self.hosted.test/v1/settings");
+  ok("the settings file going away takes the self-hosted backend with it", afterRemoval && afterRemoval.ok === false, JSON.stringify(afterRemoval));
+  globalThis.fetch = realFetch;
+
   /* ---- 6. stopping leaves nothing registered, and nothing running -------- */
 
   const stopped = await host.stop();

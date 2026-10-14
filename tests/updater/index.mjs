@@ -59,13 +59,21 @@ async function run() {
   Object.defineProperty(app, "isPackaged", { value: true, configurable: true });
   ok("the packed stubs take effect", app.isPackaged === true);
 
-  // Whether this platform's updater reaches any feed at all. On Linux the updater is
-  // electron-updater's AppImage one, and its `isUpdaterActive()` answers false unless the
-  // run is an actual AppImage (`process.env.APPIMAGE`), so a check resolves as "nothing to
-  // update" without a single request - there is no failure to observe. Windows and macOS
-  // builds do reach the feed, and it is unreachable on purpose below. Both shapes are
-  // asserted, so the no-throw contract is tested everywhere rather than skipped on one OS.
-  const reachesFeed = process.platform !== "linux" || Boolean(process.env.APPIMAGE);
+  // Every updater below is Hypercord's own, on a platform and an environment this test decides.
+  // Both are injected, which is the difference between a suite that asserts the same thing on every
+  // runner and one that asserted different things depending on the host it happened to run on: on
+  // Linux the AppImage updater is inactive unless the run *is* an AppImage, so a check resolved as
+  // "nothing to update" with no request made at all - and that shape is now its own case below
+  // instead of being inherited from whichever machine ran the suite.
+  const pack = (options = {}) => createUpdater({ appName: "Hypercord", platform: "win32", env: {}, ...options });
+
+  // Whether this *host* can reach a feed at all - which is not the injected `platform` above: the
+  // updater class is electron-updater's choice, made from the real `process.platform`, and on Linux
+  // that is the AppImage one, inactive unless the run is an AppImage (`TEST_UPDATER_ARCH` is the only
+  // thing this suite can tell it). So the two cases that talk to a feed assert both shapes, and on a
+  // Linux runner the shape is "nothing to update, and not one request made". The refusals the injected
+  // platform *does* decide are section 6, and they are the same on every runner.
+  const hostReachesFeed = process.platform !== "linux" || Boolean(process.env.APPIMAGE);
 
   // a resources directory with and without the feed electron-builder writes
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-bare-"));
@@ -75,7 +83,7 @@ async function run() {
   /* ---- 1. a production build that shipped no feed: quiet, no timer ------- */
 
   const bareLines = [];
-  const none = createUpdater({ log: (l) => bareLines.push(l), resourcesPath: bare });
+  const none = pack({ log: (l) => bareLines.push(l), resourcesPath: bare });
   none.start();
   ok("no feed: the run is not treated as supported", none.state.supported === false);
   ok("no feed: it is reported as mode none", none.state.mode === "none", none.state.mode);
@@ -89,13 +97,13 @@ async function run() {
   /* ---- 2. a production build that shipped its own app-update.yml --------- */
 
   const bakedLines = [];
-  const builtIn = createUpdater({ log: (l) => bakedLines.push(l), resourcesPath: baked, everyMs: 0 });
+  const builtIn = pack({ log: (l) => bakedLines.push(l), resourcesPath: baked, everyMs: 0 });
   builtIn.start();
   ok("a shipped feed: supported without any override", builtIn.state.supported === true);
   ok("a shipped feed: it is reported as mode built-in", builtIn.state.mode === "built-in", builtIn.state.mode);
   ok("a shipped feed: the log says how it checks", bakedLines.some((l) => l.includes("checking via built-in")), JSON.stringify(bakedLines));
   const builtInCheck = await builtIn.checkNow();
-  if (reachesFeed) {
+  if (hostReachesFeed) {
     ok("a shipped feed: an unreachable one fails cleanly", builtInCheck.ok === false && builtInCheck.error.length > 0, JSON.stringify(builtInCheck));
   } else {
     ok("a shipped feed: an unreachable one is nothing to update, not a throw", builtInCheck.ok === true && builtInCheck.version === "" && builtIn.state.error === "", JSON.stringify(builtInCheck));
@@ -105,12 +113,22 @@ async function run() {
   /* ---- 3. an explicit feed override that cannot be reached -------------- */
 
   const feedLines = [];
-  const dead = createUpdater({ log: (l) => feedLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: baked, everyMs: 0 });
+  const dead = pack({ log: (l) => feedLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: baked, everyMs: 0 });
   dead.start();
   ok("an override: it wins and is reported as mode feed", dead.state.mode === "feed" && dead.state.feed.endsWith("/updates"), dead.state.mode);
+  // The bug this covers, measured on a packed `--dir` build: electron-updater reads a config file
+  // (`app-update.yml` in resources) for its download cache directory whatever feed it was given, so
+  // a build that shipped none found the update and then failed the *download* with
+  // `ENOENT ... app-update.yml`. A config of our own is written for the override instead.
+  const feedConfig = path.join(app.getPath("userData"), "update-feed.yml");
+  ok(
+    "an override: and the config the updater needs to download is written, not assumed",
+    fs.existsSync(feedConfig) && fs.readFileSync(feedConfig, "utf8").includes("url: http://127.0.0.1:9/updates"),
+    feedConfig,
+  );
   ok("an override: it counts as supported", dead.state.supported === true);
   const deadCheck = await dead.checkNow();
-  if (reachesFeed) {
+  if (hostReachesFeed) {
     ok("an override: checkNow reports the failure instead of throwing", deadCheck.ok === false && deadCheck.error.length > 0, JSON.stringify(deadCheck));
     ok("an override: the reason is recorded in state", dead.state.error.length > 0, dead.state.error);
   } else {
@@ -123,7 +141,7 @@ async function run() {
 
   const eventLines = [];
   const seen = [];
-  const live = createUpdater({ log: (l) => eventLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: bare, everyMs: 60000 });
+  const live = pack({ log: (l) => eventLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: bare, everyMs: 60000 });
   // what the updater attaches to wherever it goes, counted across every event: closing
   // the client has to leave the same number behind, not merely stop the timers
   const totalListeners = () => autoUpdater.eventNames().reduce((total, name) => total + autoUpdater.listenerCount(name), 0);
@@ -181,12 +199,49 @@ async function run() {
 
   Object.defineProperty(app, "isPackaged", { value: false, configurable: true });
   const devLines = [];
-  const dev = createUpdater({ log: (l) => devLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: baked });
+  const dev = pack({ log: (l) => devLines.push(l), feed: "http://127.0.0.1:9/updates", resourcesPath: baked });
   dev.start();
   ok("dev run: it does not even try", dev.state.supported === false && dev.state.mode === "dev" && devLines.some((l) => l.includes("dev run")), JSON.stringify(devLines));
   ok("dev run: no poll timer is left behind", dev.state.timer === null);
   const devCheck = await dev.checkNow();
   ok("dev run: checkNow explains itself", devCheck.ok === false && /development run/.test(devCheck.error), JSON.stringify(devCheck));
+
+  /* ---- 6. whose app this is, and which runs have somewhere to put an update */
+
+  // section 5 unpacks the app on purpose, and this section is about what a *packed* run does
+  Object.defineProperty(app, "isPackaged", { value: true, configurable: true });
+
+  const foreignLines = [];
+  const foreign = pack({ appName: "Discord", log: (l) => foreignLines.push(l), resourcesPath: baked, everyMs: 60000 });
+  foreign.start();
+  ok("a process that belongs to another app is not updated by us", foreign.state.mode === "foreign" && foreign.state.supported === false, foreign.state.mode);
+  ok("and it names the app whose process it is", /belongs to Discord/.test(foreign.state.note), foreign.state.note);
+  ok("and it is said once, in the log, with no timer armed", foreignLines.filter((l) => l.includes("belongs to Discord")).length === 1 && foreign.state.timer === null, JSON.stringify(foreignLines));
+  const foreignCheck = await foreign.checkNow();
+  ok("asking it to check answers that reason rather than reaching a feed", foreignCheck.ok === false && /belongs to Discord/.test(foreignCheck.error), JSON.stringify(foreignCheck));
+  ok("and the reason travels to the page in describe()", foreign.describe().note === foreign.state.note && foreign.describe().mode === "foreign", JSON.stringify(foreign.describe()));
+
+  const linuxBare = pack({ platform: "linux", log: () => {}, resourcesPath: baked, everyMs: 60000 });
+  linuxBare.start();
+  ok("a Linux run that is not an AppImage has nothing to replace", linuxBare.state.mode === "elsewhere" && linuxBare.state.supported === false, linuxBare.state.mode);
+  ok("and the reason names what an update would need", /not an AppImage/.test(linuxBare.state.note) && /deb or a tar[.]gz/.test(linuxBare.state.note), linuxBare.state.note);
+  ok("and nothing is armed for it: no poll, no settle delay", linuxBare.state.timer === null && !linuxBare.state.settle);
+  const linuxCheck = await linuxBare.checkNow();
+  ok("asking anyway answers the same reason", linuxCheck.ok === false && linuxCheck.error === linuxBare.state.note, JSON.stringify(linuxCheck));
+
+  const linuxAppImage = pack({ platform: "linux", env: { APPIMAGE: "/home/tester/Hypercord.AppImage" }, log: () => {}, resourcesPath: baked, everyMs: 0 });
+  linuxAppImage.start();
+  ok("a Linux AppImage does have somewhere to put an update", linuxAppImage.state.mode === "built-in" && linuxAppImage.state.supported === true, linuxAppImage.state.mode);
+  ok("and carries no refusal note", linuxAppImage.state.note === "", linuxAppImage.state.note);
+
+  const portable = pack({ env: { PORTABLE_EXECUTABLE_FILE: "C:\\Hypercord-portable.exe" }, log: () => {}, resourcesPath: baked, everyMs: 0 });
+  portable.start();
+  ok("the portable exe has no installed copy to replace", portable.state.mode === "elsewhere" && /portable exe/.test(portable.state.note), portable.state.note);
+
+  const mac = pack({ platform: "darwin", log: () => {}, resourcesPath: baked, everyMs: 0 });
+  mac.start();
+  ok("macOS is not refused: it has a real update path", mac.state.mode === "built-in" && mac.state.supported === true && mac.state.note === "", JSON.stringify(mac.describe()));
+  mac.stop();
 
   fs.rmSync(bare, { recursive: true, force: true });
   fs.rmSync(baked, { recursive: true, force: true });

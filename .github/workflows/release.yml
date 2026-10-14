@@ -102,7 +102,14 @@ jobs:
             list: bash -lc "ls -la dist | grep -E '[.](dmg|zip|yml|blockmap)$' || (echo 'nothing was produced' && exit 1)"
           - label: linux
             os: ubuntu-latest
-            targets: --linux --x64
+            # arm64 as well as x64, because two files decide whether a Linux install can update
+            # itself: electron-updater asks an arm64 client for `latest-linux-arm64.yml` and an
+            # x64 one for `latest-linux.yml`, and only a build *of that architecture* writes one
+            # (`getArchPrefixForUpdateFile` in app-builder-lib). The release advertised an arm64
+            # AppImage while building only x64, so every arm64 install asked for a file the
+            # release did not have and never updated - silently, which is why the feed check in
+            # the publish job below exists too.
+            targets: --linux --x64 --arm64
             display: xvfb-run -a
             # The runner's kernel usually refuses an unprivileged user namespace, and
             # Chromium then refuses to start at all ("the SUID sandbox helper binary ...
@@ -398,9 +405,10 @@ jobs:
             dist/*.deb
             dist/*.tar.gz
             dist/*.blockmap
-            dist/latest.yml
-            dist/latest-mac.yml
-            dist/latest-linux.yml
+            # every feed this platform wrote, not the three names we expect: on Linux that is
+            # `latest-linux.yml` for x64 *and* `latest-linux-arm64.yml` for arm64, and a list of
+            # names is exactly how the second one went missing
+            dist/latest*.yml
             dist/suite-*.log
           if-no-files-found: error
           retention-days: 30
@@ -743,6 +751,18 @@ jobs:
           echo "attaching $count file(s)"
           # an empty release is never published
           test "$count" -gt 0
+
+      # The feeds and the artifacts are two halves of one release, and the only thing that ever
+      # reads them is an installed client - which fails *silently*: a channel file naming a file
+      # that is not attached makes the updater download nothing and log into a console nobody
+      # has, and a missing channel file makes a whole architecture do the same. This runs before
+      # the release page exists, so the outcome is a red run rather than a public release nothing
+      # can update from. It reads them from the same directory it is about to publish, derives the
+      # feeds the app's build config promises (package.json's linux/win/mac targets) and refuses
+      # when one is missing, when a feed's version disagrees with package.json, or when a feed
+      # names an artifact that is not here.
+      - name: Check that the update feeds match the artifacts
+        run: node scripts/check-feed.mjs --dir release
 
       - name: Create the release if it does not exist yet
         env:

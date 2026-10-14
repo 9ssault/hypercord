@@ -129,7 +129,13 @@ console.log("# checking " + path.relative(root, exe) + (fresh ? " (fresh profile
 // script look at the page. Nothing about the app changes.
 const args = ["--remote-debugging-port=" + String(port)];
 if (fresh) args.push("--user-data-dir=" + profileDir);
-const child = spawn(exe, args, { stdio: "ignore", detached: false });
+// `detached` on Linux and macOS puts the child in a process group of its own, which is what
+// makes it possible to end *all* of it later: Electron's renderer, GPU and utility helpers are
+// separate processes, and signalling only the parent left them running - holding the throwaway
+// profile the removal below then retried for ten seconds, and holding the port the next run
+// wants. The parent is still the only process this script started, and on Windows `taskkill
+// /T` is the equivalent.
+const child = spawn(exe, args, { stdio: "ignore", detached: process.platform !== "win32" });
 
 let target = null;
 try {
@@ -290,8 +296,17 @@ try {
 } finally {
   // only the process tree this script started, by pid
   try {
-    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-    else process.kill(child.pid, "SIGTERM");
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      // the group first (the negative pid), and the process itself only if that group is
+      // already gone - a check that cannot clean up after itself is a check nobody keeps running
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        process.kill(child.pid, "SIGTERM");
+      }
+    }
   } catch {
     /* it may already be gone */
   }

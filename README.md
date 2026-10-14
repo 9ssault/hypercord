@@ -29,6 +29,7 @@ the Hyper plugins that drive the selfbot's control server.
 | The catalogue browser reads metadata (a manifest), not plugin code | browsing 371 plugins loads kilobytes, not megabytes |
 | Themes are CSS at one injection point, and never execute | a theme costs a stylesheet, never a script |
 | Updates are silent | found in the background, downloaded in the background, installed on the way out. No dialog, no toast, no "restart to update" prompt |
+| Updates are per app, and per install | Hypercord updates Hypercord: in a patched client the host runs inside Discord's own process, so the updater refuses (`mode: "foreign"`) rather than reading Discord's feed. A run with no installed copy to replace - a `deb`, a `tar.gz`, the portable exe - says so (`mode: "elsewhere"`) instead of failing in the dark |
 | No timers while idle | the settings pages and the plugin host wake on events, not on a clock. `PERF.md` records the reading |
 | Every call can fail out loud | no click is ever a dead end: every page says what went wrong, in text, in the line above it |
 
@@ -131,6 +132,13 @@ patch/unpatch round trip on each of the three layouts. [PLATFORMS.md](PLATFORMS.
 the detail, plus the one honest gap: no run against a real macOS or Linux Discord
 install is recorded anywhere in this repository.
 
+An update is a property of an *install*, not of the way the client is run: inside a
+patched Discord the code comes from the tree the patcher pointed at (the loader and
+the preload are read from it live, as above), so that copy is updated by updating the
+tree, and this is why the updater refuses in Discord's own process rather than
+driving an installer for somebody else's app. An installed Hypercord updates itself,
+per platform and per artifact, exactly as the build table below says.
+
 ### Desktop - build it
 
 ```bash
@@ -145,16 +153,21 @@ npm run dist          # the installers, into dist/
 
 | Platform | Targets | Artifact names in `dist/` |
 | --- | --- | --- |
-| Windows | `nsis` setup + `portable`, x64 and arm64 | `Hypercord-<version>-win-<arch>-setup.exe`, `...-portable.exe` |
-| macOS | `dmg` + `zip`, x64 and arm64 | `Hypercord-<version>-mac-<arch>.dmg`, `....zip` |
-| Linux | `AppImage`, `deb`, `tar.gz`, x64 and arm64 | `Hypercord-<version>-linux-<arch>.AppImage`, `....deb`, `....tar.gz` |
+| Windows | `nsis` setup + `portable`, x64 and arm64 | `Hypercord-<version>-win-<arch>-setup.exe`, `...-portable.exe`; one `latest.yml` serves both architectures, and the `nsis` install is what updates |
+| macOS | `dmg` + `zip`, x64 and arm64 | `Hypercord-<version>-mac-<arch>.dmg`, `....zip`; `latest-mac.yml` lists both architectures as `zip`s and the updater takes the one that matches the machine |
+| Linux | `AppImage` (x64 and arm64), `deb` and `tar.gz` (x64) | `Hypercord-<version>-linux-<arch>.AppImage`, `....deb`, `....tar.gz`; the AppImage self-updates through the channel file for its architecture (`latest-linux.yml`, `latest-linux-arm64.yml`), a `deb` or a `tar.gz` is updated by whoever installed it |
 
 One run can do several targets: `npm run dist -- --win --linux --x64`.
 **Signing is not configured in this tree** - there is no certificate, notarisation
 or `CSC_*` step, so macOS and Windows artifacts are unsigned; macOS will warn on
 first open, and Gatekeeper refuses an unsigned replacement, so a macOS build must
 be signed for the silent updater to install into it. Building macOS artifacts
-needs macOS; Windows and Linux artifacts can both be produced from either.
+needs macOS; Windows and Linux artifacts can both be produced from either. What
+self-updates from the feed is narrower than what is built: the Windows `nsis`
+installer and the Linux `AppImage` do, a macOS build only once it is signed and
+notarised, and a `deb`, a `tar.gz` or the portable Windows exe never - none of those
+is an installed copy of ours for an update to replace, and each such run says so in
+its update row rather than failing silently.
 
 `npm run release` is the gate, in this order and no other: the vendor audit, the
 suites, `pack`, a freshness check (a `dist/` older than `src/` is refused - that
@@ -442,6 +455,7 @@ Discord's settings, the pages mounted in Discord's content column) and the setti
 UI (all seven pages, real data, no page errors).
 
 Not yet true, and not claimed: the RSS budget in `PERF.md`, the served `/discord`
-fallback, a signed desktop installer, and a *signed* Android APK - both Android
-modules build and produce APKs, but every one built so far is unsigned (see
+fallback, a signed desktop installer, an update installing into an unsigned macOS
+build, and a *signed* Android APK - both Android modules
+build and produce APKs, but every one built so far is unsigned (see
 [docs/android-build.md](docs/android-build.md)), so nothing here is published.

@@ -273,7 +273,11 @@ function buildRuntimeInjection({ source = "", version = "", marker = "__hypercor
       "    quickCss: { get: function () { return ''; }, set: function () { return false; }, openEditor: function () { return false; } },\n" +
       "    themes: { getThemesList: function () { return []; }, getSystemValues: function () { return { theme: 'dark' }; }, openFolder: function () {}, uploadTheme: function () { return false; }, getThemeData: function () { return null; } },\n" +
       "    updater: { getUpdates: function () { return []; } },\n" +
-      "    native: { openExternal: function (url) { try { window.open(String(url), '_blank', 'noopener'); } catch (e) {} } }\n" +
+      // `request` is the cloud half of the runtime's own traffic. The page it runs in refuses a
+      // request to an origin its content-security policy does not name, so the runtime asks the
+      // shell instead; a page whose client has no shell behind it gets null here and falls back
+      // to its own fetch (see src/host.js and vendor/.../SettingsSync/cloudRequest.ts).
+      "    native: { openExternal: function (url) { try { window.open(String(url), '_blank', 'noopener'); } catch (e) {} }, request: function (url, init) { try { var box = window.hypercord && window.hypercord.runtime; return box && typeof box.request === 'function' ? box.request(url, init) : null; } catch (e) { return null; } } }\n" +
       "  };\n" +
       // The bundle's own object, with our settings grafted on: every other half it makes for
       // itself is kept, and the half this client owns is the one that survives.
@@ -283,6 +287,13 @@ function buildRuntimeInjection({ source = "", version = "", marker = "__hypercor
       "    var settings = {};\n" +
       "    for (var a in theirs) settings[a] = theirs[a];\n" +
       "    for (var b in mine.settings) settings[b] = mine.settings[b];\n" +
+      "    box.settings = settings;\n" +
+      // And the one capability of `native` that is ours rather than the bundle's, added only
+      // when the bundle has none: the runtime's cloud requests are the shell's to make. The
+      // rest of that half is left exactly as its own build made it.
+      "    var native = box.native && typeof box.native === 'object' ? box.native : {};\n" +
+      "    if (typeof native.request !== 'function' && mine.native && typeof mine.native.request === 'function') { var out = {}; for (var c in native) out[c] = native[c]; out.request = mine.native.request; box.native = out; }\n" +
+      "    else if (!box.native) box.native = native;\n" +
       "    box.settings = settings;\n" +
       "    return box;\n" +
       "  };\n" +

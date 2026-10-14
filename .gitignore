@@ -22,11 +22,13 @@ android/loader/src/main/assets/assault-runtime.js
 
 # Build output the tree regenerates, per kind. `build/` itself stays tracked: the icons and
 # build/README.md are electron-builder's *inputs*, and it is only the reports a diagnostics run
-# leaves behind that are output.
-build/reports/
-release/
+# leaves behind that are output. Every rule below is anchored to the root on purpose: a bare
+# `release/` also matches `tests/release/`, and a gitignore rule that quietly hides a tracked
+# suite's directory is a worse bug than the untracked directory it was written for.
+/build/reports/
+/release/
 
 # Gradle and the Android modules' own output, including the interpreter's cache in .gradle/
-.gradle/
-android/loader/build/
-android/manager/build/
+/.gradle/
+/android/loader/build/
+/android/manager/build/

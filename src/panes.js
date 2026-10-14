@@ -1843,7 +1843,7 @@
     const keys = await guard("access keys", () => hc.tokens.list());
     lines.push("keys: " + (Array.isArray(keys) ? keys.length + " stored on this machine" : "the shell did not report the key store"));
     const update = await guard("update state", () => hc.update.state());
-    lines.push("updates: " + (update ? text(update.supported ? "on" : "not updating in this run") + (update.version ? " (" + text(update.version) + ")" : "") + (update.error ? " - last error: " + text(update.error) : "") : "the shell did not report update state"));
+    lines.push("updates: " + (update ? text(update.supported ? "on" : "not updating in this run") + (update.note ? " - " + text(update.note) : "") + (update.version ? " (" + text(update.version) + ")" : "") + (update.error ? " - last error: " + text(update.error) : "") : "the shell did not report update state"));
     return {
       note: "No log file is read in this run, so this is the state this client holds right now; the lines it writes go to the terminal Hypercord was started from. A build that keeps a log shows its own lines here instead.",
       lines,
@@ -2145,6 +2145,11 @@
     }
     const bits = ["mode: " + text(state.mode || "unknown")];
     bits.push(state.supported ? "automatic updates are on" : "not updating in this run");
+    // Why it is not updating, when the reason is not a failure: another app's process (a
+    // patched client runs this host inside Discord's own), an install with no copy of ours to
+    // replace, or a build with no feed. "not updating in this run" on its own is the silence
+    // this line exists to remove.
+    if (state.note) bits.push(text(state.note));
     if (state.downloaded) bits.push("downloaded " + text(state.downloaded) + ", installs on quit");
     if (state.error) bits.push("last error: " + text(state.error));
     row.textContent = bits.join(" \u00b7 ");

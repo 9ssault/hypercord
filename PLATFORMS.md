@@ -5,9 +5,9 @@ what each platform gets - stated plainly rather than promised:
 
 | Platform | How it ships | Notes |
 | --- | --- | --- |
-| **Windows** | `nsis` installer + portable exe, x64 and arm64 | the primary target; `electron-updater` installs the next release on quit |
-| **Linux** | `AppImage`, `deb`, `tar.gz`, x64 and arm64 | AppImage self-updates through the same feed; `deb` updates like any package |
-| **macOS** | `dmg` + `zip`, x64 and arm64 (Apple Silicon) | the `zip` is what the updater consumes; signing/notarisation needs an Apple developer identity, so an unsigned build will warn on first open |
+| **Windows** | `nsis` installer + portable exe, x64 and arm64 | the primary target; `electron-updater` installs the next release on quit. One `latest.yml` serves both architectures (the updater takes whichever listed installer matches the machine), and the **`nsis` install is what updates**: the portable exe has no installed copy to replace |
+| **Linux** | `AppImage` (x64 and arm64), `deb` and `tar.gz` (x64) | the AppImage self-updates through the feed, with a channel file per architecture (`latest-linux.yml` on x64, `latest-linux-arm64.yml` on arm64); a `deb` or a `tar.gz` is updated by whoever installed it |
+| **macOS** | `dmg` + `zip`, x64 and arm64 (Apple Silicon) | the `zip` is what the updater consumes and `latest-mac.yml` lists both architectures, so a machine takes the one that matches it; signing/notarisation needs an Apple developer identity, so an unsigned build warns on first open **and cannot install an update** |
 | **Android** | **not Electron, and not built.** Today: the client is served by the control server (`/discord`) and installed from the browser as a PWA, or wrapped as a TWA with `bubblewrap`/PWABuilder using `pwa/manifest.webmanifest`. The APK path (a manager that patches a Discord APK, the shape Revenge Manager and Aliucord Manager use) exists as **sources only**: `android/manager/` and `android/loader/` hold the Java, the manifest and the assets, but the tree has no Gradle wrapper, no `build.gradle`/`settings.gradle` and no `scripts/build_android.py`, so **no APK can be produced from this checkout** - the CI workflow that expects those scripts cannot run here either. Sources present is not the same as an artifact, and none is claimed | Electron cannot run on Android. `rea` is an analysis toolkit, not a patcher, and this machine has no APK, Android SDK or JDK 25, so no APK is claimed |
 | **iOS** | same served client, added to the home screen as a web app | no Electron, no sideloading story worth claiming |
 
@@ -19,6 +19,18 @@ what each platform gets - stated plainly rather than promised:
 * a **development run never updates itself** (`app.isPackaged` is false, so the
   updater says so and stops) - otherwise a working tree would be replaced under
   you;
+* a **process that is not Hypercord is never updated by Hypercord**. In a patched
+  client the host runs inside Discord's own main process (`startHost` in
+  `src/loader.cjs`), where `app.isPackaged` is true and `process.resourcesPath` are
+  Discord's - so the updater first checks that the running app *is* Hypercord
+  (`ownName`, taken from `app.getName()` and injectable for a test) and refuses with
+  `mode: "foreign"` when it is not. Without that check it would read Discord's own
+  updater configuration, compare Discord's version against our feed and could quit
+  Discord to run an installer for it;
+* a run with **nothing to replace** says so and does not check: `mode: "elsewhere"`
+  covers Linux without the `APPIMAGE` variable (a `deb` or a `tar.gz` install) and
+  the portable Windows exe. The reason travels as `state.note` and is shown in the
+  settings page's update row, beside the mode;
 * in a packed build the feed comes from the build (`app-update.yml`, written from
   `build.publish`), so a shipped client updates itself; only
   `HYPERCORD_UPDATE_FEED` overrides it at runtime;
@@ -43,11 +55,29 @@ feed one of two ways:
    feed files at build time) - this is what a shipped build uses, or
 2. `HYPERCORD_UPDATE_FEED=https://…` at runtime, which wins.
 
-Note the platform caveat: AppImage and Windows installs self-update from the
-feed; a macOS build must be signed for the update to install, because Gatekeeper
-refuses an unsigned replacement. `src/updater.js` is covered by
+The channel file is named per platform, and on Linux **per architecture**:
+`latest.yml` on Windows (one file for both architectures), `latest-mac.yml` on
+macOS, and `latest-linux.yml` on x64 against `latest-linux-arm64.yml` on arm64.
+Those names are not a convention of ours: `getChannelFilePrefix()` in
+`electron-updater` asks for exactly them and `getArchPrefixForUpdateFile()` in
+`app-builder-lib` writes them, and within a channel file the updater prefers the
+artifact whose name matches `process.arch`. A release that built only x64 for Linux
+therefore left every arm64 AppImage install asking for a file that was not there,
+and silently never updating - which is why the release workflow now builds
+`--linux --x64 --arm64` and uploads `dist/latest*.yml` rather than three fixed
+names. `scripts/check-feed.mjs` is the other half of that guarantee: the publish
+job reads every `latest*.yml` it is about to attach and **fails the release** when
+one names an artifact that is not attached, so a feed pointing at nothing is a red
+run instead of a client that never updates.
+
+Note the platform caveat, which is a shape rather than a bug: the Windows `nsis`
+installer and the Linux `AppImage` self-update from the feed; a macOS build only
+once it is signed, because Gatekeeper refuses an unsigned replacement; and a `deb`,
+a `tar.gz` or the portable Windows exe never, because none of them is an installed
+copy of ours that an update could replace. `src/updater.js` is covered by
 `npm run test:updater`, which stubs `app.isPackaged` and drives every path -
-including proving that a downloaded update says nothing to the user.
+including the dev run, the two refusals above, a feed that cannot be reached, and
+proving that a downloaded update says nothing to the user.
 
 ## Running the patched client, per platform
 
@@ -104,8 +134,11 @@ npm run check:packaged -- --fresh   # same, on a throwaway profile, so Discord
 the DevTools protocol, and asserts what the build actually injected: the token option
 beside the login fields, Hypercord's entries inside Discord's settings, its pages
 mounted with one page showing and no overlay of ours left in the page, and the
-passkey policy. It kills the process tree it started and removes the
-throwaway profile afterwards.
+passkey policy. It starts the executable detached and ends it by **process group** on
+Linux and macOS (`taskkill /T /F` on Windows), because Electron's renderer and GPU
+children are processes of their own: ended by pid alone they survived the check and
+held the throwaway profile, which the removal retry only papered over. It removes
+that profile afterwards.
 
 If a real Discord is installed, `npm start -- --attach` patches it and starts the
 real client instead of this window (see [src/patcher.js](src/patcher.js)); the
@@ -131,8 +164,13 @@ options, `tests/patcher/index.mjs` drives all three branches from any host.
 
 **Neutral by construction, and worth keeping that way:**
 
-* `src/updater.js` has no platform branch: whether an update is possible is decided
-  by `app.isPackaged` and by whether `electron-builder` wrote `app-update.yml`.
+* `src/updater.js` has **one** platform branch, and it names only what cannot be
+  updated rather than how to: `mode: "elsewhere"` on Linux without the `APPIMAGE`
+  variable and for the portable Windows exe (`platform` and `env` are options, so a
+  test drives any of them from any host). Everything else is still decided by
+  `app.getName()`, `app.isPackaged` and by whether `electron-builder` wrote
+  `app-update.yml`, and nothing in the module knows where an installer keeps its
+  files.
 * `src/passkeys.cjs` is one injected policy with no OS test. It exists because of a
   Windows-specific dialog (Chromium raises the system passkey chooser for a
   conditional WebAuthn request), and because it refuses only uninvited requests it
@@ -148,22 +186,30 @@ options, `tests/patcher/index.mjs` drives all three branches from any host.
   procedural drawing with no image library and no network, so the Windows and macOS
   icons can be generated on a Linux host.
 
+**Fixed since this list was first written** - kept with the reading it came from,
+because the reading is what makes the fix checkable:
+
+1. `scripts/check-packaged.mjs` started the built app with `detached: false` and
+   ended it with `process.kill(child.pid, "SIGTERM")` on POSIX (Windows already got
+   `taskkill /T`, which takes the whole tree). Electron's renderer and GPU children
+   are separate processes, so a Linux or macOS check could leave them behind and hold
+   the throwaway profile - the 10-second retry loop only hid it. It now spawns
+   detached and ends the **process group** on Linux and macOS, keeping `taskkill /T /F`
+   for win32. The fix is read, not run here: no Linux or macOS host was involved.
+
 **Concrete gaps, with the fix, for whoever owns the file:**
 
-1. `scripts/check-packaged.mjs:132` starts the built app with `detached: false` and
-   line 257 kills it with `process.kill(child.pid, "SIGTERM")` on POSIX (Windows gets
-   `taskkill /T`, which takes the whole tree). Electron's renderer and GPU children
-   are separate processes, so on Linux and macOS the check can leave them behind and
-   hold the throwaway profile - the 10-second retry loop only hides it. Fix: spawn
-   with `detached: true` and kill the process group on POSIX, keeping `taskkill /T`
-   for win32.
-2. `package.json` has no macOS signing configuration at all: on a macOS runner
+1. `package.json` has no macOS signing configuration at all: on a macOS runner
    `npm run dist -- --mac` yields an unsigned, un-notarisable `dmg`, and on this host
    it fails partway through because `hdiutil` is not there. Setting
    `build.mac.identity: null` would make a local mac build fail immediately and
    plainly instead of at packaging time; a real release needs a developer identity,
-   `CSC_*` or notarisation credentials, none of which are in this tree.
-3. No run against a real macOS or Linux Discord install is recorded anywhere in this
+   `CSC_*` or notarisation credentials, none of which are in this tree. What that
+   costs is now said where it bites: the release job prints `signing: UNSIGNED` and
+   `notarisation: none` when those secrets are absent, and the client reports the
+   refusal in its update state - an update that Gatekeeper will not install is the
+   one path this tree cannot make work without credentials.
+2. No run against a real macOS or Linux Discord install is recorded anywhere in this
    repository. What *is* covered: `tests/patcher/index.mjs` discovers every layout from
    injected paths - Windows `%LOCALAPPDATA%`, a macOS bundle with its `Info.plist`, the
    Linux config directory, a package root and a Flatpak deployment - and then runs the
@@ -176,7 +222,10 @@ options, `tests/patcher/index.mjs` drives all three branches from any host.
    name and then whatever is actually in the directory), and the macOS bundle is only
    checked against the layout this repository knows. Verified in the layout, not on the
    machine - the distinction is the point.
-4. macOS AppImage-equivalents do not exist, and the `deb` does not self-update: that
-   is `electron-builder`'s shape, not a bug, but it means "updates on all platforms" is
-   true for `nsis`, `portable`, `AppImage` and a signed `zip`-based macOS build, and
-   false for `deb` and `tar.gz`, which are updated by whoever installed them.
+3. What self-updates is narrower than what is built, and that is
+   `electron-builder`'s shape, not a bug: **true** for the Windows `nsis` installer,
+   for the Linux `AppImage` on x64 and arm64 (each with its own channel file, see
+   *Auto-update* above) and for a macOS build once it is signed; **false** for `deb`,
+   `tar.gz` and the Windows portable exe, none of which is an installed copy of ours
+   that an update could replace. Those runs now report that in their update state
+   (`mode: "elsewhere"`) instead of checking a feed they could never install from.

@@ -137,6 +137,12 @@ contextBridge.exposeInMainWorld("hypercord", {
         }
       },
     },
+    // The runtime's cloud requests, made by the shell rather than by the page: Discord's page
+    // refuses a request to an origin its content-security policy does not name, which is what
+    // made the cloud tab report "couldn't retrieve OAuth configuration" for a backend that
+    // answers everywhere else. The bridge serves the cloud backend this client is set to and
+    // nothing else - see the channel in src/host.js for how that is decided.
+    request: (url, options) => call("runtime:request", String(url || ""), options || {}),
   },
   notify: (title, body) => call("notify", String(title || ""), String(body || "")),
   metrics: () => call("perf:metrics"),

@@ -25,6 +25,16 @@ import { createTokens, redact } from "./tokens.js";
 import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looksLikeUserToken, pickClientAuth, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
 
 const DISCORD_API = "https://discord.com/api/v9";
+
+// The runtime's own requests, and how far they may reach.
+//
+// The two backends the runtime's cloud tab offers before anything is configured; a client set to
+// a self-hosted one is served that origin as well, because it is the one the tab shows. The
+// bounds are here rather than in the handler so the timeout and the ceiling read as what they
+// are: one answer a page can be handed, and one it is refused for.
+const RUNTIME_BACKENDS = ["https://cloud.equicord.org", "https://api.vencord.dev"];
+const RUNTIME_REQUEST_TIMEOUT = 20000;
+const RUNTIME_REQUEST_LIMIT = 8 * 1024 * 1024;
 // The client does not act on a stored token every boot: measured against the live
 // page, the same write was taken up by its gateway once and ignored four times.
 // One click therefore makes two passes over the two places a token can go.
@@ -699,6 +709,27 @@ export function createHost({
   /* ---- the channels -------------------------------------------------------- */
 
   /**
+   * The origins the runtime's own requests may reach: the backends its cloud tab offers, and
+   * whatever that tab is set to in the runtime's own settings file.
+   *
+   * Read from the file each time rather than remembered, because changing the backend in that
+   * tab is a settings write: a client switched to a self-hosted cloud has to be able to reach it
+   * at the next sync, not at the next start. A settings file that is absent, unreadable or not
+   * JSON is not an error here - it means nothing is configured, and the two defaults stand.
+   */
+  function runtimeRequestOrigins() {
+    const found = new Set(RUNTIME_BACKENDS);
+    try {
+      const raw = fs.readFileSync(path.join(userData || "", "runtime.settings.json"), "utf8");
+      const url = String((JSON.parse(raw) || {}).cloud?.url || "");
+      if (url) found.add(new URL(url).origin);
+    } catch {
+      /* nothing configured, or nothing readable: the defaults are the answer */
+    }
+    return [...found];
+  }
+
+  /**
    * Register every channel the preload calls. One function, one list: a handler that
    * exists in one client and not the other is the bug this table prevents, and
    * `stop()` unregisters exactly what this registered.
@@ -717,6 +748,84 @@ export function createHost({
     handle("api:request", async (_event, endpoint, opts = {}) => {
       if (!api) buildApi();
       return api.request(String(endpoint || "/"), opts || {});
+    });
+
+    // The runtime's own requests, made here instead of in the page.
+    //
+    // Everything the vendored runtime fetches - its cloud backend's OAuth configuration, and the
+    // settings it syncs to and from there - used to be fetched by the page. Discord's page refuses
+    // a request to an origin its content-security policy does not name, so the cloud tab reported
+    // "Setup failed (couldn't retrieve OAuth configuration)" for a backend that answers perfectly
+    // well from anywhere else, and every sync after it failed the same silent way. The request is
+    // made here instead: this process has no such policy, and it hands the answer to the page.
+    //
+    // What it deliberately is not is a general proxy. A page script that could ask for any URL
+    // would have exactly the way around that policy which the policy exists to deny, so a request
+    // is served only when it is https and its origin is the cloud backend this client is set to
+    // (see `runtimeRequestOrigins`). Anything else is refused with its reason, which is what the
+    // page then shows - a named refusal beats the same empty failure this replaces.
+    handle("runtime:request", async (_event, url, options = {}) => {
+      const target = String(url || "");
+      let parsed = null;
+      try {
+        parsed = new URL(target);
+      } catch {
+        return { ok: false, error: "that is not a URL" };
+      }
+      if (parsed.protocol !== "https:") return { ok: false, error: "only https is served here" };
+      const allowed = runtimeRequestOrigins();
+      if (!allowed.includes(parsed.origin)) {
+        return {
+          ok: false,
+          error:
+            "the runtime may only reach its own cloud backend (" +
+            allowed.join(", ") +
+            "), and this request is for " +
+            parsed.origin,
+        };
+      }
+      const headers = options && typeof options.headers === "object" && options.headers ? options.headers : {};
+      const body =
+        options && typeof options.bodyBase64 === "string" && options.bodyBase64
+          ? Buffer.from(String(options.bodyBase64), "base64")
+          : undefined;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), RUNTIME_REQUEST_TIMEOUT);
+      try {
+        const res = await fetch(target, {
+          method: String((options && options.method) || "GET").toUpperCase(),
+          headers,
+          body,
+          redirect: "follow",
+          signal: controller.signal,
+        });
+        const buffer = Buffer.from(await res.arrayBuffer());
+        if (buffer.length > RUNTIME_REQUEST_LIMIT) {
+          return { ok: false, error: "that answer is larger than this client hands to a page (" + buffer.length + " bytes)" };
+        }
+        const type = String(res.headers.get("content-type") || "");
+        // Text stays text and everything else travels as bytes: the synced settings are deflated
+        // before they are uploaded and inflated after they are fetched, so a body read as a
+        // string would arrive corrupted and fail as "settings could not be imported".
+        const textual = !type || /^text\/|json|javascript|xml|urlencoded/i.test(type);
+        return {
+          ok: res.ok,
+          status: res.status,
+          statusText: res.statusText,
+          contentType: type,
+          ...(textual ? { text: buffer.toString("utf8") } : { bodyBase64: buffer.toString("base64") }),
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error:
+            err && err.name === "AbortError"
+              ? "the cloud backend did not answer within " + Math.round(RUNTIME_REQUEST_TIMEOUT / 1000) + "s"
+              : String((err && err.message) || err),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
     });
     // What the preload asks for once, at boot, and what it is handed: one style string and
     // the markup of the pieces the window injects (the token option and the settings pages).

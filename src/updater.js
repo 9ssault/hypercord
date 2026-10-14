@@ -19,7 +19,17 @@
 //   * and nothing here outlives the client: `stop()` clears *both* timers, detaches
 //     the listeners `wire()` attached and marks the updater stopped, so a quit is
 //     not held open by a pending settle delay and an in-flight check cannot log,
-//     or write state, into a process that is going away.
+//     or write state, into a process that is going away;
+//   * and it updates *this* app or nothing. The host runs inside Discord's own main
+//     process when the client is patched in (see src/loader.cjs), where
+//     `app.isPackaged` is true and `process.resourcesPath` are Discord's - so the
+//     app's own name is checked first. Without that check the updater would read
+//     Discord's updater configuration, compare Discord's version against our feed
+//     and, at the worst possible moment, quit Discord and run an installer for it;
+//   * and a run that has no installed copy to replace says so instead of failing
+//     quietly: a Linux run that is not an AppImage (`APPIMAGE` unset: a deb or a
+//     tar.gz install) and the portable Windows exe both answer with the reason, in
+//     the same `state` the settings page reads.
 import { app } from "electron";
 // electron-updater is CommonJS, and its named exports are not always detectable
 // from ESM - importing the default and reading the field off it works either way
@@ -43,15 +53,27 @@ export function createUpdater({
       return false;
     }
   },
+  // Which app this process is, which platform it is on, and what the environment says about
+  // how it was started. All three are injected for the same reason `resourcesPath` is: a test
+  // has to be able to put the updater inside a patched Discord, or on Linux without an
+  // AppImage, on whatever host the suite happens to run on.
+  appName = "",
+  ownName = "Hypercord",
+  platform = process.platform,
+  env = process.env,
 } = {}) {
   const state = {
-    mode: "dev", // dev | built-in | feed | none
+    mode: "dev", // dev | built-in | feed | none | foreign | elsewhere
     supported: false,
     feed: "",
     checkedAt: 0,
     version: "",
     downloaded: "",
     error: "",
+    // Why this run will not update, when the reason is not a failure: another app's process,
+    // or an install with no copy of ours to replace. A page shows it beside the mode, because
+    // "not updating in this run" without a reason is the silence this field exists to remove.
+    note: "",
     timer: null,
     settle: null, // the one check shortly after launch, until it has fired
     stopped: false,
@@ -68,6 +90,39 @@ export function createUpdater({
     // fact the pane can actually use, and the settle delay the same way.
     const { timer, settle, ...plain } = state;
     return { ...plain, onTimer: Boolean(timer), onSettle: Boolean(settle), ready: Boolean(state.downloaded) };
+  }
+
+  /**
+   * Why this run cannot update, decided by the running app and the platform rather than by
+   * the feed - and answered before the feed is even read, because none of these has an
+   * install of ours to replace and a downloaded artifact would be litter at best.
+   *
+   *   * a patched client runs the host inside Discord's process (`app.getName()` is
+   *     "Discord", `resourcesPath` is Discord's), and Hypercord's job is never to update
+   *     Discord or to run an installer for it;
+   *   * on Linux the updater is electron-updater's AppImage one, which is inactive unless the
+   *     run *is* an AppImage: a deb or a tar.gz is updated by whoever installed it. Downgraded
+   *     from "electron-updater quietly does nothing" on purpose - that is indistinguishable
+   *     from a broken updater from the outside;
+   *   * a portable Windows exe has no installed copy, so an "update" would install a second
+   *     client next to it.
+   *
+   * macOS is deliberately absent: a macOS build has a real update path (the zip in
+   * `latest-mac.yml`), and whether it can be installed depends on the signature - a refusal
+   * there is Gatekeeper's, and it arrives as an error rather than as a reason decided here.
+   */
+  function elsewhereReason() {
+    const running = String(appName || app.getName?.() || "");
+    if (running && running !== ownName) {
+      return "this process belongs to " + running + ", so " + ownName + " does not update it";
+    }
+    if (platform === "linux" && !env.APPIMAGE) {
+      return "this Linux run is not an AppImage, so an update has nothing to replace: a deb or a tar.gz install is updated by whoever installed it";
+    }
+    if (platform === "win32" && env.PORTABLE_EXECUTABLE_FILE) {
+      return "this run is the portable exe, which has no installed copy to replace";
+    }
+    return "";
   }
 
   function wire() {
@@ -134,6 +189,15 @@ export function createUpdater({
       log("[hypercord] updates: dev run, not checking");
       return describe();
     }
+    // Whose app this is, before whose feed it would read: see elsewhereReason. A run with a
+    // reason never arms a timer, because there is nothing for a check to lead to.
+    const elsewhere = elsewhereReason();
+    if (elsewhere) {
+      state.mode = appName && appName !== ownName ? "foreign" : "elsewhere";
+      state.note = elsewhere;
+      log("[hypercord] updates: " + elsewhere);
+      return describe();
+    }
     const override = String(feed || "").trim();
     if (override) {
       state.mode = "feed";
@@ -149,6 +213,23 @@ export function createUpdater({
     }
 
     if (state.mode === "feed") {
+      // Two things are read, not one: the feed, and a *config file* - `app-update.yml` in
+      // resources - which electron-updater loads for the cache directory its download helper
+      // uses (`getOrCreateDownloadHelper`), whatever feed was set. A build that shipped no such
+      // file therefore found the update and then failed to download it, with
+      // `ENOENT ... resources/app-update.yml` - measured on a packed `--dir` build, where the
+      // feed was read, the version comparison said 0.3.6 was available, and the download died
+      // on that read. It reads exactly like a broken feed. So a config of our own is written
+      // beside the client's own state and the updater is pointed at it; `updateConfigPath` is the
+      // only lever upstream offers for that (it is marked private there), and a build without it
+      // still gets the feed and fails loudly rather than not checking at all.
+      const configFile = path.join(String(app.getPath("userData") || "."), "update-feed.yml");
+      try {
+        fs.writeFileSync(configFile, "provider: generic\nurl: " + state.feed + "\nupdaterCacheDirName: hypercord-updater\n");
+        autoUpdater.updateConfigPath = configFile;
+      } catch (err) {
+        log("[hypercord] updates: could not write the feed's own config: " + String((err && err.message) || err));
+      }
       try {
         autoUpdater.setFeedURL({ provider: "generic", url: state.feed });
       } catch (err) {
@@ -201,7 +282,7 @@ export function createUpdater({
   async function checkNow() {
     if (state.stopped) return { ok: false, error: "the updater was stopped" };
     if (!state.supported) {
-      return { ok: false, error: state.error || (state.mode === "dev" ? "a development run never updates itself" : "updates are not configured for this build") };
+      return { ok: false, error: state.error || state.note || (state.mode === "dev" ? "a development run never updates itself" : "updates are not configured for this build") };
     }
     try {
       const info = await autoUpdater.checkForUpdates();

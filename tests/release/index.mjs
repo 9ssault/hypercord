@@ -14,6 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { feedProblems, readFeed, requiredFeeds } from "../../scripts/check-feed.mjs";
 import { artifactsIn, commandLine, isStale, missingTestFiles, namedTestFiles, newestInput, plan } from "../../scripts/release.mjs";
 
 let passed = 0;
@@ -200,6 +201,66 @@ try {
   ok("and it says how it knows, rather than pretending to have checked", /not a git repository, so there is nothing to compare/.test(run.out), "");
 } finally {
   fs.rmSync(loose, { recursive: true, force: true });
+}
+
+/* ---- the feeds a release publishes --------------------------------------- */
+
+// What a client reads after the release is public, checked as the pair it is: the channel file
+// and the artifact it names. The failures below are the ones that fail *silently* on an installed
+// client, which is why they are asserted here rather than left to a job log.
+
+const config = {
+  win: { target: [{ target: "nsis", arch: ["x64", "arm64"] }, { target: "portable", arch: ["x64"] }] },
+  mac: { target: [{ target: "zip", arch: ["x64", "arm64"] }] },
+  linux: { target: [{ target: "AppImage", arch: ["x64", "arm64"] }, { target: "deb", arch: ["x64"] }] },
+};
+ok(
+  "the app's own build config decides which feeds a release needs",
+  requiredFeeds(config).join(",") === "latest.yml,latest-mac.yml,latest-linux.yml,latest-linux-arm64.yml",
+  requiredFeeds(config).join(","),
+);
+const armOnly = { linux: { target: [{ target: "AppImage", arch: ["arm64"] }] } };
+ok("an arm64-only Linux target needs only the arm64 feed", requiredFeeds(armOnly).join(",") === "latest-linux-arm64.yml", requiredFeeds(armOnly).join(","));
+ok(
+  "Windows and macOS need one feed each, whatever architectures they build",
+  requiredFeeds({ win: { target: [{ target: "nsis", arch: ["x64", "arm64"] }] }, mac: { target: [{ target: "dmg", arch: ["arm64"] }] } }).join(",") === "latest.yml,latest-mac.yml",
+);
+ok("a config that ships no platform needs no feed", requiredFeeds({}).length === 0, JSON.stringify(requiredFeeds({})));
+
+const wrote = readFeed("version: 0.3.5\nfiles:\n  - url: Hypercord-0.3.5-win-x64-setup.exe\n    sha512: abc\n    size: 12\npath: Hypercord-0.3.5-win-x64-setup.exe\n");
+ok(
+  "a feed is read as the version, the files and the path a client follows",
+  wrote.version === "0.3.5" && wrote.urls.join(",") === "Hypercord-0.3.5-win-x64-setup.exe" && wrote.path === "Hypercord-0.3.5-win-x64-setup.exe",
+  JSON.stringify(wrote),
+);
+
+const feedDir = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-"));
+try {
+  const write = (name, text) => fs.writeFileSync(path.join(feedDir, name), text);
+  const installer = "Hypercord-0.3.5-win-x64-setup.exe";
+  fs.writeFileSync(path.join(feedDir, installer), "x");
+  write("latest.yml", "version: 0.3.5\nfiles:\n  - url: " + installer + "\n    sha512: abc\npath: " + installer + "\n");
+  ok("a feed whose artifact is right there has no problem at all", feedProblems(feedDir, { expectedVersion: "0.3.5" }).length === 0, JSON.stringify(feedProblems(feedDir, { expectedVersion: "0.3.5" })));
+  const drifted = feedProblems(feedDir, { expectedVersion: "0.4.0" });
+  ok("and a feed whose version drifted from the app is a problem", drifted.some((line) => /says version 0.3.5 while the app is 0.4.0/.test(line)), JSON.stringify(drifted));
+
+  fs.rmSync(path.join(feedDir, installer));
+  const missing = feedProblems(feedDir, { expectedVersion: "0.3.5" });
+  ok("a feed naming an artifact that is not in the release is a problem, in words", missing.length === 1 && missing[0].includes(installer) && /not in this release/.test(missing[0]), JSON.stringify(missing));
+
+  fs.writeFileSync(path.join(feedDir, installer), "x");
+  const arm = feedProblems(feedDir, { expectedVersion: "0.3.5", require: ["latest-linux-arm64.yml"] });
+  ok("a feed the app ships but the release does not carry is reported by name", arm.length === 1 && /latest-linux-arm64[.]yml is missing/.test(arm[0]), JSON.stringify(arm));
+
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-empty-"));
+  try {
+    const none = feedProblems(empty, {});
+    ok("a directory with no feed at all says so instead of passing", none.length === 1 && /no update feed/.test(none[0]), JSON.stringify(none));
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
+} finally {
+  fs.rmSync(feedDir, { recursive: true, force: true });
 }
 
 console.log("\npassed " + passed + "  failed " + failed);
