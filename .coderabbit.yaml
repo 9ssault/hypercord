@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit settings for this repository (github.com/9ssault/hypercord).
+#
+# Tuned to what is actually built here: the Electron client (src/, plugins/, vendor/runtime),
+# the Android client merged in beside it (android/, core/, utils/) and the suites that gate
+# both (tests/). The desktop client's rules are in README.md and are enforced by those suites;
+# what is configured below is only what a review should read, what it should skip, and the two
+# things a newcomer's patch gets wrong here: the shape a check has to take, and the security
+# posture the pages are built to.
+language: en-US
+
+reviews:
+  # Balanced feedback. "assertive" reads like nitpicking on a tree this opinionated, and the
+  # suites - not the reviewer - are what decide whether a rule was kept.
+  profile: chill
+
+  auto_review:
+    enabled: true
+    # A draft is work in progress; review starts when it is marked ready.
+    drafts: false
+
+  # Everything below is build output or somebody else's code, and it is excluded because a
+  # review that spends its attention on a regenerated bundle is a review nobody reads.
+  path_filters:
+    # the npm lockfile: written by npm, read by npm, never reviewed by hand
+    - "!package-lock.json"
+    # electron-builder's output (npm run dist / npm run pack): the packed app, the installers
+    # for all four platforms, the block maps and the updater feeds
+    - "!dist/**"
+    # generated: `npm run vendor` rewrites the plugin catalogue with a fresh generation time,
+    # so every run shows as a diff of one timestamp
+    - "!plugins/manifest.json"
+    # generated: `npm run build:runtime` copies the vendored platform's web build in here
+    - "!vendor/runtime/**"
+    # generated: `npm run build:addons` assembles the bundle the Android loader reads
+    - "!android/loader/src/main/assets/addons.js"
+    # the platform this client is built on, vendored: each is its own repository with its own
+    # lockfile and toolchain, and it arrives here as a submodule - a change to either shows up
+    # as the pointer, not as these files
+    - "!vendor/equicord/**"
+    - "!vendor/vencord/**"
+    # staged upstream Android inputs (the Revenge runtime, the LSPatch classes, the licence
+    # texts), fetched and digest-verified by scripts/fetch_android_deps.py; never edited here
+    - "!android/deps/**"
+
+  path_instructions:
+    - path: "tests/**"
+      instructions: |
+        This repository has no test framework and no assertion library, and a new check has to
+        match the shape of the suite it joins.
+
+        The desktop client's suites are `tests/<suite>/index.mjs`, run one at a time (`node
+        tests/<suite>/index.mjs`; all of them are listed in the `test:units` script): each
+        defines its own `ok(name, condition, detail)` helper, counts `passed`/`failed`, prints
+        one line per check and ends in `process.exit(failed === 0 ? 0 : 1)`. The Android and
+        client host suites are `tests/*.test.mjs` and use Node's built-in runner (`node --test
+        tests/<name>.test.mjs`, and they are run that way in the code-runner gates). Two suites
+        - `tests/updater` and `tests/preload` - launch the real Electron client instead. Do not
+        introduce jest, vitest, mocha or an assertion library, and register a new suite in
+        package.json's `test:units` as well as adding it.
+
+        A check may not be skipped, may not have its assertions weakened, and may not pass by
+        not running: when a tool it needs is missing it must refuse by name - the pattern is
+        `tests/support/toolchain.mjs`, which looks for the JDK and Python where they actually
+        install and throws a sentence about the machine rather than returning quietly.
+
+        Keep the header comment (`// language: JavaScript, file: <path>`) and the comments that
+        say *why* the check exists, including the measured facts a check pins down. Nothing in a
+        suite may reach the network, a real Discord install or an account: temporary state goes
+        in `fs.mkdtempSync(path.join(os.tmpdir(), ...))` and is removed afterwards.
+
+    - path: "src/**"
+      instructions: |
+        The desktop client's Electron shell, deliberately thin: the window, the single-instance
+        lock, the passkey policy and the measurement mode. Everything the pages talk to lives in
+        `src/host.js`, because a patched real Discord runs that same host in its own main
+        process - a patch that adds behaviour here rather than to the host should say why.
+
+        Keep the posture the Electron suites assert. contextIsolation stays on and the renderer
+        stays sandboxed, so the renderer reaches the shell only through the contextBridge surface
+        in `src/preload.cjs`; a synchronous IPC call is only justified where ordering before the
+        page's own scripts is the point (the passkey policy is the one that is). Nothing read out
+        of the page may be written as markup - a plugin description or a token label is always
+        text - and a token, key or password must never reach a log, a state file in clear, or the
+        UI. Themes are CSS only, injected at one point, and can never execute. Nothing polls
+        while idle: the pages and the plugin host wake on the events they are subscribed to.
+        Every call must be able to fail out loud, with the reason in text.
+
+    - path: "plugins/**"
+      instructions: |
+        `plugins/index.js` is the addon host and `plugins/sandbox.js` is the interpreter an
+        addon is put through: an addon is *data*, tokenised and walked rather than evaluated, and
+        it reaches only the whitelisted `api` calls. A new loading path or a new hook must go
+        through `compile`/`invoke` and the validation around them (`ensure`, `key`, `LIMITS`,
+        `settingsValues`, `validateAddon`) rather than around them, and a theme that carries
+        lifecycle code is refused before it is installed. Every refusal is a sentence naming the
+        construct, because these are shown on a card inside Discord.
+
+        `plugins/manifest.json` is generated by `npm run vendor` and read as metadata by the
+        plugin catalogue (`npm run vendor:check` fails on a stale one): edit the plugin sources,
+        never the catalogue. The Hyper plugins under `plugins/hyper/` follow the same rules as
+        any other entry.
+
+  tools:
+    # ESLint is the linter this tree's own code is written for, and the one the platform it is
+    # built on uses: `src/`, `plugins/`, `tests/`, `scripts/`, `pwa/` and `themes/` are
+    # JavaScript, and the vendored Vencord/Equicord submodules (which this client is a rebrand
+    # of) each carry an ESLint configuration. There is no root ESLint config here yet, and the
+    # Python in `scripts/` is not linted by anything in this tree, so no other linter is enabled.
+    eslint:
+      enabled: true
+
+chat:
+  # Answer a question asked in a review thread without needing a fresh mention.
+  auto_reply: true

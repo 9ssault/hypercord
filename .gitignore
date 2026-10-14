@@ -19,3 +19,14 @@ __pycache__/
 android/deps/
 android/loader/src/main/assets/revenge.js
 android/loader/src/main/assets/assault-runtime.js
+
+# Build output the tree regenerates, per kind. `build/` itself stays tracked: the icons and
+# build/README.md are electron-builder's *inputs*, and it is only the reports a diagnostics run
+# leaves behind that are output.
+build/reports/
+release/
+
+# Gradle and the Android modules' own output, including the interpreter's cache in .gradle/
+.gradle/
+android/loader/build/
+android/manager/build/
