@@ -42,6 +42,8 @@ function ok(name, condition, detail = "") {
     console.log("FAIL " + name + (detail ? " | " + detail : ""));
   }
 }
+/** What a check could not answer here, said rather than passed over. */
+const note = (line) => console.log("note  " + line);
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-shipped-"));
 const manifest = JSON.parse(read("plugins/manifest.json"));
@@ -49,21 +51,49 @@ const catalogue = Array.isArray(manifest.plugins) ? manifest.plugins : [];
 
 /* ---- 1. the catalogue: every entry is one this tree can account for ------ */
 
+// Two halves, because the catalogue names files in two places. The entries the client owns are
+// files in this repository and are checked wherever this suite runs. The rest point into
+// `vendor/equicord`, the fork a developer clones - and a *release* checkout does not carry it: the
+// fork's build is what travels, in `vendor/runtime`, which is tracked (see the note at the top of
+// scripts/build_runtime.mjs, which says the same thing about the packaging step). So where the
+// fork is not here, the vendored entries are checked for everything this tree can answer for them
+// and the half that needs the fork is *said* rather than counted as a pass.
+const FORK = path.join(root, "vendor", "equicord", "src");
+const forkHere = fs.existsSync(FORK);
+const VENDORED = "vendor/equicord/";
+
 {
   const seen = new Set();
   const duplicates = [];
-  const missing = [];
+  const ours = [];
+  const vendored = [];
   for (const entry of catalogue) {
     const id = String(entry && entry.id);
     if (seen.has(id)) duplicates.push(id);
     seen.add(id);
-    if (!exists(String(entry.entry))) missing.push(id + " -> " + entry.entry);
+    const rel = String(entry.entry);
+    (rel.startsWith(VENDORED) ? vendored : ours).push({ id: id, rel: rel });
   }
+  const missingOurs = ours.filter((one) => !exists(one.rel));
+  const missingVendored = vendored.filter((one) => !exists(one.rel));
   ok(
-    "every entry in the catalogue names a file this tree has",
-    catalogue.length > 300 && missing.length === 0,
-    missing.length ? missing.slice(0, 5).join(", ") : "catalogue " + catalogue.length,
+    "every entry the client owns names a file this tree has",
+    catalogue.length > 300 && ours.length > 0 && missingOurs.length === 0,
+    missingOurs.length ? missingOurs.slice(0, 5).map((one) => one.id + " -> " + one.rel).join(", ") : ours.length + " of " + catalogue.length + " entries are this repository's own",
   );
+  if (forkHere) {
+    ok(
+      "and every vendored entry names a file the fork in this tree has",
+      missingVendored.length === 0,
+      missingVendored.slice(0, 5).map((one) => one.id + " -> " + one.rel).join(", "),
+    );
+  } else {
+    note(
+      "the vendored fork is not in this tree, so " +
+        vendored.length +
+        " vendored entries were not checked against it: a release checkout does not carry it (its build travels in vendor/runtime), so clone vendor/equicord and vendor/vencord, run `npm run vendor`, and run this suite again to check them",
+    );
+  }
   ok("no two entries share an id", duplicates.length === 0, duplicates.slice(0, 5).join(", "));
 
   const unresolved = [];
@@ -329,7 +359,12 @@ for (const id of (manifest.defaults.enabled || []).map(String)) {
   const bundle = path.join(root, "vendor", "runtime", "browser.js");
   const stylesheet = path.join(root, "vendor", "runtime", "browser.css");
   const built = fs.existsSync(bundle) ? fs.statSync(bundle) : null;
+  // The freshness half needs the sources, and asks about *their* mtimes - which only mean anything
+  // in a working copy someone built from. It is skipped, with the reason, where the fork is not
+  // here; the half that matters for a release, that the bundle and its stylesheet are present and
+  // substantial, is checked in every tree.
   const newest = (() => {
+    if (!forkHere) return 0;
     let at = 0;
     const walk = (dir) => {
       for (const row of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -339,7 +374,7 @@ for (const id of (manifest.defaults.enabled || []).map(String)) {
         else if (/\.(ts|tsx|css|json)$/.test(row.name)) at = Math.max(at, fs.statSync(full).mtimeMs);
       }
     };
-    walk(path.join(root, "vendor", "equicord", "src"));
+    walk(FORK);
     return at;
   })();
   ok(
@@ -347,11 +382,15 @@ for (const id of (manifest.defaults.enabled || []).map(String)) {
     Boolean(built) && built.size > 1000000 && fs.existsSync(stylesheet) && fs.statSync(stylesheet).size > 50000,
     built ? built.size + " bytes" : "no bundle",
   );
-  ok(
-    "and it was built after the sources it was built from",
-    Boolean(built) && newest <= built.mtimeMs + 1000,
-    JSON.stringify({ sourcesAt: new Date(newest).toISOString(), bundleAt: built ? new Date(built.mtimeMs).toISOString() : null }),
-  );
+  if (newest) {
+    ok(
+      "and it was built after the sources it was built from",
+      Boolean(built) && newest <= built.mtimeMs + 1000,
+      JSON.stringify({ sourcesAt: new Date(newest).toISOString(), bundleAt: built ? new Date(built.mtimeMs).toISOString() : null }),
+    );
+  } else {
+    note("no vendored sources in this tree, so whether the shipped bundle is newer than them was not checked: clone the fork and run `npm run build:runtime` to check that here");
+  }
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
