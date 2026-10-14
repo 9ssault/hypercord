@@ -353,10 +353,10 @@ async function run() {
     // previous run of *this* suite already downloaded the same version and checksum. A warm
     // cache is a validation, not a shortcut - `downloaded` is only set once the checksum was
     // checked - and a release runner's cache is always cold, which is where the wire path is
-    // exercised for real. The state is what proves the update was taken either way; this is the
-    // part that would notice a client that never asked its feed for anything.
-    // an exact name, not a `includes`: the `.blockmap` beside the artifact carries its name too,
-    // and a run that asked for the block map and nothing else has not downloaded the update
+    // exercised for real. Either way the state is what proves the update was taken, and this is
+    // the assertion that would notice a client which never asked its feed for anything. An exact
+    // name and not an `includes`: the `.blockmap` beside the artifact carries its name too, and a
+    // run that asked for the block map and nothing else has not downloaded the update.
     const overTheWire = requests.includes(offer.artifact);
     ok(
       "and the artifact reached it: over the wire, or from a copy it had already validated",

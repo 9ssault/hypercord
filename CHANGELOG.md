@@ -9,6 +9,11 @@ what is written here is this client's own record.
 
 ## Unreleased
 
+Nothing yet. This section collects what lands between releases; 0.3.6 is everything
+below it.
+
+## 0.3.6
+
 ### The cloud tab can reach its backend again
 
 Every request the vendored runtime makes to its cloud backend was made by the *page*, and the

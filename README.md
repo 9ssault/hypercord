@@ -79,8 +79,10 @@ raise; leaving Discord's settings leaves these pages with it.
 ## Setup
 
 Prerequisites: Node on Windows, macOS or Linux (CI uses 20; `electron` 44).
-There is **no lockfile** in this tree, so `npm ci` cannot run - use `npm install`
-and commit the lockfile if you want reproducible installs.
+`package-lock.json` is committed, so the release workflow installs with `npm ci` -
+which is the point of it: a release builds the dependency tree the lockfile pins,
+not whatever the registry serves that day. `npm install` is for *changing*
+dependencies, and its lockfile edit is part of the change.
 
 ```bash
 npm install
