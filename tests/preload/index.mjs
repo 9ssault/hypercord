@@ -1675,6 +1675,12 @@ async function run() {
   })()`,
   );
   ok("choosing one of Discord's own sections clears every entry of ours", handedBack.open === 0 && handedBack.current === 0, JSON.stringify(handedBack));
+  // Leave the sheet as it was found: open on this section. Choosing Discord's row
+  // closed our page, and a closed page is display:none - a field inside it cannot
+  // take focus, which is exactly what the caret tests below measure. Reopening here
+  // restores the conditions those tests were written against, rather than weakening
+  // them to pass on a closed page.
+  await clickEntry(settingsWindow, lastEntry);
 
   // Discord's own focus handling takes the caret back to the column it manages whenever
   // a click lands outside the tree it knows, and this sheet is attached outside that tree

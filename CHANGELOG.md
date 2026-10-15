@@ -9,8 +9,19 @@ what is written here is this client's own record.
 
 ## Unreleased
 
-Nothing yet. This section collects what lands between releases; 0.3.8 is everything
+Nothing yet. This section collects what lands between releases; 0.3.9 is everything
 below it.
+
+## 0.3.9
+
+### The release the failed gates held back
+
+No product change since 0.3.8: this is the same client, with the two suite failures
+that kept 0.3.8 to a Linux-only release fixed. The selection test closed the sheet
+it had just asserted on, and a field in a closed page cannot take focus - so the
+caret tests measured a hidden subtree; the sheet is reopened first now. And the
+sandbox decision's no-facts check read the real machine, failing wherever the room
+set `ELECTRON_DISABLE_SANDBOX=1` itself - it asserts the decision's shape instead.
 
 ## 0.3.8
 

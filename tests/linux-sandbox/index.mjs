@@ -70,7 +70,11 @@ for (const platform of ["win32", "darwin"]) {
 }
 
 // The decision never throws on missing facts: main.js calls it with almost
-// nothing on exotic platforms.
+// nothing on exotic platforms. Only the shape is asserted here, never the value:
+// with no facts the decision reads the real machine, and the real machine can be
+// anything - the APK job sets ELECTRON_DISABLE_SANDBOX=1 for its own run, which is
+// exactly how asserting `disable === false` failed there while passing everywhere
+// else. A fact this test names is a fact it controls; the room it runs in is not.
 {
   let threw = null;
   let d = null;
@@ -79,7 +83,11 @@ for (const platform of ["win32", "darwin"]) {
   } catch (err) {
     threw = err;
   }
-  ok("no facts is a decision, not a throw", threw === null && d && d.disable === false, String((threw && threw.message) || threw || d));
+  ok(
+    "no facts is a decision, not a throw",
+    threw === null && d && typeof d.disable === "boolean" && typeof d.reason === "string" && d.reason.length > 0,
+    String((threw && threw.message) || threw || d),
+  );
 }
 
 console.log("\npassed " + passed + "  failed " + failed);
