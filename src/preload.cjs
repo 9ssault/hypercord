@@ -1945,12 +1945,17 @@ function wirePrompt(prompt) {
   if (!inner || promptWired) return;
   promptWired = true;
   const form = $(inner, '[data-hc="prompt-form"]');
-  if (form) form.addEventListener("submit", (event) => event.preventDefault());
-  const save = $(inner, '[data-hc="prompt-save"]');
-  if (save) {
-    save.addEventListener("click", () =>
-      addToken($(inner, '[data-hc="prompt-value"]'), $(inner, '[data-hc="prompt-label"]'), $(inner, '[data-hc="prompt-hint"]')),
-    );
+  if (form) {
+    // the one way in: Enter in either field and the button both submit the form, so the
+    // submit handler is what stores and signs in. A click handler beside it would sign in
+    // twice (a submit button's click is followed by the submit), and the old handler signed
+    // in never - it only prevented the default - which is why Enter in the token field died
+    // while the button worked. On a small screen that button can be out of reach, leaving
+    // Enter as the only way in.
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      addToken($(inner, '[data-hc="prompt-value"]'), $(inner, '[data-hc="prompt-label"]'), $(inner, '[data-hc="prompt-hint"]'));
+    });
   }
   const use = $(inner, '[data-hc="prompt-use"]');
   if (use) use.addEventListener("click", () => useStoredToken(inner));

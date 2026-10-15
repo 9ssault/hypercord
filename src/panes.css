@@ -345,6 +345,16 @@
   min-width: 0;
 }
 
+/* The runtime's per-card source badges are pictures of equicord.org, and this page is
+   Discord's: its content-security policy refuses them before they are asked for, so
+   every card wears the browser's broken-image placeholder. They are decorative - the
+   card keeps its name, its info button and its switch - so a picture that cannot
+   arrive is put away rather than left broken. Scoped to the badge URLs, never to
+   pictures in general: a theme preview from anywhere else must keep loading. */
+#hypercord-panes .runtime-browser img[src*="equicord.org/assets"] {
+  display: none;
+}
+
 /* Cards wide enough to read, in as many columns as the settings column fits. The
    grid is the page: a search that matches three plugins shows three cards rather
    than three rows in a list of hundreds. */

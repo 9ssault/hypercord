@@ -9,8 +9,26 @@ what is written here is this client's own record.
 
 ## Unreleased
 
-Nothing yet. This section collects what lands between releases; 0.3.7 is everything
+Nothing yet. This section collects what lands between releases; 0.3.8 is everything
 below it.
+
+## 0.3.8
+
+### Enter signs in with a pasted token
+
+The token option's form swallowed Enter: its submit handler only prevented the
+default and never stored anything, so only the button signed in - and on a small
+screen that button can be out of reach entirely. The submit is the one way in now:
+Enter in either field and the button both store the pasted token and sign in with
+it, exactly once.
+
+### The plugin cards lost their broken pictures
+
+Every card in the runtime's plugin browser wore a broken-image placeholder: the
+per-card source badges are pictures of equicord.org, and Discord's page refuses
+them under its content-security policy before they load. They are decorative, so
+a picture that cannot arrive is put away - scoped to those badge URLs, so a theme
+preview from anywhere else keeps loading.
 
 ## 0.3.7
 

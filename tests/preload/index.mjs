@@ -258,7 +258,7 @@ const PLAIN_PAGE = `<!doctype html><html><head><title>channels</title></head><bo
 // shell answers - and recorded, because a call that never happens is the failure
 // this suite exists to catch
 const opened = [];
-const calls = { plugins: 0, tokens: 0, uses: [], forgets: 0, closes: 0, themeRows: 0, beef: [], beefSections: 0, settings: [], toggles: [], themeInstalls: [], restarts: 0 };
+const calls = { plugins: 0, tokens: 0, uses: [], adds: [], forgets: 0, closes: 0, themeRows: 0, beef: [], beefSections: 0, settings: [], toggles: [], themeInstalls: [], restarts: 0 };
 let tokenRows = [];
 // the plugins a switch has turned on in this run: a catalogue that never changed would
 // answer the reload after a press with the state it started in, which is not what a shell
@@ -497,7 +497,10 @@ ipcMain.handle("tokens:forgetAll", () => {
   calls.forgets += 1;
   return { ok: true, removed: tokenRows.length };
 });
-ipcMain.handle("tokens:add", () => ({ ok: true, account: "1", label: "added" }));
+ipcMain.handle("tokens:add", (_event, value, label) => {
+  calls.adds.push([String(value || ""), String(label || "")]);
+  return { ok: true, account: "1", label: "added" };
+});
 ipcMain.handle("tokens:put", () => ({ ok: true, account: "1" }));
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -681,6 +684,29 @@ async function run() {
   ok("the token option is in the page", prompt.mounted && prompt.open === "true", JSON.stringify(prompt));
   ok("with no token stored it offers the paste form, not the stored one", prompt.formHidden === false && prompt.storedHidden === true, JSON.stringify({ form: prompt.formHidden, stored: prompt.storedHidden }));
   ok("the token field is a password field", prompt.valueIsPassword === true);
+
+  // Enter in the token field has to sign in: the form's submit is the one way in -
+  // the button submits it too, and on a small screen the button can be out of reach
+  // while Enter still lands. requestSubmit is the programmatic half of that Enter:
+  // a synthetic keypress would not run the browser's implicit submission.
+  await page(
+    win,
+    `(() => {
+    const value = document.querySelector('#hypercord-token-prompt [data-hc="prompt-value"]');
+    const form = document.querySelector('#hypercord-token-prompt [data-hc="prompt-form"]');
+    if (!value || !form) return false;
+    value.value = "selftest-token-value";
+    form.requestSubmit();
+    return true;
+  })()`,
+  );
+  await wait(250);
+  const pasted = await page(
+    win,
+    `((document.querySelector('#hypercord-token-prompt [data-hc="prompt-hint"]') || {}).textContent || "")`,
+  );
+  ok("submitting the paste form stores and signs in", calls.adds.length === 1 && calls.adds[0][0] === "selftest-token-value", JSON.stringify(calls.adds));
+  ok("and says so beside the login form", /stored and signed in as added/.test(pasted), JSON.stringify(pasted));
   ok(
     "it is placed just under the login form, not over it",
     prompt.anchored === "true" && prompt.clearsForm !== null && prompt.clearsForm >= 0 && prompt.clearsForm <= 40,
