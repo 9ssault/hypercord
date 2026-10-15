@@ -1,7 +1,7 @@
 {
  "name": "hypercord",
  "productName": "Hypercord",
- "version": "0.3.6",
+ "version": "0.3.7",
  "private": true,
  "author": {
   "name": "Hypercord",
@@ -22,7 +22,7 @@
   "start": "electron .",
   "perf": "electron . --perf",
   "test": "npm run test:units && npm run test:electron",
-  "test:units": "node tests/plugin-host/index.mjs && node tests/themes/index.mjs && node tests/patcher/index.mjs && node tests/tokens/index.mjs && node tests/signin/index.mjs && node tests/bridge/index.mjs && node tests/release/index.mjs && node tests/loader/index.mjs && node tests/host/index.mjs && node tests/beef/index.mjs && node tests/shipped/index.mjs",
+  "test:units": "node tests/plugin-host/index.mjs && node tests/themes/index.mjs && node tests/patcher/index.mjs && node tests/tokens/index.mjs && node tests/signin/index.mjs && node tests/bridge/index.mjs && node tests/release/index.mjs && node tests/loader/index.mjs && node tests/host/index.mjs && node tests/beef/index.mjs && node tests/shipped/index.mjs && node tests/linux-sandbox/index.mjs",
   "test:electron": "npm run test:updater && npm run test:preload && npm run test:feed-live",
   "test:plugins": "node tests/plugin-host/index.mjs",
   "test:themes": "node tests/themes/index.mjs",

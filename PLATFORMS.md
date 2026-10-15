@@ -125,6 +125,37 @@ layout from injected paths and then runs the whole round trip on it - inspect, p
 what the manifest recorded, and unpatch restoring the directory exactly. What that
 does and does not prove is spelled out under "Compatibility review" below.
 
+### Linux: where the OS sandbox stays off
+
+An AppImage that shows a healthy main process, one `Network service crashed or
+was terminated` line, and then every page failing `ERR_FAILED` is not a broken
+build - it is Chromium's OS-level sandbox dying at birth. The AppImage's setuid
+helper cannot work on the FUSE mount, and the kernels users run refuse the
+unprivileged-user-namespace fallback (Ubuntu 24.04's AppArmor
+`kernel.apparmor_restrict_unprivileged_userns`, Debian's
+`kernel.unprivileged_userns_clone=0`, most containers), so the network service,
+the GPU process and the renderers never start while the main process carries on
+as if nothing happened.
+
+The shell therefore launches with `--no-sandbox` where the sandbox cannot work
+anyway: as root, with `ELECTRON_DISABLE_SANDBOX=1`, and inside an AppImage
+(`src/linux-sandbox.js` decides, `src/main.js` applies it before anything can
+spawn a helper, and the reason is logged). That switch disables only the
+OS-level sandbox - the window is still built with `sandbox: true`, so the
+preload isolation stands. A plain Linux install (deb, tarball, dev checkout)
+keeps the sandbox; `HYPERCORD_SANDBOX=0` keeps it everywhere, for whoever wants
+to prove their kernel can do it. Covered by `tests/linux-sandbox/index.mjs`.
+
+When `--no-sandbox` does *not* help, the sandbox was never the cause: the dead
+giveaway is `Terminating current process after 15 seconds with no connection`
+(the network-service child started fine and the browser never finished its
+control-channel handshake) or a `SIGBUS` for the app in `coredumpctl`. On one
+machine that exact pair traced to the FUSE mount the AppImage runs from, not to
+the payload - the file's `sha256sum` matched the release digest exactly and the
+extracted payload (`--appimage-extract`, then `squashfs-root/AppRun`) ran fine.
+The workarounds in that order: `APPIMAGE_EXTRACT_AND_RUN=1` with the same file,
+or the `deb`/`tar.gz` from the same release, which never touch FUSE.
+
 ## Building each target
 
 ```bash

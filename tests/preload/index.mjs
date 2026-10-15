@@ -1608,6 +1608,48 @@ async function run() {
   const fromLastEntry = await clickEntry(settingsWindow, lastEntry);
   ok("and a different entry opens a different section", fromLastEntry.clicked && fromLastEntry.seen.visible.length === 1 && fromLastEntry.seen.visible[0] === lastEntry, JSON.stringify(fromLastEntry.seen) + " for " + lastEntry);
 
+  // Discord's own rows get their selected box from React, which does not know ours -
+  // the preload marks the open entry itself. The click above opened `lastEntry`, so
+  // that entry, and no other, has to read as the open one.
+  const marked = await page(
+    settingsWindow,
+    `(() => {
+    const ours = [...document.querySelectorAll('[data-hypercord="settings"]')];
+    const faces = (n) => n.querySelector("[role]") || n;
+    return {
+      open: ours.filter((n) => n.getAttribute("data-hypercord-open") === "true").map((n) => n.getAttribute("data-hypercord-view")),
+      current: ours.filter((n) => faces(n).hasAttribute("aria-current")).map((n) => n.getAttribute("data-hypercord-view")),
+    };
+  })()`,
+  );
+  ok(
+    "the open entry is marked as the open one, and no other entry is",
+    marked.open.length === 1 && marked.open[0] === lastEntry && marked.current.length === 1 && marked.current[0] === lastEntry,
+    JSON.stringify(marked) + " for " + lastEntry,
+  );
+  // And choosing one of Discord's own sections hands the box back: no entry of ours
+  // may still read as open once theirs is.
+  await page(
+    settingsWindow,
+    `(() => {
+    const native = [...document.querySelectorAll('[role="tab"]')].find((n) => !n.hasAttribute("data-hypercord"));
+    if (native) native.click();
+    return true;
+  })()`,
+  );
+  const handedBack = await page(
+    settingsWindow,
+    `(() => {
+    const ours = [...document.querySelectorAll('[data-hypercord="settings"]')];
+    const faces = (n) => n.querySelector("[role]") || n;
+    return {
+      open: ours.filter((n) => n.getAttribute("data-hypercord-open") === "true").length,
+      current: ours.filter((n) => faces(n).hasAttribute("aria-current")).length,
+    };
+  })()`,
+  );
+  ok("choosing one of Discord's own sections clears every entry of ours", handedBack.open === 0 && handedBack.current === 0, JSON.stringify(handedBack));
+
   // Discord's own focus handling takes the caret back to the column it manages whenever
   // a click lands outside the tree it knows, and this sheet is attached outside that tree
   // on purpose. The fixture steals focus the same way - from the document, bubbling, so

@@ -1156,10 +1156,11 @@ function keepSheetHomed(host) {
 }
 
 /**
- * Does the sheet close when Discord's own settings are used? Two things have to:
+ * Does the sheet close when Discord's own settings are used? Three things have to:
  * choosing one of Discord's own sections (so nothing of ours is left over another
- * page) and the settings layer closing altogether. Both are wired here, once per
- * host, and both only set an attribute - the shell keeps owning the open state.
+ * page), the open entry handing its selected box back, and the settings layer
+ * closing altogether. All are wired here, once per host, and all only set an
+ * attribute - the shell keeps owning the open state.
  */
 function watchSettingsLeaving(host) {
   if (!host || host.getAttribute("data-hypercord-watched") === "true") return;
@@ -1176,6 +1177,9 @@ function watchSettingsLeaving(host) {
       const ours = event.target && event.target.closest ? event.target.closest("[data-hypercord]") : null;
       if (ours) return;
       closeOurs();
+      // Discord's React marks its own row in its own time; ours is cleared here, where
+      // the click lands, so the open box is never left on a page that just closed.
+      if (SETTINGS_OPEN_VIEW) markSettingsEntrySelected(host, "");
     },
     true,
   );
@@ -1357,10 +1361,103 @@ function wireEntry(host, view, open) {
       return;
     }
     if (typeof open === "function") open();
+    // Discord's own rows get their selected box from React, which does not know ours:
+    // the open entry is marked here, where the click lands, or no entry of ours ever
+    // reads as the open one.
+    markSettingsEntrySelected(host, view);
     call("panes:open", view).catch(() => {});
   };
   watchSettingsLeaving(host);
   return show;
+}
+
+/**
+ * The open entry's selected box, worn by hand.
+ *
+ * Discord's selected row wears generated classes React applies, and React never
+ * touches our rows - they are DOM we inserted, not components it rendered. So the
+ * preload does it: it learns what "selected" looks like from a natively selected
+ * row (the extra classes over an unselected sibling, and the `aria-current` value),
+ * copies them onto the open entry, and clears every other row first, native or
+ * ours, so exactly one row reads as open. The learning is the point: the class
+ * names are generated per release and must never be assumed. Each entry also wears
+ * `data-hypercord-open` while it is the open one - the shape-independent hook the
+ * stylesheet's fallback rule and the suite both read.
+ */
+let SETTINGS_SELECTED_CLASSES = [];
+let SETTINGS_SELECTED_ARIA = "page";
+let SETTINGS_OPEN_VIEW = "";
+
+/** A natively selected row in this sidebar, if one wears its selection now. */
+function settingsSelectedNative(scope) {
+  if (!scope || !scope.querySelectorAll) return null;
+  // our own marked row is skipped, not learned from: it wears exactly what the last
+  // lesson taught, so learning from it would be copying our own homework
+  const marked = [...scope.querySelectorAll('[aria-current="page"], [aria-current="true"]')].find(
+    (node) => !(node.closest && node.closest("[data-hypercord]"))
+  );
+  if (marked) return marked;
+  const items = [...scope.querySelectorAll("[class]")];
+  return (
+    items.find(
+      (node) =>
+        !(node.closest && node.closest("[data-hypercord]")) &&
+        [...node.classList].some((name) => /active|selected/i.test(name) && !/inactive/i.test(name)),
+    ) || null
+  );
+}
+
+/** Learn the selected look from a native row; a miss keeps the last lesson. */
+function learnSettingsSelection(scope) {
+  const selected = settingsSelectedNative(scope);
+  if (!selected) return false;
+  const plain = [...scope.querySelectorAll("[class]")].find(
+    (node) =>
+      node !== selected &&
+      node.tagName === selected.tagName &&
+      !(node.closest && node.closest("[data-hypercord]")) &&
+      ![...node.classList].some((name) => /active|selected/i.test(name)),
+  );
+  let extra = [];
+  if (plain) {
+    const base = new Set([...plain.classList]);
+    extra = [...selected.classList].filter((name) => !base.has(name));
+  } else {
+    extra = [...selected.classList].filter((name) => /active|selected/i.test(name) && !/inactive/i.test(name));
+  }
+  if (!extra.length) return false;
+  SETTINGS_SELECTED_CLASSES = extra;
+  const aria = selected.getAttribute && selected.getAttribute("aria-current");
+  if (aria) SETTINGS_SELECTED_ARIA = aria;
+  return true;
+}
+
+/**
+ * Exactly one selected row in this sidebar: ours for `view`, or none at all.
+ *
+ * The clearing is what makes this a selection and not a coat of paint: native
+ * rows keep a stale box otherwise, because nothing about opening our page tells
+ * React its section is no longer the open one.
+ */
+function markSettingsEntrySelected(scope, view) {
+  SETTINGS_OPEN_VIEW = String(view || "");
+  if (!scope || !scope.querySelectorAll) return;
+  learnSettingsSelection(scope);
+  for (const node of scope.querySelectorAll("[class]")) {
+    for (const name of SETTINGS_SELECTED_CLASSES) node.classList.remove(name);
+  }
+  for (const node of scope.querySelectorAll("[aria-current]")) node.removeAttribute("aria-current");
+  for (const node of scope.querySelectorAll("[data-hypercord-open]")) node.removeAttribute("data-hypercord-open");
+  if (!SETTINGS_OPEN_VIEW) return;
+  const rows = [...scope.querySelectorAll('[data-hypercord="settings"]')];
+  const row = rows.find((node) => node.getAttribute("data-hypercord-view") === SETTINGS_OPEN_VIEW) || null;
+  if (!row) return;
+  // the clickable face: the inner item on the copied-row shape, the entry itself
+  // on the plain-button shape
+  const target = (row.querySelector && (row.querySelector("[role]") || row)) || row;
+  for (const name of SETTINGS_SELECTED_CLASSES) target.classList.add(name);
+  if (target.setAttribute) target.setAttribute("aria-current", SETTINGS_SELECTED_ARIA || "page");
+  row.setAttribute("data-hypercord-open", "true");
 }
 
 /**
@@ -1605,6 +1702,9 @@ function addSettingsSet(place, wanted) {
   // not be reported as one somebody can open
   const added = document.querySelectorAll('[data-hypercord="settings"]').length;
   noteSettingsEntry(added === wanted.length ? "added" : "no-host", added === wanted.length ? place.nav : null, added);
+  // a rebuild throws away the marked nodes with the rest: the open page has not
+  // changed, so its entry is marked again on the new nodes
+  if (added === wanted.length && SETTINGS_OPEN_VIEW) markSettingsEntrySelected(place.nav, SETTINGS_OPEN_VIEW);
   return added === wanted.length;
 }
 
@@ -1691,6 +1791,9 @@ function followSettings() {
   // open would be a panel over the client with nothing under it, so it closes with
   // the layer that hosted it.
   if (!document.getElementById("hypercord-settings-entry")) {
+    // settings closed with the layer: reopening lands on one of Discord's own
+    // sections, so no entry of ours may still read as open
+    SETTINGS_OPEN_VIEW = "";
     const panes = document.getElementById("hypercord-panes");
     if (panes && panes.getAttribute("data-seamless") === "true") panes.setAttribute("data-open", "false");
   }

@@ -177,6 +177,19 @@
   background: var(--hc-border, var(--background-modifier-accent, #3f4147));
 }
 
+/* The open entry's box, independent of the release's generated classes: the preload
+   copies Discord's own selected classes onto the open entry when it can learn them
+   (see markSettingsEntrySelected in src/preload.cjs), and this rule is the fallback
+   that stays true when there is nothing to learn - a fixture page, a sidebar whose
+   rows carry no selection classes, a first click before any native row was seen.
+   Scoped to our own attribute, so Discord's rows are untouched; the two shapes need
+   two targets, the inner clickable face on the copied-row shape and the entry itself
+   on the plain-button shape. */
+[data-hypercord="settings"][data-hypercord-open="true"] > [role],
+[data-hypercord="settings"][data-hypercord-open="true"][role] {
+  background-color: var(--background-modifier-selected, rgba(255, 255, 255, 0.07));
+}
+
 #hypercord-settings-group {
   color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
   font-size: 11px;

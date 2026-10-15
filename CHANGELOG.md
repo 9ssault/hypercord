@@ -9,8 +9,41 @@ what is written here is this client's own record.
 
 ## Unreleased
 
-Nothing yet. This section collects what lands between releases; 0.3.6 is everything
+Nothing yet. This section collects what lands between releases; 0.3.7 is everything
 below it.
+
+## 0.3.7
+
+### The window is only the client
+
+Electron's default menu - File, Edit, View, Window, a second way to quit and a
+reload that fights the client - is gone (`win.setMenu(null)` in `src/main.js`).
+A chat client has nothing to put in those menus, and the page already owns every
+shortcut it needs.
+
+### The open entry reads as open
+
+Discord paints its settings rows' selected box from React, which does not know the
+rows this client adds - so every Hypercord entry below the runtime's own read as
+unselected, whatever page was showing. The preload now marks the open entry itself:
+it learns the selected look from a natively selected row (never assumed, the class
+names are generated per release), clears every other row first, hands the box back
+when one of Discord's own sections is chosen, and re-marks across rebuilds.
+
+### The Linux shell stops asking the sandbox for what it cannot give
+
+On kernels that refuse unprivileged user namespaces the AppImage's setuid helper
+cannot work, and Chromium's helper processes then die at birth while the main
+process looks healthy. The shell now launches with `--no-sandbox` where the
+sandbox cannot work anyway - as root, with `ELECTRON_DISABLE_SANDBOX=1`, and
+inside an AppImage - decided by `src/linux-sandbox.js`, applied in `src/main.js`
+before anything can spawn a helper, with the reason logged. Only the OS-level
+sandbox is off; the window keeps `sandbox: true`. `HYPERCORD_SANDBOX=0` keeps the
+sandbox everywhere, and `tests/linux-sandbox/index.mjs` covers the decision.
+What this does *not* fix is a broken FUSE mount: `--no-sandbox` changing nothing,
+a `SIGBUS` for the app in `coredumpctl`, and an extracted payload that runs fine
+mean the mount, not the sandbox - `APPIMAGE_EXTRACT_AND_RUN=1` or the `deb` and
+`tar.gz` from the same release, which never touch FUSE. See `PLATFORMS.md`.
 
 ## 0.3.6
 

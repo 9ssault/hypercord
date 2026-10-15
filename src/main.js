@@ -27,6 +27,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHost } from "./host.js";
+import { sandboxDecision } from "./linux-sandbox.js";
 import { findDiscord, patch } from "./patcher.js";
 import passkeys from "./passkeys.cjs";
 
@@ -54,6 +55,18 @@ const DISCORD = "https://discord.com/app";
 // difference between an idle client and one that keeps burning a core behind
 // another window. Harmless elsewhere.
 app.commandLine.appendSwitch("enable-features", "CalculateNativeWinOcclusion");
+
+// Linux first, before anything can spawn a helper process: where the OS-level
+// sandbox cannot work (root, or an AppImage on a kernel that refuses it) the
+// network service dies at birth and every page then fails ERR_FAILED while the
+// main process looks healthy. See src/linux-sandbox.js.
+{
+  const sandbox = sandboxDecision({ sandboxSwitchPresent: app.commandLine.hasSwitch("no-sandbox") });
+  if (sandbox.disable && !app.commandLine.hasSwitch("no-sandbox")) {
+    app.commandLine.appendSwitch("no-sandbox");
+  }
+  if (sandbox.disable) console.log("[hypercord] linux: the OS sandbox is off (" + sandbox.reason + ")");
+}
 
 // One instance only, and never a hidden one: a second launch hands over to the
 // window that already exists. Asked once, because asking twice is a different
@@ -111,6 +124,11 @@ function createWindow() {
     },
   });
   win.once("ready-to-show", () => win.show());
+  // A chat client has nothing to put in File/Edit/View/Window, and Electron's
+  // default menu is exactly that: four menus of stock items (a second way to
+  // quit, a reload that fights the client's own) above a page that already owns
+  // every shortcut it needs. Off, so the window is only the client.
+  win.setMenu(null);
   // Discord registers a beforeunload handler, which Electron turns into a
   // "Leave site?" dialog that blocks quitting - in a desktop client that prompt
   // is noise, and it can hold the process open forever (it held our own
