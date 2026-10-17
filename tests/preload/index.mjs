@@ -517,6 +517,27 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Run an expression in the page's own world and hand back its value. */
 const page = (win, expression) => win.webContents.executeJavaScript(expression);
 
+/**
+ * Evaluate until the answer satisfies a predicate, or a bound runs out.
+ *
+ * The sheet draws asynchronously - the runtime's tab is mounted, the installed themes are
+ * filled from an IPC answer - so a fixed sleep is a race, and on a loaded macOS runner it
+ * lost: 0.3.18's run reported the themes page with no rows and the library never read,
+ * while the same build passed on Windows and Linux. Polling keeps the assertion (the rows
+ * must appear, the library must be read exactly once, unforced) and stops it depending on
+ * how busy the machine was for 300ms.
+ */
+async function pageWhen(win, expression, predicate, { timeout = 5000, interval = 100 } = {}) {
+  const deadline = Date.now() + timeout;
+  let last = null;
+  do {
+    last = await page(win, expression);
+    if (predicate(last)) return last;
+    await wait(interval);
+  } while (Date.now() < deadline);
+  return last;
+}
+
 async function run() {
   const server = http.createServer((req, res) => {
     res.writeHead(200, {
@@ -854,15 +875,19 @@ async function run() {
   // The page-rendering path is the page's own, and it is what every visit below relies
   // on: showing a section directly fills it, without asking the preload to place it.
   const shownThemes = await page(win, `window.hypercordPanes.show("themes")`);
-  await wait(300);
-  const themed = await page(
+  const themed = await pageWhen(
     win,
     `(() => ({
       rows: document.querySelectorAll("#hypercord-panes #hp-themeList *").length,
       shown: [...document.querySelectorAll("#hypercord-panes section.view")].filter((n) => !n.classList.contains("hidden")).map((n) => n.getAttribute("data-view")),
     }))()`,
+    (value) => value.rows > 0 && value.shown[0] === "themes",
   );
   ok("and showing a section directly still renders it, with the installed themes", shownThemes === "themes" && themed.rows > 0 && themed.shown[0] === "themes", JSON.stringify({ shown: shownThemes, rows: themed.rows }));
+  // the library read rides on the same draw, so it is waited for the same way - bounded,
+  // and still asserted to have happened exactly once and without a force
+  const libraryDeadline = Date.now() + 5000;
+  while (calls.themeIndex === 0 && Date.now() < libraryDeadline) await wait(100);
   ok(
     "drawing the Themes tab is what reads the library, once and unforced",
     calls.themeIndex === 1 && calls.themeIndexForces.join(",") === "false",
