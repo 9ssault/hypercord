@@ -21,10 +21,35 @@
 // `app-<version>` directory is discovered, because Discord's updater changes it
 // on every release.
 import crypto from "node:crypto";
-import fs from "node:fs";
+import nodeFs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+
+/**
+ * The filesystem every question about an install goes through.
+ *
+ * Electron's `fs` is not the filesystem. A path containing `.asar` is answered by opening the
+ * archive, and the handle that keeps is opened without delete sharing - so one `existsSync` on
+ * `resources/app.asar` leaves the file unrenameable until the process ends, which is exactly the
+ * operation a patch is: `app.asar` becomes `hypercord.app.asar`. Measured on Electron 44.7.0
+ * (Windows): `disk.existsSync(...app.asar)` and then `disk.renameSync` fails
+ * `EBUSY: resource busy or locked`, while the same two calls through `original-fs` both succeed.
+ * The symptom was a client that decided the install was clean, refused to patch it, and opened
+ * its own window instead - on every run, forever, with the feed and the install both fine.
+ *
+ * So discovery, inspection and the patch itself read the disk through Electron's own escape
+ * hatch - `original-fs`, the module without asar support - and fall back to `node:fs` where there
+ * is no such thing (plain Node, which is where the unit suites run).
+ */
+let disk = nodeFs;
+try {
+  const original = await import("original-fs");
+  const candidate = original && original.default && typeof original.default.existsSync === "function" ? original.default : original;
+  if (candidate && typeof candidate.existsSync === "function") disk = candidate;
+} catch {
+  /* plain Node: `fs` *is* the disk there, and there is no asar support to escape */
+}
 
 const ORIGINAL = "hypercord.app.asar";
 const APP_DIR = "app";
@@ -62,7 +87,7 @@ const CHANNEL_ORDER = { stable: 0, ptb: 1, canary: 2 };
 
 function defaultExists(file) {
   try {
-    return fs.existsSync(file);
+    return disk.existsSync(file);
   } catch {
     return false;
   }
@@ -70,7 +95,7 @@ function defaultExists(file) {
 
 function defaultReaddir(dir) {
   try {
-    return fs.readdirSync(dir);
+    return disk.readdirSync(dir);
   } catch {
     return [];
   }
@@ -78,7 +103,7 @@ function defaultReaddir(dir) {
 
 function defaultReadFile(file) {
   try {
-    return fs.readFileSync(file, "utf8");
+    return disk.readFileSync(file, "utf8");
   } catch {
     return "";
   }
@@ -104,7 +129,7 @@ function compareVersions(a, b) {
  */
 function digest(file) {
   try {
-    return "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+    return "sha256:" + crypto.createHash("sha256").update(disk.readFileSync(file)).digest("hex").slice(0, 16);
   } catch {
     return null;
   }
@@ -128,7 +153,7 @@ export function runtimeFacts(appRoot, { exists = defaultExists } = {}) {
     if (!exists(file)) continue;
     let bytes = 0;
     try {
-      bytes = fs.statSync(file).size;
+      bytes = disk.statSync(file).size;
     } catch {
       bytes = 0;
     }
@@ -136,7 +161,7 @@ export function runtimeFacts(appRoot, { exists = defaultExists } = {}) {
   }
   let provenance = null;
   try {
-    const generated = JSON.parse(fs.readFileSync(path.join(root, "plugins", "manifest.json"), "utf8")) || {};
+    const generated = JSON.parse(disk.readFileSync(path.join(root, "plugins", "manifest.json"), "utf8")) || {};
     const upstream = generated.provenance && typeof generated.provenance === "object" ? generated.provenance : null;
     if (upstream) {
       provenance = {
@@ -471,7 +496,7 @@ function readBakedAssets(loader) {
   for (const file of [path.join(path.dirname(loader), "hypercord.json"), path.join(path.dirname(loader), "..", "hypercord.json")]) {
     let found = null;
     try {
-      found = JSON.parse(fs.readFileSync(file, "utf8")) || null;
+      found = JSON.parse(disk.readFileSync(file, "utf8")) || null;
     } catch {
       found = null;
     }
@@ -523,7 +548,7 @@ export function patch(install, opts = {}) {
       bakedNow !== wanted;
     if (!changed || opts.dryRun) return { ok: true, already: true, state: "patched", reapplied: false, steps: [] };
     try {
-      fs.writeFileSync(install.manifest, JSON.stringify(next, null, 1) + "\n");
+      disk.writeFileSync(install.manifest, JSON.stringify(next, null, 1) + "\n");
     } catch (err) {
       return { ok: false, state: "patched", error: "the patch record could not be refreshed: " + String((err && err.message) || err) };
     }
@@ -541,21 +566,21 @@ export function patch(install, opts = {}) {
   if (state.state === "clean") {
     add(
       "move app.asar aside as " + ORIGINAL,
-      () => fs.renameSync(install.appAsar, install.originalAsar),
-      () => fs.renameSync(install.originalAsar, install.appAsar),
+      () => disk.renameSync(install.appAsar, install.originalAsar),
+      () => disk.renameSync(install.originalAsar, install.appAsar),
     );
   }
-  add("create " + install.appDir, () => fs.mkdirSync(install.appDir, { recursive: true }), () => fs.rmSync(install.appDir, { recursive: true, force: true }));
+  add("create " + install.appDir, () => disk.mkdirSync(install.appDir, { recursive: true }), () => disk.rmSync(install.appDir, { recursive: true, force: true }));
   add(
     "write package.json",
-    () => fs.writeFileSync(packagePath, JSON.stringify({ name: "hypercord-loader", version: "1.0.0", private: true, main: "index.js" }, null, 1) + "\n"),
-    () => fs.rmSync(packagePath, { force: true }),
+    () => disk.writeFileSync(packagePath, JSON.stringify({ name: "hypercord-loader", version: "1.0.0", private: true, main: "index.js" }, null, 1) + "\n"),
+    () => disk.rmSync(packagePath, { force: true }),
   );
-  add("write index.js", () => fs.writeFileSync(indexPath, entrySource(loader)), () => fs.rmSync(indexPath, { force: true }));
+  add("write index.js", () => disk.writeFileSync(indexPath, entrySource(loader)), () => disk.rmSync(indexPath, { force: true }));
   add(
     "write " + MANIFEST,
-    () => fs.writeFileSync(install.manifest, JSON.stringify(patchManifest({ install, loader, assets, opts }), null, 1) + "\n"),
-    () => fs.rmSync(install.manifest, { force: true }),
+    () => disk.writeFileSync(install.manifest, JSON.stringify(patchManifest({ install, loader, assets, opts }), null, 1) + "\n"),
+    () => disk.rmSync(install.manifest, { force: true }),
   );
 
   if (opts.dryRun) return { ok: true, dryRun: true, state: state.state, steps: steps.map((s) => s.describe) };
@@ -593,14 +618,14 @@ export function unpatch(install, opts = {}) {
   if (state.state === "patched") {
     for (const file of ours) {
       try {
-        fs.rmSync(file, { force: true });
+        disk.rmSync(file, { force: true });
       } catch (err) {
         return { ok: false, error: String((err && err.message) || err) };
       }
     }
     try {
-      const rest = fs.readdirSync(install.appDir);
-      if (!rest.length) fs.rmdirSync(install.appDir);
+      const rest = disk.readdirSync(install.appDir);
+      if (!rest.length) disk.rmdirSync(install.appDir);
       else log("[hypercord] unpatch: " + install.appDir + " still holds " + rest.length + " file(s) that are not ours");
     } catch {
       /* it is already gone */
@@ -608,7 +633,7 @@ export function unpatch(install, opts = {}) {
   }
   if (!install.exists(install.appAsar) && install.exists(install.originalAsar)) {
     try {
-      fs.renameSync(install.originalAsar, install.appAsar);
+      disk.renameSync(install.originalAsar, install.appAsar);
       log("[hypercord] unpatch: restored app.asar");
     } catch (err) {
       return { ok: false, error: "could not restore app.asar: " + String((err && err.message) || err) };

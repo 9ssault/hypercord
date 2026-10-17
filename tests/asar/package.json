@@ -1,0 +1,7 @@
+{
+  "name": "hypercord-asar-test",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "main": "index.mjs"
+}

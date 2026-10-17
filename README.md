@@ -484,9 +484,12 @@ hypercord/
 npm test              # units, then the electron suites, in one go
 npm run test:units    # node: plugin-host, themes, patcher, attach, tokens, signin,
                       # bridge, release, loader, host, beef, shipped
-npm run test:electron # electron: updater, then preload, then feed-live
+npm run test:electron # electron: asar, updater, preload, then feed-live
 npm run test:preload  # the injection path in a real window
 npm run test:updater
+npm run test:asar     # that asking an install for app.asar does not lock it:
+                      # Electron's fs opens an archive it is asked about without
+                      # delete sharing, which made the patch's own rename fail
 npm run test:feed-live # the update loop, on a packed build and a feed of ours
                       # (needs `npm run pack`, or the installers, first: with
                       # neither it reports SKIPPED and exits 0)

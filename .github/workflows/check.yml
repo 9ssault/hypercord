@@ -249,13 +249,28 @@ jobs:
           tail -60 "$log"
           exit "$status"
 
+      # The question that locked the file it was asking about: Electron's `fs` answers a path
+      # containing `.asar` by opening the archive, without delete sharing, so one `existsSync`
+      # on Discord's `app.asar` makes the rename the patch is made of fail `EBUSY` - for the
+      # rest of the process. It cannot be seen from plain Node, where `fs` is the disk, so it
+      # runs here, in Electron, against a fake install built by the same asar library the
+      # packer uses.
+      - name: The install-question suite, in a real Electron process
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/asar.log"
+          status=0
+          xvfb-run -a npm run test:asar > "$log" 2>&1 || status=$?
+          tail -40 "$log"
+          exit "$status"
+
       # A test run that produced nothing is not a pass: both suites print their own
       # totals, and a suite that ends without one has crashed in a way the tail above
       # only partly shows.
       - name: Both suites reported their totals
         shell: bash
         run: |
-          for name in preload updater; do
+          for name in asar preload updater; do
             log="$RUNNER_TEMP/$name.log"
             if ! grep -qE '^passed [0-9]+  failed 0' "$log"; then
               echo "FAIL the $name suite did not report a clean total:"
