@@ -14,7 +14,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { feedProblems, readFeed, requiredFeeds } from "../../scripts/check-feed.mjs";
+import { feedProblems, missingPlatformFeeds, readFeed, requiredFeeds } from "../../scripts/check-feed.mjs";
 import { artifactsIn, commandLine, isStale, missingTestFiles, namedTestFiles, newestInput, plan } from "../../scripts/release.mjs";
 
 let passed = 0;
@@ -249,18 +249,71 @@ try {
   ok("a feed naming an artifact that is not in the release is a problem, in words", missing.length === 1 && missing[0].includes(installer) && /not in this release/.test(missing[0]), JSON.stringify(missing));
 
   fs.writeFileSync(path.join(feedDir, installer), "x");
+  // the historical arm64 bug, exactly: the AppImage *was* built and shipped, and the feed every
+  // arm64 install asks for by name was not. The artifact is what makes the absence a problem.
+  const armAppImage = "Hypercord-0.3.5-linux-arm64.AppImage";
+  fs.writeFileSync(path.join(feedDir, armAppImage), "x");
   const arm = feedProblems(feedDir, { expectedVersion: "0.3.5", require: ["latest-linux-arm64.yml"] });
-  ok("a feed the app ships but the release does not carry is reported by name", arm.length === 1 && /latest-linux-arm64[.]yml is missing/.test(arm[0]), JSON.stringify(arm));
+  ok("a feed the app ships, for a platform that built, and the release does not carry is reported by name", arm.length === 1 && /latest-linux-arm64[.]yml is missing/.test(arm[0]), JSON.stringify(arm));
+  ok("and it is not a gap: the platform built, so this is the silent-update failure", missingPlatformFeeds(feedDir, ["latest-linux-arm64.yml"]).length === 0, JSON.stringify(missingPlatformFeeds(feedDir, ["latest-linux-arm64.yml"])));
+  fs.rmSync(path.join(feedDir, armAppImage));
 
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-empty-"));
   try {
     const none = feedProblems(empty, {});
-    ok("a directory with no feed at all says so instead of passing", none.length === 1 && /no update feed/.test(none[0]), JSON.stringify(none));
+    ok("a directory with no feed and no artifact says so instead of passing", none.length === 1 && /no update feed/.test(none[0]), JSON.stringify(none));
   } finally {
     fs.rmSync(empty, { recursive: true, force: true });
   }
 } finally {
   fs.rmSync(feedDir, { recursive: true, force: true });
+}
+
+// A platform that built nothing. Its feed is absent for a reason the run already reports through
+// that platform's own failed job, and refusing here is how a release page once carried nothing at
+// all - not even the artifacts that had built cleanly - while the run's own summary said so.
+const needs = ["latest.yml", "latest-mac.yml", "latest-linux.yml", "latest-linux-arm64.yml"];
+const partial = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-partial-"));
+try {
+  const linuxInstaller = "Hypercord-0.3.5-linux-x86_64.AppImage";
+  const linuxArm = "Hypercord-0.3.5-linux-arm64.AppImage";
+  fs.writeFileSync(path.join(partial, linuxInstaller), "x");
+  fs.writeFileSync(path.join(partial, linuxArm), "x");
+  fs.writeFileSync(path.join(partial, "latest-linux.yml"), "version: 0.3.5\nfiles:\n  - url: " + linuxInstaller + "\n    sha512: abc\npath: " + linuxInstaller + "\n");
+  // the linux build's other half, so the only feeds missing here are the two platforms that built
+  // nothing - the arm64 feed is required the moment any linux artifact is present
+  fs.writeFileSync(path.join(partial, "latest-linux-arm64.yml"), "version: 0.3.5\nfiles:\n  - url: " + linuxArm + "\n    sha512: abc\npath: " + linuxArm + "\n");
+  ok(
+    "a platform that built nothing does not stop the release that did build",
+    feedProblems(partial, { expectedVersion: "0.3.5", require: needs }).length === 0,
+    JSON.stringify(feedProblems(partial, { expectedVersion: "0.3.5", require: needs })),
+  );
+  ok(
+    "and its missing feed is named as a gap, not as a problem",
+    missingPlatformFeeds(partial, needs).join(",") === "latest.yml,latest-mac.yml",
+    JSON.stringify(missingPlatformFeeds(partial, needs)),
+  );
+  // the moment that platform's installer is here, its own missing feed is the failure again
+  fs.writeFileSync(path.join(partial, "Hypercord-0.3.5-win-x64-setup.exe"), "x");
+  const strict = feedProblems(partial, { expectedVersion: "0.3.5", require: needs });
+  ok("once a platform's installer is here, its missing feed is a problem again", strict.some((line) => /^latest[.]yml is missing/.test(line)), JSON.stringify(strict));
+  ok("while the platform that still built nothing stays a gap", missingPlatformFeeds(partial, needs).join(",") === "latest-mac.yml", JSON.stringify(missingPlatformFeeds(partial, needs)));
+} finally {
+  fs.rmSync(partial, { recursive: true, force: true });
+}
+
+const apkOnly = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-apk-"));
+try {
+  fs.writeFileSync(path.join(apkOnly, "Hypercord-Manager.apk"), "x");
+  fs.writeFileSync(path.join(apkOnly, "Hypercord-Loader.apk"), "x");
+  ok(
+    "an APK-only release publishes what built instead of refusing: the release page carrying no APK is the failure this prevents",
+    feedProblems(apkOnly, { expectedVersion: "0.3.5", require: needs }).length === 0,
+    JSON.stringify(feedProblems(apkOnly, { expectedVersion: "0.3.5", require: needs })),
+  );
+  ok("with every desktop feed it never built named as a gap", missingPlatformFeeds(apkOnly, needs).join(",") === needs.join(","), JSON.stringify(missingPlatformFeeds(apkOnly, needs)));
+} finally {
+  fs.rmSync(apkOnly, { recursive: true, force: true });
 }
 
 console.log("\npassed " + passed + "  failed " + failed);

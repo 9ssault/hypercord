@@ -22,6 +22,34 @@ what is written here is this client's own record.
   settings pages call is read off `src/panes.js` and matched against the api `src/preload.cjs`
   exposes, which turns "a button that throws a TypeError on click" into a failing suite.
 
+## 0.3.11
+
+### A failed platform no longer takes the whole release down with it
+
+No product change: the same client as 0.3.10, with the release pipeline fixed where it was
+refusing to publish.
+
+- **A release publishes everything that built, and stays red about what did not.** The publish
+  job's feed check refused the whole release whenever a platform's channel file was missing -
+  including when that platform had simply built nothing, which is how a run with a healthy Linux
+  build, a failed Android build and a failed Windows suite published no release page at all. A
+  feed missing because its platform never built is now reported by name (`NOTE latest.yml is
+  missing because nothing was built for win in this run`) and the artifacts that did build are
+  attached; a feed that names an artifact which is not in the release, or a feed whose version
+  disagrees with `package.json`, is still refused. The run fails either way - *Fail if any platform
+  that was asked for did not build* is what says which platform it was.
+- **A release can be started from git alone.** Pushing a branch named `release/vX.Y.Z` (whose
+  name must match the version in `package.json`, exactly as a tag must) runs the same pipeline as
+  a tag push and lets the publish job create the tag itself, from the commit the run built. A push
+  made with the workflow's own token does not start another run, so creating the tag cannot
+  re-enter the pipeline; a tag that already exists is refused rather than reused. The tag push and
+  the manual dispatch work exactly as before.
+- **Each platform's suite logs travel under its own name** (`suite-preload-windows.log`,
+  `suite-preload-macos.log`, `suite-preload-linux.log`). Three jobs upload a log of the same name
+  into one directory on the release page, so the platform that *failed* could be the one whose log
+  was overwritten by a platform that passed - which left exactly one copy of the evidence, and it
+  was not the failing one.
+
 ## 0.3.10
 
 ### Three fixes that were waiting to ship

@@ -45,11 +45,28 @@
 # unsigned binary is labelled unsigned. Absent secrets mean an unsigned build rather
 # than a silent failure - an unsigned APK still installs, it simply cannot update over
 # a signed one, and the job log says so either way.
+#
+# How a release starts, all three of them checked against the version in package.json:
+#
+#   * a push of a `vX.Y.Z` tag - the ordinary way;
+#   * a manual run naming a tag that already exists;
+#   * a push of a `release/vX.Y.Z` branch, which the publish job tags itself once the
+#     artifacts built. This one is why the pipeline is usable from git alone: no web UI,
+#     no hand-made tag, and the tag is created from the commit the run actually built.
+#     A push made with this job's own token does not start another run, so creating the
+#     tag cannot re-enter this workflow.
+#
+# A partial release is published, loudly: when one platform fails, every artifact that
+# built is attached and the run is red, naming the platform that did not. The alternative
+# is what this file used to do by accident - one failed platform left a release page with
+# nothing on it at all, not even the platforms that passed.
 name: Release
 
 on:
   push:
     tags: ['v*']
+    # the branch way: `release/vX.Y.Z` must carry that version in package.json
+    branches: ['release/v*']
   workflow_dispatch:
     inputs:
       tag:
@@ -127,6 +144,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Which tag this run releases, decided once and put in the environment, so no step
+      # downstream can disagree with the step above it about what is being released. A tag push
+      # names it; a manual run names it in an input (`github.ref_name` there is the branch the
+      # dispatch was made from, which is not a version and never will be); a push to a
+      # `release/vX.Y.Z` branch names it by that branch. The version check below is what refuses
+      # a branch whose name and package.json do not agree.
+      - name: Decide the tag this run releases
+        shell: bash
+        run: |
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          case "$GITHUB_REF" in
+            refs/heads/release/v*) tag="v${GITHUB_REF#refs/heads/release/v}" ;;
+          esac
+          echo "this run releases $tag"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -142,7 +175,7 @@ jobs:
           echo "DISPLAY=${DISPLAY:-<unset>}"
           APP_VERSION="$(node -p 'JSON.parse(require("fs").readFileSync("package.json","utf8")).version')"
           echo "app version from package.json: $APP_VERSION"
-          echo "tag being built: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          echo "tag being built: $TAG"
 
       # electron-builder names every artifact and writes `latest.yml` from package.json,
       # and `electron-updater` compares that version with the one the installed client
@@ -152,9 +185,9 @@ jobs:
       - name: Check that the tag and the app version agree
         shell: bash
         env:
-          # A manual run names its tag in an input; `github.ref_name` there is the branch
-          # the dispatch was made from, which is not a version and never will be.
-          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          # decided by "Decide the tag this run releases" above, from the tag, the input or the
+          # release branch - one place, so this check cannot read a different tag than the job did
+          TAG_NAME: ${{ env.TAG }}
         run: |
           version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json","utf8")).version')"
           tag="${TAG_NAME#v}"
@@ -442,9 +475,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          # per platform, not one shared name: three jobs upload a `suite-preload.log` and the
+          # publish job downloads them into one directory, so a shared name means the log of the
+          # platform that *failed* can be overwritten by the one that passed - which is the only
+          # copy anybody needs. `suite-*.log` still matches them all where the notes below read.
           for suite in updater preload feed; do
             src="$RUNNER_TEMP/$suite.log"
-            if [ -f "$src" ]; then cp "$src" "dist/suite-$suite.log"; fi
+            if [ -f "$src" ]; then cp "$src" "dist/suite-$suite-${{ matrix.label }}.log"; fi
           done
           ls -la dist/suite-*.log 2>/dev/null || echo "no suite log was written on ${{ matrix.label }}"
 
@@ -484,6 +521,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # the same decision the desktop job makes, from the same facts: see there for why
+      - name: Decide the tag this run releases
+        shell: bash
+        run: |
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          case "$GITHUB_REF" in
+            refs/heads/release/v*) tag="v${GITHUB_REF#refs/heads/release/v}" ;;
+          esac
+          echo "this run releases $tag"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -653,10 +701,9 @@ jobs:
           umask 077
           # The version the APK claims comes from the tag, so the APK and the release page
           # cannot disagree; both modules read these, and the manager compares the embedded
-          # loader's versionCode against its own, so the two must match each other. A manual
-          # run names its tag in an input - `github.ref_name` is the branch it was made from,
-          # and an APK whose versionName is `main` is one no manager will ever update.
-          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          # loader's versionCode against its own, so the two must match each other. TAG is the
+          # tag this run releases, decided by the step above this one - a versionName of `main`
+          # is one no manager will ever update, which is why it is never derived from a branch.
           export HYPERCORD_ANDROID_VERSION="${TAG#v}"
           export HYPERCORD_ANDROID_VERSION_CODE="$(date -u +%Y%m%d)"
           # Prefer the repository's wrapper: it pins the Gradle the modules were ported
@@ -766,6 +813,17 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      # the same decision the build jobs made, from the same two facts: see the desktop job
+      - name: Decide the tag this run releases
+        shell: bash
+        run: |
+          tag="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          case "$GITHUB_REF" in
+            refs/heads/release/v*) tag="v${GITHUB_REF#refs/heads/release/v}" ;;
+          esac
+          echo "this run releases $tag"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
       - name: Download every build's artifacts
         uses: actions/download-artifact@v4
         with:
@@ -779,7 +837,7 @@ jobs:
       - name: Check that the tag and the app version agree
         shell: bash
         env:
-          TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG_NAME: ${{ env.TAG }}
         run: |
           set -euo pipefail
           version="$(node -p 'JSON.parse(require("fs").readFileSync("package.json","utf8")).version')"
@@ -817,15 +875,37 @@ jobs:
       # the release page exists, so the outcome is a red run rather than a public release nothing
       # can update from. It reads them from the same directory it is about to publish, derives the
       # feeds the app's build config promises (package.json's linux/win/mac targets) and refuses
-      # when one is missing, when a feed's version disagrees with package.json, or when a feed
-      # names an artifact that is not here.
+      # when a feed names an artifact that is not here, or when a feed's version disagrees with
+      # package.json. A feed missing because its platform built nothing is *reported by name*
+      # instead: that platform's job already failed this run, and refusing here is how a release
+      # page once ended up carrying nothing at all - not even the Linux build that passed.
       - name: Check that the update feeds match the artifacts
         run: node scripts/check-feed.mjs --dir release
+
+      # A `release/vX.Y.Z` run has no tag yet, and the tag is what `--verify-tag` below verifies -
+      # it is also what an installed client's update history lines up with. Created here, from the
+      # commit this run built, and pushed with this job's token: a push made with `github.token`
+      # does not start another workflow run, so creating it cannot re-enter this pipeline. A tag
+      # that already exists is a different release than this branch asked for, so it is refused
+      # rather than quietly reused.
+      - name: Create the tag this run names (a release-branch run only)
+        if: ${{ startsWith(github.ref, 'refs/heads/release/') }}
+        env:
+          TAG: ${{ env.TAG }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "FAIL $TAG already exists on the remote: a release branch releases a version that has no tag yet"
+            exit 1
+          fi
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"
+          echo "created the tag $TAG at $GITHUB_SHA, which is the commit this run built"
 
       - name: Create the release if it does not exist yet
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG: ${{ env.TAG }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
           APK_RESULT: ${{ needs.apk.result }}
         run: |
@@ -872,7 +952,7 @@ jobs:
       - name: Attach the artifacts
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG: ${{ env.TAG }}
         run: |
           set -euo pipefail
           # Files at the top of the download, never `release/*`: a directory that came
@@ -899,7 +979,7 @@ jobs:
       - name: List the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          TAG: ${{ env.TAG }}
         run: gh release view "$TAG"
 
       # The last word: an incomplete release is reported as a failed run, however

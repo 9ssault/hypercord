@@ -39,6 +39,55 @@ export const root = path.join(here, "..");
 /** What electron-builder names a feed, across the platforms this client ships. */
 export const FEED_FILES = ["latest.yml", "latest-mac.yml", "latest-linux.yml", "latest-linux-arm64.yml"];
 
+/** Which platform reads a feed, so a missing one can be told from a platform that never built. */
+export const FEED_PLATFORMS = {
+  "latest.yml": "win",
+  "latest-mac.yml": "mac",
+  "latest-linux.yml": "linux",
+  "latest-linux-arm64.yml": "linux",
+  "latest-linux-arm.yml": "linux",
+};
+
+/** The artifact that proves a platform built *something* in this run. */
+function platformArtifact(platform) {
+  if (platform === "win") return (name) => /\.exe$/i.test(name);
+  if (platform === "mac") return (name) => /\.dmg$/i.test(name) || /-mac-.*\.zip$/i.test(name);
+  return (name) => /\.(AppImage|deb|rpm|tar\.gz|tar\.xz)$/i.test(name) || /-linux-.*\.zip$/i.test(name);
+}
+
+/** Anything a release page can hand to a person: an installer, an archive or an APK. */
+function releaseArtifact(name) {
+  return /\.(exe|dmg|AppImage|deb|rpm|apk|zip|tar\.gz|tar\.xz)$/i.test(name);
+}
+
+/**
+ * The required feeds that are absent because nothing was built for their platform.
+ *
+ * This is the distinction that decides whether a release may be published at all. A feed missing
+ * while its platform's installers *are* here is the silent-update failure this script exists for:
+ * an installed client asks for that name and never updates. A feed missing because its platform
+ * built nothing is a different fact - that platform's own job already failed the run, and refusing
+ * to publish here throws away every artifact that *did* build. That is not hypothetical: a release
+ * with a healthy Linux build and a failed APK job published no APK at all, because the missing
+ * `latest.yml` from a Windows build that never ran stopped the publish job before it attached
+ * anything. The gap is reported instead, by name, and the run stays red for the platform that
+ * failed - `Fail if any platform that was asked for did not build` is what says so.
+ */
+export function missingPlatformFeeds(dir, require = []) {
+  const entries = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const present = new Set(entries);
+  const gaps = [];
+  for (const want of require) {
+    if (present.has(want)) continue;
+    const platform = FEED_PLATFORMS[want];
+    // a name this script does not know is not a platform gap: feedProblems reports it
+    if (!platform) continue;
+    if (entries.some(platformArtifact(platform))) continue;
+    gaps.push(want);
+  }
+  return gaps;
+}
+
 function arg(name, fallback = "") {
   const at = process.argv.indexOf("--" + name);
   return at > -1 && process.argv[at + 1] ? process.argv[at + 1] : fallback;
@@ -127,17 +176,26 @@ export function feedsIn(dir) {
 export function feedProblems(dir, { expectedVersion = "", require = [] } = {}) {
   const problems = [];
   const feeds = feedsIn(dir);
-  const present = new Set(fs.existsSync(dir) ? fs.readdirSync(dir) : []);
+  const entries = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const present = new Set(entries);
+  // a feed whose platform built nothing is a gap, reported by name instead of refused: see
+  // missingPlatformFeeds for why publishing the rest is the right call there
+  const gaps = new Set(missingPlatformFeeds(dir, require));
 
   // Named rather than discovered: a platform or architecture with no feed at all is invisible
   // to a scan (there is no file to read), and it is exactly the gap this check was written for.
   for (const want of require) {
-    if (!present.has(want)) {
+    if (!present.has(want) && !gaps.has(want)) {
       problems.push(want + " is missing: a client on that platform or architecture asks for it by name and would never find an update");
     }
   }
+  if (feeds.length === 0 && !entries.some(releaseArtifact)) {
+    problems.push("no update feed (latest.yml, latest-mac.yml, latest-linux.yml or latest-linux-arm64.yml) is here to check, and no artifact is either: there is nothing to publish");
+    return problems;
+  }
   if (feeds.length === 0) {
-    problems.push("no update feed (latest.yml, latest-mac.yml, latest-linux.yml or latest-linux-arm64.yml) is here to check");
+    // artifacts and no feed at all: what published is not a release an installed desktop client
+    // can update from, which is stated here rather than refused - see missingPlatformFeeds
     return problems;
   }
 
@@ -192,7 +250,14 @@ if (direct) {
   for (const feed of feedsIn(dir)) {
     console.log("  " + feed.file + ": version " + (feed.version || "?") + ", " + feed.urls.length + " file(s), path " + (feed.path || "?"));
   }
+  for (const gap of missingPlatformFeeds(dir, require)) {
+    console.log("NOTE " + gap + " is missing because nothing was built for " + (FEED_PLATFORMS[gap] || "that platform") + " in this run: reported, not refused, so the artifacts that did build are attached");
+  }
   if (problems.length === 0) {
+    if (feedsIn(dir).length === 0) {
+      console.log("[hypercord] check:feed: nothing here writes an update feed, so there is no feed to check: the artifacts that built are attached, and no installed desktop client can update from this release");
+      process.exit(0);
+    }
     console.log("[hypercord] check:feed: every feed names artifacts this release carries, and every version agrees");
     process.exit(0);
   }
