@@ -14,7 +14,13 @@
 //
 //   * the signature schemes each APK actually carries (v1 from META-INF, v2/v3 from the APK
 //     Signing Block) - an APK with neither cannot be installed, whatever the release notes say;
-//   * whether the APK matches the `SHA256SUMS` the same release publishes;
+//   * whether *every* installer and APK matches the `SHA256SUMS` the same release publishes,
+//     and whether that file names anything the release no longer carries. The comparison is
+//     made against GitHub's own per-asset digest, so an installer is verified without
+//     downloading a hundred megabytes of it, and the downloaded APK is hashed as well;
+//   * whether any asset was re-uploaded after the release was published - the repair of the
+//     seven unsigned APKs is exactly that, and "the bytes on the page are the bytes that were
+//     released" is a property only the timestamps can answer;
 //   * whether the acceptance record the release shipped agrees about that signature;
 //   * the sizes of every artifact, against `scripts/size-budget.json`;
 //   * which platforms a release shipped, so a missing platform is a fact and not a surprise.
@@ -132,16 +138,50 @@ function platforms(assets) {
   return found;
 }
 
+/**
+ * The release as the API describes it, including what a viewer never sees: each asset's
+ * `digest` (GitHub's own SHA-256 of the uploaded bytes) and when it was created and last
+ * replaced. The digest is what lets every installer be checked against `SHA256SUMS` without
+ * downloading it, and the timestamps are the only record of an asset being re-uploaded after
+ * the release was published.
+ */
+function releaseRecord(tag) {
+  const repo = process.env.HYPERCORD_REPO || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  return JSON.parse(gh(["api", `repos/${repo}/releases/tags/${tag}`]) || "{}");
+}
+
+/** An asset's upload time, in milliseconds, or 0 when the record does not carry one. */
+function assetTime(asset, key) {
+  const value = Date.parse(String((asset && asset[key]) || ""));
+  return Number.isNaN(value) ? 0 : value;
+}
+
+/** An asset's own SHA-256, as GitHub recorded it: "sha256:<hex>" or "". */
+function assetDigest(asset) {
+  const digest = String((asset && asset.digest) || "");
+  const match = /^sha256:([0-9a-f]{64})$/i.exec(digest);
+  return match ? match[1].toLowerCase() : "";
+}
+
 async function auditRelease(tag) {
-  const meta = JSON.parse(gh(["release", "view", tag, "--json", "assets,publishedAt,isPrerelease"]) || "{}");
-  const assets = (meta.assets || []).map((asset) => ({ name: asset.name, size: asset.size }));
+  const meta = releaseRecord(tag);
+  const assets = (meta.assets || []).map((asset) => ({
+    name: asset.name,
+    size: asset.size,
+    digest: assetDigest(asset),
+    createdAt: assetTime(asset, "created_at"),
+    updatedAt: assetTime(asset, "updated_at"),
+  }));
   const dir = path.join(CACHE, tag);
   fs.mkdirSync(dir, { recursive: true });
 
   const wanted = assets.filter((asset) => /\.apk$/.test(asset.name) || /^(SHA256SUMS|acceptance\.json)$/.test(asset.name));
   for (const asset of wanted) {
     const file = path.join(dir, asset.name);
-    if (fs.existsSync(file)) continue;
+    // A cached copy is reused only while it *is* the asset: when a release's SHA256SUMS or
+    // APK was replaced (a repair), the stale copy in the cache would have the audit report
+    // the bytes that are no longer published.
+    if (fs.existsSync(file) && (!asset.digest || sha256(file) === asset.digest)) continue;
     try {
       gh(["release", "download", tag, "--pattern", asset.name, "--dir", dir, "--clobber"]);
     } catch (error) {
@@ -172,16 +212,44 @@ async function auditRelease(tag) {
       if (match) published.set(match[2], match[1]);
     }
   }
+  // Every checksum line the release publishes, against the asset it names. An installer is
+  // checked against GitHub's own digest of its uploaded bytes (so nothing has to be
+  // downloaded to verify a 190 MB setup.exe), and an APK is *also* hashed from the file this
+  // audit downloaded, so a corrupted download cannot be reported as a corrupted release.
+  const byName = new Map(assets.map((asset) => [asset.name, asset]));
+  const downloaded = new Map(apks.map((file) => [path.basename(file), file]));
   const integrity = [];
-  for (const file of apks) {
-    const name = path.basename(file);
-    const expected = published.get(name);
-    if (!expected) {
-      integrity.push({ name, status: "not listed" });
+  for (const [name, expected] of published) {
+    const asset = byName.get(name);
+    if (!asset) {
+      integrity.push({ name, status: "missing asset" });
       continue;
     }
-    integrity.push({ name, status: sha256(file) === expected ? "matches" : "MISMATCH" });
+    if (!asset.digest) {
+      integrity.push({ name, status: "no digest" });
+      continue;
+    }
+    const file = downloaded.get(name);
+    const actual = file ? sha256(file) : asset.digest;
+    integrity.push({ name, status: actual === expected && asset.digest === expected ? "matches" : "MISMATCH" });
   }
+
+  // An installer or an APK the checksum file does not mention cannot be verified from the
+  // page at all - which is a fact about the release, not about this script.
+  const checksummed = new Set(published.keys());
+  const unlisted = assets
+    .filter((asset) => /\.(exe|dmg|AppImage|deb|tar\.gz|apk)$/i.test(asset.name) && !checksummed.has(asset.name))
+    .map((asset) => asset.name);
+
+  // Assets replaced after publication. Ten minutes is well past the release's own uploads
+  // (which all happen before `published_at`), and long enough that clock skew is not a
+  // repair. This is how the seven repaired APKs of 0.3.5/0.3.6/0.3.12-0.3.16 are visible.
+  const releasedAt = Date.parse(String(meta.published_at || "")) || 0;
+  const republished = releasedAt
+    ? assets
+        .filter((asset) => asset.updatedAt > releasedAt + 10 * 60 * 1000)
+        .map((asset) => ({ name: asset.name, updatedAt: new Date(asset.updatedAt).toISOString() }))
+    : [];
 
   // What the acceptance record the release shipped says about the signature.
   const acceptanceFile = path.join(dir, "acceptance.json");
@@ -211,8 +279,8 @@ async function auditRelease(tag) {
 
   return {
     tag,
-    publishedAt: meta.publishedAt || "",
-    prerelease: Boolean(meta.isPrerelease),
+    publishedAt: meta.published_at || "",
+    prerelease: Boolean(meta.prerelease),
     assets: assets.length,
     platforms: platforms(assets),
     apks: apks.map((file) => ({
@@ -222,6 +290,9 @@ async function auditRelease(tag) {
       budget: budgetFor(path.basename(file))?.limitBytes ?? null,
     })),
     integrity,
+    checksums: { checked: integrity.length, matched: integrity.filter((entry) => entry.status === "matches").length },
+    unlisted,
+    republished,
     acceptance,
     overBudget,
     desktopBytes: assets.filter((asset) => /\.(exe|dmg|AppImage|deb|tar\.gz)$/.test(asset.name)).reduce((sum, asset) => sum + asset.size, 0),
@@ -239,9 +310,19 @@ function problemsOf(row) {
     else if (apk.schemes.some((scheme) => scheme.startsWith("unreadable"))) problems.push(`${apk.name}: ${apk.schemes.join(", ")}`);
     if (apk.budget && apk.bytes > apk.budget) problems.push(`${apk.name} is ${kb(apk.bytes)}, over its ${kb(apk.budget)} budget`);
   }
-  for (const entry of row.integrity) {
+  for (const entry of row.integrity || []) {
     if (entry.status === "MISMATCH") problems.push(`${entry.name} does not match SHA256SUMS`);
+    else if (entry.status === "missing asset") problems.push(`SHA256SUMS names ${entry.name}, which the release does not carry`);
+    else if (entry.status === "no digest") problems.push(`${entry.name} has no digest on its asset record, so the checksum cannot be checked`);
   }
+  // One line, not one per file: a checksum file that covers only the APKs is a single fact
+  // about the release, and a page of "not in SHA256SUMS" lines buries everything else.
+  if ((row.unlisted || []).length) {
+    const names = row.unlisted;
+    const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? `, +${names.length - 3} more` : "");
+    problems.push(`${names.length} artifact(s) not covered by SHA256SUMS (${shown})`);
+  }
+  if ((row.republished || []).length) problems.push(`${row.republished.length} asset(s) re-uploaded after publishing: ${row.republished.map((asset) => asset.name).join(", ")}`);
   for (const asset of row.overBudget) {
     if (asset.name.endsWith(".apk")) continue; // already reported above, in KB
     problems.push(`${asset.name} is ${kb(asset.size)}, over its ${kb(asset.limit)} budget`);
@@ -258,23 +339,27 @@ function markdown(rows) {
   lines.push("# Release audit");
   lines.push("");
   lines.push("Every published version, read back from its release page: the signature schemes each");
-  lines.push("APK actually carries, whether those APKs match the `SHA256SUMS` published beside them,");
-  lines.push("the sizes against `scripts/size-budget.json`, and which platforms the release shipped.");
+  lines.push("APK actually carries, whether every installer and APK matches the `SHA256SUMS` published");
+  lines.push("beside them (against GitHub's own digest of the uploaded bytes), whether any asset was");
+  lines.push("re-uploaded after the release was published, the sizes against `scripts/size-budget.json`,");
+  lines.push("and which platforms the release shipped.");
   lines.push("");
   lines.push("Generated by `npm run audit:releases`; re-run it rather than editing this file.");
   lines.push("");
-  lines.push("| Version | Published | APK signature | Loader | Manager | Installers | Platforms | Problems |");
-  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- |");
+  lines.push("| Version | Published | APK signature | Loader | Manager | Installers | Checksums | Republished | Platforms | Problems |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const row of rows) {
     const schemes = row.apks.map((apk) => `${apk.name.replace(/^Hypercord-|\.apk$/g, "")}: ${apk.schemes.join("+") || "none"}`).join("<br>") || "no APK";
     const loader = row.apks.find((apk) => /Loader/.test(apk.name));
     const manager = row.apks.find((apk) => /Manager/.test(apk.name));
     const platforms = Object.entries(row.platforms).filter(([, count]) => count).map(([name]) => name).join(", ") || "none";
+    const checksums = row.checksums ? `${row.checksums.matched}/${row.checksums.checked}` : "-";
+    const republished = row.republished && row.republished.length ? `${row.republished.length} asset(s)` : "-";
     const problems = problemsOf(row);
     lines.push(
-      `| ${row.tag} | ${row.publishedAt.slice(0, 10)} | ${schemes} | ${loader ? kb(loader.bytes) : "-"} | ${
+      `| ${row.tag} | ${String(row.publishedAt || "").slice(0, 10)} | ${schemes} | ${loader ? kb(loader.bytes) : "-"} | ${
         manager ? kb(manager.bytes) : "-"
-      } | ${kb(row.desktopBytes)} | ${platforms} | ${problems.length ? problems.map((line) => line.replace(/\|/g, "/")).join("; ") : "none"} |`,
+      } | ${kb(row.desktopBytes)} | ${checksums} | ${republished} | ${platforms} | ${problems.length ? problems.map((line) => line.replace(/\|/g, "/")).join("; ") : "none"} |`,
     );
   }
   lines.push("");

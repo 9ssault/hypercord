@@ -1013,6 +1013,25 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md" \
             --verify-tag
 
+      # One checksum file for everything the page carries. The APK job writes its own over the
+      # phone artifacts, and that was the whole of it: a setup.exe, a .dmg, a .deb or an
+      # AppImage could not be verified from the release page at all, which is what the audit's
+      # "artifact(s) not covered by SHA256SUMS" was reporting at every release. The logs, the
+      # feeds and the acceptance record are not artifacts and are left out.
+      - name: Write SHA256SUMS over every artifact
+        run: |
+          set -euo pipefail
+          cd release
+          shopt -s nullglob
+          artifacts=( *.exe *.dmg *.zip *.deb *.AppImage *.tar.gz *.apk )
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "FAIL no artifact was downloaded to checksum"
+            exit 1
+          fi
+          sha256sum -- "${artifacts[@]}" > SHA256SUMS
+          echo "SHA256SUMS covers ${#artifacts[@]} artifact(s):"
+          cat SHA256SUMS
+
       - name: Attach the artifacts
         env:
           GH_TOKEN: ${{ github.token }}
