@@ -1009,6 +1009,28 @@ jobs:
           # the ones the previous run left behind
           gh release upload "$TAG" "${upload[@]}" --clobber
 
+      # A release branch is a trigger, not a record: the tag is the record, and by here it exists
+      # (created above for a branch run) with the assets on it. Removing the branch is what keeps a
+      # release from leaving one behind for somebody to tidy by hand - `git push` cannot delete a
+      # ref, so it is the API, and the nested name (`release/v0.3.14`) is the part that has to be
+      # right. `!cancelled()`: a run where a platform failed still cleans up, because the branch has
+      # done its job either way and the run stays red about the platform. If the tag was never
+      # created, the branch is kept instead - then it is the only record of the attempt.
+      - name: Delete the branch this run started from (a release-branch run only)
+        if: ${{ !cancelled() && startsWith(github.ref, 'refs/heads/release/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ env.TAG }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "note: $TAG was never created, so $BRANCH is kept as the record of this attempt"
+            exit 0
+          fi
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$BRANCH"
+          echo "deleted $BRANCH: the tag $TAG is the record of this release"
+
       - name: List the release
         env:
           GH_TOKEN: ${{ github.token }}

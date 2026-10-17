@@ -22,6 +22,19 @@ what is written here is this client's own record.
   settings pages call is read off `src/panes.js` and matched against the api `src/preload.cjs`
   exposes, which turns "a button that throws a TypeError on click" into a failing suite.
 
+## 0.3.14
+
+### A release cleans up after itself
+
+No product change: the same client as 0.3.13.
+
+- **A `release/vX.Y.Z` run deletes that branch once the release is published.** The branch is a
+  trigger, not a record - the tag is the record - so leaving it behind only made work for
+  somebody later; four of them had accumulated. The publish job removes it through the API (a
+  `git push` cannot delete a ref) after the assets are attached, keeps it when the tag it names
+  was never created (then it *is* the record of the attempt), and never touches anything on a tag
+  push or a manual run.
+
 ## 0.3.13
 
 ### The Linux feed suite stopped contradicting itself
