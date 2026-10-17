@@ -1,0 +1,36 @@
+{
+  "comment": "What each shipped artifact is allowed to weigh. `scripts/check-size.mjs` reads this, measures what was actually built, and fails a release over the limit - a budget nobody enforces is a wish. Limits carry roughly 10-20% headroom over the measured sizes at 0.3.16, so normal churn passes and a payload that doubles does not. `match` is a regular expression against the file name inside the directories searched; `dir` names a whole directory, measured recursively.",
+  "budgets": [
+    {
+      "name": "loader APK",
+      "match": "^Hypercord-Loader\\.apk$",
+      "limitBytes": 409600,
+      "why": "the lean half: 276 KB at 0.3.16 (552 KB runtime + 142 KB addons bundle, both deflated). Over 400 KB means the phone client is carrying something it did not ship with."
+    },
+    {
+      "name": "manager APK",
+      "match": "^Hypercord-Manager\\.apk$",
+      "limitBytes": 8388608,
+      "why": "6.6 MB at 0.3.16, of which the embedded loader and the LSPatch runtime are most. Over 8 MB is a dependency or a resource tree that grew, not a feature."
+    },
+    {
+      "name": "packed app (app.asar)",
+      "match": "^app\\.asar$",
+      "limitBytes": 6291456,
+      "why": "4.9 MB at 0.3.16: 2.5 MB of runtime, 218 KB of its stylesheet, 194 KB of plugin manifest, the src/ tree and prod node_modules. The `files` whitelist already excludes both vendored source trees and every .map file."
+    },
+    {
+      "name": "unpacked desktop app",
+      "dir": "win-unpacked",
+      "limitBytes": 367001600,
+      "why": "325 MB at 0.3.16 - Chromium, ICU, the ffmpeg build and the helper binaries. Almost all of it is Electron, so a jump here is a dependency that was installed into the app rather than into the build."
+    },
+    {
+      "name": "desktop installer",
+      "match": "^Hypercord-.*\\.(exe|dmg|AppImage|deb|tar\\.gz)$",
+      "limitBytes": 209715200,
+      "why": "the 0.3.5 x64 setup was 98.9 MB with compression: maximum and electronLanguages pinned to en-US. Two of anything like it on one release page is what the budget is for."
+    }
+  ],
+  "searched": ["release", "release/candidate", "dist"]
+}

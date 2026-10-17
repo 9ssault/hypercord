@@ -68,10 +68,22 @@ const THUMBNAIL_CACHE_MAX = 12;
 const IMPORT_HOSTS = new Set([
   "fonts.googleapis.com",
   "fonts.gstatic.com",
+  // the other font host published themes pull from, by name
+  "fonts.cdnfonts.com",
+  "cdnfonts.com",
+  "api.fontshare.com",
+  "fonts.bunny.net",
+  "cdn.statically.io",
   "github.com",
   "raw.githubusercontent.com",
   "gist.githubusercontent.com",
   "cdn.jsdelivr.net",
+  // the GitHub mirrors themes link to by name: `raw.githack.com` and its older `rawgit.com`
+  // are the same repository's files served with a CSS content type, and a theme that
+  // imports one of them is not importing from a stranger
+  "raw.githack.com",
+  "rawcdn.githack.com",
+  "rawgit.com",
   "gitlab.com",
   "codeberg.org",
   "imgur.com",
@@ -81,14 +93,36 @@ const IMPORT_HOSTS = new Set([
   "discord.com",
 ]);
 
+/**
+ * The forges' own static hosting, which is where published themes actually keep their
+ * modules: `saltssaumure.github.io`, `*.gitlab.io`, `*.codeberg.page`. The forge is already
+ * on the list above; its pages are the same author publishing the same CSS, and a theme
+ * from the library that imports its own module from there was refused outright - which is
+ * what "installing from the library fails" was. Matched as a suffix of the host's own name
+ * (`evilgithub.io` is not `github.io`), so the list stays a list of hosts, not of substrings.
+ */
+const IMPORT_FORGE_PAGES = ["github.io", "gitlab.io", "codeberg.page", "pages.dev"];
+
+function importHostAllowed(host) {
+  if (IMPORT_HOSTS.has(host)) return true;
+  return IMPORT_FORGE_PAGES.some((page) => host === page || host.endsWith("." + page));
+}
+
 const IMPORT_ALLOWED = [...IMPORT_HOSTS].slice(0, 8).join(", ");
 
 /** The first `@import` a theme may not make, or an empty string. */
 function importProblem(css) {
-  for (const statement of css.matchAll(/@import\s+([^;]*);?/gi)) {
-    const value = String(statement[1] || "").trim();
-    const wrapped = /^url\(\s*['"]?([^'")]*?)['"]?\s*\)$/i.exec(value) || /^['"]([^'"]*)['"]$/.exec(value);
-    const target = wrapped ? wrapped[1].trim() : "";
+  // Comments are not statements. Several themes in the published library carry a
+  // commented-out or prose `@import` ("remove this @import if you wish to use the default
+  // titlebar"), and reading those as live refused the whole theme with "an @import with
+  // nothing to import" - a theme that installed fine when pasted as a file.
+  const live = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const statement of live.matchAll(/(?:^|[\s;}])@import\s+(url\(\s*['"]?([^'"\)]*)['"]?\s*\)|['"]([^'"]*)['"])/gi)) {
+    // The url is read from the front of the statement rather than by splitting on `;`: an
+    // import whose url carries an HTML-escaped ampersand (`&amp;display=swap`, which several
+    // Google Fonts urls in the library do) has a semicolon in the middle of it, and splitting
+    // there left half a url - which read as "nothing to import" and refused the whole theme.
+    const target = String(statement[2] || statement[3] || "").trim();
     if (!target) return "an @import with nothing to import is not allowed in a theme";
     if (!/^https:\/\//i.test(target)) return "@import must be an https url, and this one is " + target.slice(0, 60);
     let host = "";
@@ -97,8 +131,16 @@ function importProblem(css) {
     } catch {
       return "that @import is not a url: " + target.slice(0, 60);
     }
-    if (!IMPORT_HOSTS.has(host)) {
-      return "@import from " + host + " is not allowed: a theme may import from " + IMPORT_ALLOWED + " and nowhere else";
+    if (!importHostAllowed(host)) {
+      return (
+        "@import from " +
+        host +
+        " is not allowed: a theme may import from " +
+        IMPORT_ALLOWED +
+        ", a forge's pages (" +
+        IMPORT_FORGE_PAGES.map((page) => "*." + page).join(", ") +
+        ") and nowhere else"
+      );
     }
   }
   return "";

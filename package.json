@@ -1,6 +1,6 @@
 {
  "name": "hypercord",
- "productName": "Hypercord",  "version": "0.3.16",
+ "productName": "Hypercord",  "version": "0.3.17",
  "private": true,
  "author": {
   "name": "Hypercord",
@@ -11,6 +11,9 @@
  "license": "GPL-3.0-or-later",
  "main": "src/main.js",
  "scripts": {
+  "clean": "node scripts/clean.mjs",
+  "check:size": "node scripts/check-size.mjs",
+  "audit:releases": "node scripts/audit-releases.mjs --out docs/release-audit.md --json release-audit.json",
   "vendor": "node scripts/vendor.mjs",
   "vendor:check": "node scripts/vendor.mjs --check",
   "build:addons": "node scripts/build_addons.mjs",
@@ -21,7 +24,7 @@
   "start": "electron .",
   "perf": "electron . --perf",
   "test": "npm run test:units && npm run test:electron",
-  "test:units": "node tests/plugin-host/index.mjs && node tests/themes/index.mjs && node tests/patcher/index.mjs && node tests/attach/index.mjs && node tests/tokens/index.mjs && node tests/signin/index.mjs && node tests/bridge/index.mjs && node tests/release/index.mjs && node tests/loader/index.mjs && node tests/host/index.mjs && node tests/beef/index.mjs && node tests/shipped/index.mjs && node tests/linux-sandbox/index.mjs",
+  "test:units": "node tests/plugin-host/index.mjs && node tests/themes/index.mjs && node tests/patcher/index.mjs && node tests/attach/index.mjs && node tests/tokens/index.mjs && node tests/signin/index.mjs && node tests/bridge/index.mjs && node tests/release/index.mjs && node tests/loader/index.mjs && node tests/host/index.mjs && node tests/beef/index.mjs && node tests/shipped/index.mjs && node tests/linux-sandbox/index.mjs && node --test tests/apk-signature.test.mjs tests/size-budget.test.mjs tests/release-audit.test.mjs",
   "test:electron": "npm run test:asar && npm run test:updater && npm run test:preload && npm run test:feed-live",
   "test:plugins": "node tests/plugin-host/index.mjs",
   "test:themes": "node tests/themes/index.mjs",

@@ -347,8 +347,11 @@ function fill(node, text) {
  * echoed is the label or the account it belongs to.
  */
 async function addToken(valueInput, labelInput, hint) {
-  const value = valueInput ? String(valueInput.value || "") : "";
-  if (!value.trim()) {
+  // The token is trimmed, because a copy carries the line break the person did not
+  // paste on purpose - and a token with whitespace in it was refused as "not a token"
+  // before Discord ever saw it, which reads exactly like a token Discord will not take.
+  const value = valueInput ? String(valueInput.value || "").trim() : "";
+  if (!value) {
     fill(hint, "paste a user token first");
     return { ok: false, error: "empty" };
   }
@@ -361,10 +364,20 @@ async function addToken(valueInput, labelInput, hint) {
   }
   if (valueInput) valueInput.value = "";
   if (labelInput) labelInput.value = "";
-  fill(hint, res && res.ok ? "stored and signed in as " + (res.label || res.account) : "refused: " + ((res && res.error) || "unknown"));
+  // "stored" and "signed in" are two different things, and saying the first as if it
+  // were the second is what made a failed sign-in look like a working one: the token is
+  // kept either way, and when this client did not take it the prompt says so, with the
+  // reason the shell gave.
+  const who = (res && (res.label || res.account)) || "that account";
+  if (res && res.ok && res.signedInOk === false) {
+    const why = (res.signedIn && res.signedIn.error) || "the client stayed on its login page";
+    fill(hint, "stored " + who + ", but this client did not sign in: " + why);
+  } else {
+    fill(hint, res && res.ok ? "stored and signed in as " + who : "refused: " + ((res && res.error) || "unknown"));
+  }
   if (res && res.ok) {
     hidePrompt();
-    call("notify", "Hypercord", "Signed in with a stored user token").catch(() => {});
+    call("notify", "Hypercord", res.signedInOk === false ? "The token is stored; the client did not sign in with it" : "Signed in with a stored user token").catch(() => {});
   }
   return res;
 }
@@ -1699,6 +1712,30 @@ function clearSettingsSet() {
 }
 
 /**
+ * The runtime's own row for a page ours already offers is hidden, not removed.
+ *
+ * Two rows wearing one name beside each other is what "there are two Themes tabs" is, and
+ * which of the two to keep is not a matter of taste: our themes page draws the runtime's own
+ * themes tab *inside* it and carries the library that tab has none of, so their row opens
+ * strictly less than ours. The row is the runtime's node and React owns it, so it is hidden
+ * rather than taken out - this client does not delete what it does not own. Re-applied on
+ * every pass, so a re-render that puts the row back is answered on the next one.
+ */
+function shadowMergedDuplicates(place, wanted) {
+  if (place.kind !== "merged" || !place.list) return;
+  const ours = new Set(wanted.map((view) => settingsLabel(view).toLowerCase()));
+  for (const row of [...place.list.children]) {
+    if (row.hasAttribute("data-hypercord")) continue;
+    const label = settingsLabelNode(row);
+    const name = label ? String(label.textContent || "").trim().toLowerCase() : "";
+    if (!name || !ours.has(name)) continue;
+    if (row.getAttribute("data-hypercord-shadow") === "true") continue;
+    row.setAttribute("data-hypercord-shadow", "true");
+    row.style.display = "none";
+  }
+}
+
+/**
  * Add the set where this sidebar wants it: a copied section of Discord's when there is
  * one to copy, and our label above plain entries when the sidebar holds the rows itself.
  */
@@ -1710,6 +1747,7 @@ function addSettingsSet(place, wanted) {
     // div with the role, the content with the label - so the client's stylesheet lays them
     // out and hovers them exactly as the rows they were added beside.
     wanted.forEach((view, index) => place.list.appendChild(settingsNativeEntry(place, view, index === 0)));
+    shadowMergedDuplicates(place, wanted);
   } else {
     const group = place.kind === "sections" ? settingsNativeGroup(place, wanted) : null;
     if (group) {
@@ -1773,6 +1811,9 @@ function ensureSettingsEntry() {
         group.parentElement === place.list &&
         current.every((node) => (place.kind === "sections" ? group.contains(node) : node.parentElement === place.list)));
   if (settled) {
+    // a settled set is also where a row of theirs that came back is answered: the runtime
+    // re-renders its own section freely, and a duplicate that reappears is hidden again here
+    shadowMergedDuplicates(place, wanted);
     noteSettingsEntry("added", place.nav, wanted.length);
     reportOnce(
       "added-" + place.kind + "-" + wanted.join(","),

@@ -678,6 +678,131 @@ def preflight(modules, gradle="gradle") -> list:
     return blockers
 
 
+def signature_block(apk_path: Path) -> list:
+    """The APK's signature files, read straight out of the container.
+
+    This is the **v1** half of a signature: `META-INF/*.SF` plus its `.RSA`/`.DSA`/`.EC`
+    counterpart. A modern APK is usually signed with v2/v3 only, which leaves these files
+    out entirely - see `signing_schemes` for the check that decides whether an APK is
+    signed at all. Android answers `INSTALL_PARSE_FAILED_NO_CERTIFICATES` for a file with
+    neither. The 0.3.16 loader shipped with neither, so this reads the bytes instead of
+    trusting the build: a release pipeline that strips `META-INF/*` after a v1-signed
+    build produces exactly that, and no warning makes the file installable.
+
+    Returns the sorted `META-INF` names that are signature material, so a caller can
+    report which scheme signed it rather than only that something did.
+    """
+    try:
+        with zipfile.ZipFile(apk_path) as archive:
+            names = archive.namelist()
+    except (OSError, zipfile.BadZipFile) as error:
+        # Never `return []` here. An unreadable path and an unsigned APK are different
+        # facts, and returning the same answer for both is how a path bug reads as a
+        # security finding - this check did exactly that once, on a path the Windows
+        # interpreter could not open.
+        raise BuildError(f"cannot read the APK at {apk_path}: {error}") from error
+    found = []
+    for name in names:
+        upper = name.upper()
+        if not upper.startswith("META-INF/") or "/" in upper[len("META-INF/"):]:
+            continue
+        if upper.endswith((".RSA", ".DSA", ".EC", ".SF")):
+            found.append(name)
+    return sorted(found)
+
+
+# The APK Signing Block ends with this 16-byte magic, immediately before the ZIP central
+# directory (APK signature scheme v2, and the block v3 lives in as well).
+APK_SIG_BLOCK_MAGIC = b"APK Sig Block 42"
+# The pair identifiers inside that block, by the scheme each one carries.
+SIGNING_BLOCK_IDS = {
+    0x7109871A: "v2",
+    0xF05368C0: "v3",
+    0x1B93AD61: "v3.1",
+}
+
+
+def signing_schemes(apk_path: Path) -> list:
+    # (the file is read below; an unreadable one raises rather than reporting "no schemes")
+    """Which signature schemes an APK actually carries, read from the file.
+
+    Both halves matter, and checking only the first was a real mistake here: with
+    `minSdk 28` the Android Gradle Plugin signs a release with **v2 only** (v1 is dropped
+    once no supported platform needs it), so a correctly signed build has *no* `META-INF`
+    signature files at all. A v1-only check would have failed every good build, and a
+    presence-of-`META-INF`-files check would have called an unsigned APK signed.
+
+    A v1 signature is the JAR material (`META-INF/*.SF` plus `.RSA`/`.DSA`/`.EC`). A v2/v3
+    signature is the APK Signing Block: a length-prefixed list of id/value pairs ending in
+    `APK Sig Block 42`, sitting directly before the central directory. This reads the
+    central directory offset out of the end-of-central-directory record and walks back
+    through the block, so it reports "v2" for a signed APK with an empty META-INF - and
+    `[]` for the 0.3.16 loader, which had neither.
+    """
+    schemes = []
+    if signature_block(apk_path):
+        schemes.append("v1")
+    try:
+        handle = open(apk_path, "rb")
+    except OSError as error:
+        raise BuildError(f"cannot read the APK at {apk_path}: {error}") from error
+    with handle:
+        handle.seek(0, os.SEEK_END)
+        size = handle.tell()
+        # The EOCD record is 22 bytes plus a comment of up to 65,535.
+        window = min(size, 22 + 65535)
+        handle.seek(size - window)
+        tail = handle.read(window)
+        at = tail.rfind(b"PK\x05\x06")
+        if at < 0 or at + 22 > len(tail):
+            return schemes
+        cd_offset = int.from_bytes(tail[at + 16 : at + 20], "little")
+        if cd_offset < 32 or cd_offset > size:
+            return schemes
+        handle.seek(cd_offset - 24)
+        footer = handle.read(24)
+        if len(footer) != 24 or footer[8:] != APK_SIG_BLOCK_MAGIC:
+            return schemes
+        block_size = int.from_bytes(footer[0:8], "little")
+        start = cd_offset - block_size - 8
+        if start < 0 or block_size < 24:
+            return schemes
+        handle.seek(start)
+        block = handle.read(block_size + 8)
+        # [size][pairs...][size][magic]: the inner pairs sit between the two sizes.
+        position = 8
+        end = len(block) - 24
+        while position + 12 <= end:
+            pair_length = int.from_bytes(block[position : position + 8], "little")
+            if pair_length < 4 or position + 8 + pair_length > end:
+                break
+            pair_id = int.from_bytes(block[position + 8 : position + 12], "little")
+            name = SIGNING_BLOCK_IDS.get(pair_id)
+            if name and name not in schemes:
+                schemes.append(name)
+            position += 8 + pair_length
+    return schemes
+
+
+def require_signature(apk_path: Path, configured: bool, module: str = "") -> list:
+    """The schemes signing this APK, refusing a build that signed nothing while trying to.
+
+    Split out of `build_variant` so the refusal is testable without Gradle: `configured`
+    is whether this build asked for signing (a keystore was resolved), and an APK with no
+    scheme at all after asking for one is a failed build, not a warning.
+    """
+    schemes = signing_schemes(apk_path)
+    if configured and not schemes:
+        raise BuildError(
+            f"the APK built for {module or 'this module'} carries no signature at all: neither "
+            "a v1 JAR signature in META-INF nor a v2/v3 APK Signing Block. Signing was "
+            "configured, so this file would be refused by Android at install time "
+            "(INSTALL_PARSE_FAILED_NO_CERTIFICATES). Nothing signed was produced, so nothing "
+            "is accepted"
+        )
+    return schemes
+
+
 def build_variant(module: str, variant: str, output: Path, keystore: dict, gradle: str = "gradle") -> dict:
     """Run Gradle for one module and accept the APK only after looking at it."""
     command = gradle_command(module, variant, keystore, gradle)
@@ -698,15 +823,19 @@ def build_variant(module: str, variant: str, output: Path, keystore: dict, gradl
             f"the APK Gradle produced for {module} is not usable:\n  - "
             + "\n  - ".join(problems)
         )
+    schemes = require_signature(destination, bool(keystore), module)
     record = {
         "module": module,
         "variant": variant,
         "file": str(destination.relative_to(ROOT)).replace(os.sep, "/"),
         "bytes": destination.stat().st_size,
         "sha256": sha256_of(destination),
-        "signed": bool(keystore),
+        "signed": bool(schemes),
+        "signature_schemes": schemes,
+        "signature_block": signature_block(destination),
         "signing": (
-            f"injected signing with alias {keystore['key_alias']} ({keystore['type']})"
+            f"injected signing with alias {keystore['key_alias']} ({keystore['type']}), "
+            f"schemes {', '.join(schemes) or 'MISSING'}"
             if keystore
             else "unsigned: no keystore was provided, so this APK cannot be published"
         ),
@@ -884,6 +1013,25 @@ def main(argv=None) -> int:
                 write_acceptance(acceptance_path, record)
                 print(f"\nthe loader APK was built but is not publishable. Record: {acceptance_path}")
                 return 1
+
+    # Every artifact is checked, signed or not: the signature is a property of the bytes and
+    # an APK without one cannot be installed, so it is never a publishable candidate.
+    for artifact in record["artifacts"]:
+        target = ROOT / artifact["file"]
+        # v1 (META-INF) and v2/v3 (APK Signing Block) both count: with minSdk 28 a correct
+        # AGP release carries only v2, so requiring META-INF/*.RSA would reject every good build.
+        schemes = signing_schemes(target)
+        record["checks"].append(
+            {
+                "check": f"{artifact['module']}: the APK carries a signature ({'v1 and/or v2/v3'})",
+                "ok": bool(schemes),
+                "detail": ", ".join(schemes) if schemes else "none - Android refuses this file at install time",
+            }
+        )
+        if not schemes:
+            write_acceptance(acceptance_path, record)
+            print(f"FAIL {artifact['file']} is unsigned and cannot be installed")
+            return 1
 
     apksigner = shutil.which("apksigner")
     if apksigner and keystore:

@@ -2571,7 +2571,9 @@
     const valueBox = $("hp-tokenValue");
     const labelBox = $("hp-tokenLabel");
     const account = text(accountBox ? accountBox.value : "").trim();
-    const value = text(valueBox ? valueBox.value : "");
+    // trimmed for the same reason the prompt's form trims: a pasted token arrives with a
+    // newline, and the store refuses whitespace before Discord ever sees the key
+    const value = text(valueBox ? valueBox.value : "").trim();
     const label = text(labelBox ? labelBox.value : "").trim();
     if (!account || !value) {
       say("an account and a token are both needed", "bad");

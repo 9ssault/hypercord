@@ -538,16 +538,28 @@ export function createHost({
    * to, then store it under that account's own id with the username as its label.
    * A token Discord will not accept is never written.
    */
-  async function addToken(secret, { label = "", use = true } = {}) {
+  async function addToken(rawSecret, { label = "", use = true } = {}) {
     if (!tokens) return { ok: false, error: "no token store in this run" };
+    // Trimmed here as well as in the two forms that hand a token over, because this is the
+    // one place every path goes through: a copy carries the line break the person did not
+    // mean to paste, and whitespace is not something Discord's tokens have.
+    const secret = String(rawSecret === undefined || rawSecret === null ? "" : rawSecret).trim();
     const check = await identifyToken(secret);
-    if (!check.ok) return check;
+    if (!check.ok) {
+      // Said out loud, because this refusal happens before any sign-in is attempted and
+      // otherwise leaves no trace at all - the reason the prompt showed was the only copy.
+      logSignIn("token refused before it was stored: " + String(check.error || "no reason given"));
+      return check;
+    }
     const account = check.identity.id;
     // what Discord just told us about the account is stored with the key: a page that
     // shows a name and an avatar should not have to ask again, and a machine that is
     // offline later still knows whose key it holds
-    const stored = tokens.put(account, String(secret), { label: String(label || check.identity.username), identity: check.identity });
-    if (!stored.ok) return stored;
+    const stored = tokens.put(account, secret, { label: String(label || check.identity.username), identity: check.identity });
+    if (!stored.ok) {
+      logSignIn("token for " + account + " was not stored: " + String(stored.error || "no reason given"));
+      return stored;
+    }
     const signedIn = use ? await useToken(account) : { ok: true, skipped: true };
     // the token is real - Discord confirmed it - but that is not the same as this
     // client having signed in with it, and the difference is what the caller shows

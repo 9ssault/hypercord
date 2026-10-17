@@ -324,6 +324,14 @@ ok(
   strangerHost.ok === false && /evil\.example/.test(strangerHost.error),
   JSON.stringify(strangerHost),
 );
+// A theme's own module on its author's GitHub Pages is how the published library works:
+// the first theme in the index imports from saltssaumure.github.io, and refusing that host
+// refused the whole install with "@import ... is not allowed" - which is what "installing
+// from the library fails" was. The forge's pages are allowed; a lookalike host is not.
+const forgePages = sanitizeCss('@import url("https://saltssaumure.github.io/base.css");\n.q { color: red; }');
+ok("an @import from a theme author's GitHub Pages is allowed", forgePages.ok === true, JSON.stringify(forgePages));
+const lookalike = sanitizeCss('@import url("https://evilgithub.io/x.css");\n.r { color: red; }');
+ok("a host that only ends in the same letters is still refused", lookalike.ok === false && /evilgithub\.io/.test(lookalike.error), JSON.stringify(lookalike));
 ok("a relative @import is refused", sanitizeCss('@import "x.css";\n.w { color: red; }').ok === false, JSON.stringify(sanitizeCss('@import "x.css";')));
 ok("a plain http @import is refused", sanitizeCss('@import url("http://fonts.googleapis.com/x.css");\n.v { color: red; }').ok === false, "");
 

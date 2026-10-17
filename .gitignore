@@ -7,6 +7,10 @@ dist/
 tmp-diag/
 *.log
 
+# the artifacts `npm run audit:releases` downloads to read published releases back:
+# reproducible from the release page, and tens of megabytes per version
+release-audit/
+
 # OS noise
 .DS_Store
 Thumbs.db

@@ -228,7 +228,9 @@ const SETTINGS_SECTIONS_PAGE = `<!doctype html><html style="--header-primary: #f
 // branded Hypercord, and the same runtime under its older names draws Equicord or Vencord on
 // that heading - which the client has to accept too, because the heading is the only part of
 // the section that is the runtime's own name rather than a copy of Discord's vocabulary.
-const SETTINGS_EQUICORD_PAGE = SETTINGS_SECTIONS_PAGE.replace(/Billing/g, "Hypercord Settings");
+// One of the runtime's own rows is called Themes, because the real one is: that row and the
+// page of ours merged into the same list are the two Themes tabs this suite pins down.
+const SETTINGS_EQUICORD_PAGE = SETTINGS_SECTIONS_PAGE.replace(/Billing/g, "Hypercord Settings").replace(/>Subscriptions</, ">Themes<");
 const SETTINGS_VENCORD_PAGE = SETTINGS_SECTIONS_PAGE.replace(/Billing/g, "Vencord");
 
 // The shape the live client failed in, and the one thing the placement exists to get right: a
@@ -2237,6 +2239,30 @@ async function run() {
     JSON.stringify(mergedSeen.entryViews),
   );
   ok("and that section's own rows are left alone", mergedSeen.theirRows === 3, String(mergedSeen.theirRows));
+  // The runtime's own row for a page ours also offers is hidden rather than offered twice.
+  // Two rows called Themes beside each other was the report ("there are two tab again"),
+  // and ours is the one kept because it draws the runtime's tab and the library as well.
+  const duplicated = await page(
+    merged.win,
+    `(() => {
+    const section = [...document.querySelectorAll("ul.sublist__409aa > li.section__409aa")].find((li) => /hypercord/i.test(String(li.textContent || "")));
+    const list = section ? section.querySelector("ul.sectionList__409aa") : null;
+    const rows = list ? [...list.children] : [];
+    const named = rows.filter((row) => /^themes$/i.test(String(row.textContent || "").trim()));
+    const shown = named.filter((row) => getComputedStyle(row).display !== "none" && row.getClientRects().length > 0);
+    return {
+      named: named.length,
+      shown: shown.length,
+      ours: shown.filter((row) => row.getAttribute("data-hypercord") === "settings").length,
+      shadowed: rows.filter((row) => row.getAttribute("data-hypercord-shadow") === "true").length,
+    };
+  })()`,
+  );
+  ok(
+    "the runtime's own Themes row is shadowed, so exactly one Themes tab is on screen",
+    duplicated.shown === 1 && duplicated.ours === 1 && duplicated.shadowed === 1,
+    JSON.stringify(duplicated),
+  );
   ok(
     "they wear the name of the section they were added to",
     mergedSeen.ariaBrand === "Hypercord" && mergedSeen.firstLabel === "Commands",

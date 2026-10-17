@@ -430,6 +430,14 @@ jobs:
         shell: bash
         run: ${{ matrix.list }}
 
+      # The installer is measured against `scripts/size-budget.json` here, on the platform
+      # that produced it, because the budget is only worth having if a release fails when
+      # it is crossed. An artifact that was not built is reported as unmeasured, not as
+      # zero bytes, so a matrix leg with nothing to weigh does not look like a pass.
+      - name: Check the artifact size budget
+        shell: bash
+        run: node scripts/check-size.mjs --output "dist/size-${{ matrix.label }}.json"
+
       # The update loop, on the artifact this job just produced. Why here and not with the other
       # suites: they drive the *source* before anything is packed, and the failure this one covers
       # is only in the artifact - a packed client was started against a feed offering a version it
@@ -715,8 +723,9 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ] && [ -n "$HYPERCORD_SIGNING_PASSWORD" ]; then
             echo "signing: a keystore is configured (KEYSTORE_BASE64 is set)"
           else
-            echo "signing: UNSIGNED - KEYSTORE_BASE64 and HYPERCORD_SIGNING_PASSWORD are not both set,"
-            echo "         so the APKs cannot be signed and Android will refuse to update over a signed install"
+            echo "signing: no keystore secret - a generated release key is used for the APKs"
+            echo "         (store KEYSTORE_BASE64 and HYPERCORD_SIGNING_PASSWORD to keep one identity"
+            echo "          across releases; an install only updates over the key it was signed with)"
           fi
 
       # The keystore is written to the runner's temporary directory, never into the
@@ -745,15 +754,22 @@ jobs:
           # silently fall back to a Gradle that is not on the runner at all: it is made
           # executable here, and then used.
           if [ -f ./gradlew ]; then chmod +x ./gradlew; export GRADLE_CMD="$PWD/gradlew"; fi
-          if [ -n "${KEYSTORE_BASE64}" ]; then
+          if [ -n "${KEYSTORE_BASE64}" ] && [ -n "${HYPERCORD_SIGNING_PASSWORD}" ]; then
             export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/manager.p12"
             trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
             printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$HYPERCORD_KEYSTORE_PATH"
           else
-            # An unsigned APK still installs; it simply cannot update over one signed with a
-            # different key. Asking for it explicitly is what keeps "we meant to sign this"
-            # distinguishable from "the keystore secret is missing".
-            export HYPERCORD_ALLOW_UNSIGNED=1
+            # There is no "unsigned on purpose" any more, because Android does not install an
+            # APK without a signature block: it answers INSTALL_PARSE_FAILED_NO_CERTIFICATES.
+            # A run without the keystore secrets signs with a generated release key, which
+            # installs; only a stored key updates an existing install, and the run says so.
+            export HYPERCORD_KEYSTORE_PATH="$RUNNER_TEMP/generated.p12"
+            export HYPERCORD_SIGNING_PASSWORD="$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
+            trap 'rm -f "$HYPERCORD_KEYSTORE_PATH"' EXIT
+            keytool -genkeypair -keystore "$HYPERCORD_KEYSTORE_PATH" -storetype PKCS12 \
+              -alias hypercord -keyalg RSA -keysize 4096 -validity 10950 \
+              -dname "CN=Hypercord, O=Hypercord, C=US" \
+              -storepass "$HYPERCORD_SIGNING_PASSWORD" -keypass "$HYPERCORD_SIGNING_PASSWORD" >/dev/null 2>&1
           fi
           # The Gradle log is captured and uploaded below: a Gradle failure is the one
           # thing nobody can reproduce without the runner's JDK, SDK and Gradle cache,
@@ -772,6 +788,9 @@ jobs:
           timeout 8m xvfb-run -a npm run test:updater
           echo "--- preload suite"
           timeout 8m xvfb-run -a npm run test:preload
+          # measured before the record is written, so an over-budget release never becomes
+          # a candidate: `scripts/size-budget.json` is the line the APKs have to stay under
+          node scripts/check-size.mjs --output release/size.json
           python3 scripts/candidate_artifacts.py collect release/candidate
 
       - name: Name, checksum and record the APKs
@@ -792,7 +811,7 @@ jobs:
 
       - name: Remove the signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/manager.p12"
+        run: rm -f "$RUNNER_TEMP/manager.p12" "$RUNNER_TEMP/generated.p12"
 
       # The record is staged at the root of the workspace before it travels, so this
       # artifact's files share one directory: an artifact whose files sit in two

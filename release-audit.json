@@ -1,0 +1,659 @@
+{
+  "schema": 1,
+  "releases": [
+    {
+      "tag": "v0.3.16",
+      "publishedAt": "2026-10-17T02:36:50Z",
+      "prerelease": false,
+      "assets": 43,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638629404
+    },
+    {
+      "tag": "v0.3.15",
+      "publishedAt": "2026-10-17T02:20:46Z",
+      "prerelease": false,
+      "assets": 43,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638624295
+    },
+    {
+      "tag": "v0.3.14",
+      "publishedAt": "2026-10-17T01:50:44Z",
+      "prerelease": false,
+      "assets": 43,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638599209
+    },
+    {
+      "tag": "v0.3.13",
+      "publishedAt": "2026-10-17T01:38:45Z",
+      "prerelease": false,
+      "assets": 43,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638598811
+    },
+    {
+      "tag": "v0.3.12",
+      "publishedAt": "2026-10-17T01:28:18Z",
+      "prerelease": false,
+      "assets": 43,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638598721
+    },
+    {
+      "tag": "v0.3.11",
+      "publishedAt": "2026-10-17T01:10:22Z",
+      "prerelease": false,
+      "assets": 18,
+      "platforms": {
+        "windows": 0,
+        "macos": 0,
+        "linux": 6,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "manager",
+            "signed": false,
+            "schemes": []
+          },
+          {
+            "module": "loader",
+            "signed": false,
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 619319952
+    },
+    {
+      "tag": "v0.3.8",
+      "publishedAt": "2026-10-15T02:52:12Z",
+      "prerelease": false,
+      "assets": 8,
+      "platforms": {
+        "windows": 0,
+        "macos": 0,
+        "linux": 6,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 619226669
+    },
+    {
+      "tag": "v0.3.6",
+      "publishedAt": "2026-10-14T02:43:18Z",
+      "prerelease": false,
+      "assets": 37,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 6,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1638331222
+    },
+    {
+      "tag": "v0.3.5",
+      "publishedAt": "2026-10-12T03:46:40Z",
+      "prerelease": false,
+      "assets": 33,
+      "platforms": {
+        "windows": 9,
+        "macos": 8,
+        "linux": 4,
+        "android": 2
+      },
+      "apks": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "bytes": 292311,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 409600
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "bytes": 6625372,
+          "schemes": [
+            "v1",
+            "v2",
+            "v3"
+          ],
+          "budget": 8388608
+        }
+      ],
+      "integrity": [
+        {
+          "name": "Hypercord-Loader.apk",
+          "status": "matches"
+        },
+        {
+          "name": "Hypercord-Manager.apk",
+          "status": "matches"
+        }
+      ],
+      "acceptance": {
+        "signed": [
+          {
+            "module": "loader",
+            "signed": "absent",
+            "schemes": []
+          },
+          {
+            "module": "manager",
+            "signed": "absent",
+            "schemes": []
+          }
+        ]
+      },
+      "overBudget": [],
+      "desktopBytes": 1414241169
+    },
+    {
+      "tag": "v0.3.4",
+      "publishedAt": "2026-10-12T03:21:03Z",
+      "prerelease": false,
+      "assets": 25,
+      "platforms": {
+        "windows": 8,
+        "macos": 8,
+        "linux": 4,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 1215677642
+    },
+    {
+      "tag": "v0.3.3",
+      "publishedAt": "2026-10-12T03:05:13Z",
+      "prerelease": false,
+      "assets": 23,
+      "platforms": {
+        "windows": 8,
+        "macos": 8,
+        "linux": 3,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 1118406296
+    },
+    {
+      "tag": "v0.3.2",
+      "publishedAt": "2026-10-12T02:51:29Z",
+      "prerelease": false,
+      "assets": 21,
+      "platforms": {
+        "windows": 8,
+        "macos": 8,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 812158096
+    },
+    {
+      "tag": "v0.3.1",
+      "publishedAt": "2026-10-12T02:45:22Z",
+      "prerelease": false,
+      "assets": 20,
+      "platforms": {
+        "windows": 8,
+        "macos": 8,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 812158951
+    },
+    {
+      "tag": "v0.3.0",
+      "publishedAt": "2026-10-12T02:35:22Z",
+      "prerelease": false,
+      "assets": 12,
+      "platforms": {
+        "windows": 8,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 597237773
+    },
+    {
+      "tag": "v0.2.9",
+      "publishedAt": "2026-10-12T02:23:38Z",
+      "prerelease": false,
+      "assets": 13,
+      "platforms": {
+        "windows": 9,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 795878476
+    },
+    {
+      "tag": "v0.2.5",
+      "publishedAt": "2026-10-12T01:02:33Z",
+      "prerelease": false,
+      "assets": 0,
+      "platforms": {
+        "windows": 0,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 0
+    },
+    {
+      "tag": "v0.2.4",
+      "publishedAt": "2026-10-12T00:53:18Z",
+      "prerelease": false,
+      "assets": 2,
+      "platforms": {
+        "windows": 1,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 102855210
+    },
+    {
+      "tag": "v0.2.3",
+      "publishedAt": "2026-10-12T00:44:32Z",
+      "prerelease": false,
+      "assets": 2,
+      "platforms": {
+        "windows": 1,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 102854886
+    },
+    {
+      "tag": "v0.2.0",
+      "publishedAt": "2026-10-12T00:07:57Z",
+      "prerelease": false,
+      "assets": 5,
+      "platforms": {
+        "windows": 3,
+        "macos": 0,
+        "linux": 1,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 418864991
+    },
+    {
+      "tag": "v0.1.0",
+      "publishedAt": "2026-10-11T22:04:06Z",
+      "prerelease": true,
+      "assets": 0,
+      "platforms": {
+        "windows": 0,
+        "macos": 0,
+        "linux": 0,
+        "android": 0
+      },
+      "apks": [],
+      "integrity": [],
+      "acceptance": null,
+      "overBudget": [],
+      "desktopBytes": 0
+    }
+  ]
+}

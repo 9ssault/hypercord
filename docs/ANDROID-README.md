@@ -111,25 +111,29 @@ HTML is prepared in the client's private cache. **Save latest HTML transcript** 
 
 ## Build
 
-Requirements for the Java half: Java 21, Android SDK platform 36 and build-tools 36.0.0, with Python 3.9+ for the helper scripts. The release workflow under `.github/workflows/android-release.yml` pins **JDK 17** and Node 20, so the two disagree about the JDK today.
+Requirements for the Java half: Java 21, Android SDK platform 36 and build-tools 36.0.0, with Python 3.9+ for the helper scripts. `.github/workflows/android-release.yml` pins JDK 21 and Node 20 for the same reason - an older JDK fails as `invalid source release: 21` a minute into Gradle, which reads as a broken source file.
 
-**Known gap: as it stands this tree cannot build the APK.** What is here is source - the `android/manager/` and `android/loader/` Java sources and resources, the JavaScript half in `core/`, `utils/`, `plugins/` and `themes/`, the `node --test tests/*.test.mjs` suites, and the desktop client's own `package.json` and lockfile. What is **not** here: a Gradle wrapper or any `*.gradle` / `settings.gradle`, an Android `package.json`, `scripts/build_android.py`, `scripts/candidate_artifacts.py`, `scripts/pack_release_artifacts.py`, `scripts/android-dependencies.json`, `android/licenses/` and `android/LICENSE`. The commands below are therefore not supported by anything in this repository, the download portal and `public/releases/` are not part of it either, and `docs/android-build-release.md`, `docs/in-app-controls.md`, `docs/publish-your-release.md`, `docs/android-validation.md`, `docs/expansion-2.7.md` and `docs/release-notes.md` do not exist. Restoring the build means bringing the wrapper, the dependency pins and the packaging scripts back together; the signing identity is the one part that cannot be recreated.
+The build is `scripts/build_android.py`, and it is in this tree together with the Gradle files, the dependency pins and the packaging scripts:
 
 ```bash
-# The intended sequence, not a script this tree currently ships.
-export ANDROID_HOME=/path/to/android-sdk
 npm ci
-npm run build:android
+npm run build:addons                 # regenerates android/loader/src/main/assets/addons.js
+export ANDROID_HOME=/path/to/android-sdk
+python3 scripts/build_android.py --all-variants   # -> release/candidate/*.apk + release/acceptance.json
 npm test
-npm run build
-npm run dev
 ```
 
-`build:android` was meant to verify pinned dependency SHA-256 values, builds Manager and its embedded loader, runs Android lint and verifies the APK signature. It writes `public/releases/Assault-Manager.apk`, an immutable content-hash APK for portal downloads, and an atomically switched manifest. Retain the immutable APKs while old download links are in use. These outputs are ignored by Git. No Discord APK is redistributed by this repository; Manager fetches and verifies it on-device. Release builds are meant to use a persistent private key at `$HOME/.local/share/assault/signing/manager.p12` with a protected password file beside it. Back up this directory securely before moving build environments. The release workflow decodes the `KEYSTORE_BASE64` secret into `HYPERCORD_KEYSTORE_PATH` and expects `HYPERCORD_SIGNING_PASSWORD` to reuse the same identity. Never commit or distribute signing material. A different signing key cannot update an existing Manager installation.
+It resolves the pinned inputs in `scripts/android-dependencies.json`, builds Manager and the loader it embeds, and refuses an APK that is unusable: a missing or empty asset, the addons placeholder, an entrypoint that names another class, an unexpected licence, or - the one that shipped in 0.3.16 - **no signature block**. An APK with no `META-INF/*.RSA`/`*.SF` is not merely "unsigned": Android answers `INSTALL_PARSE_FAILED_NO_CERTIFICATES` and refuses to install it, so the build treats it as a failure rather than a warning.
 
-The web app at port 3000 (not in this tree) is a **download portal**. It serves actual generated artifacts and reports an unavailable build until Android compilation succeeds. It does not proxy Discord credentials or pretend to run Discord in an iframe.
+Release signing comes from two Actions secrets, `KEYSTORE_BASE64` and `HYPERCORD_SIGNING_PASSWORD`; the workflow decodes the keystore into `HYPERCORD_KEYSTORE_PATH` and passes both through Gradle's injected-signing properties, so no signing material is ever a tracked file. **A different key cannot update an existing installation**, so back the keystore up before changing build machines. With neither secret set the job generates a self-signed release key (30 years) and says so: the APKs install, but an install only updates across releases while that generated key is replaced with a stored one. Every artifact's signature block is recorded in `release/acceptance.json` (`signature_block`) and checked by `tests/apk-signature.test.mjs`. Never commit or distribute signing material.
 
-The [Android build, install and release instructions](docs/android-build-release.md) that described all four APK variants, reinstall commands and device checks are not in the tree. What does remain is the tag-triggered workflow at `.github/workflows/android-release.yml`: it prepares `Hypercord-Manager.apk` and `Hypercord-Loader.apk`, expects `KEYSTORE_BASE64` and `HYPERCORD_SIGNING_PASSWORD` as repository Actions secrets, requires an HTTPS acceptance record before publishing, and calls the three `scripts/*.py` helpers named above as missing.
+No Discord APK is redistributed by this repository; Manager fetches and verifies it on-device, merges the loader in, and keeps the `com.discord` package for native component compatibility.
+
+## What the published releases actually contain
+
+[docs/release-audit.md](release-audit.md) is generated by `npm run audit:releases`, which reads every published tag back: the signature schemes each APK carries (v1 from `META-INF`, v2/v3 from the APK Signing Block), whether the APKs match the `SHA256SUMS` published beside them, their sizes against `scripts/size-budget.json`, and which platforms each release shipped.
+
+What it found, for the record: **every release that shipped an APK (0.3.5, 0.3.6, then 0.3.12 through 0.3.16) shipped one Android refuses to install** - no v1 signature files, no APK Signing Block - and the `SHA256SUMS` beside each one matches those bytes, so this is the release's own artifact and not a bad download. v0.3.16's loader also carried an `assets/addons.js` from an older tree (142,443 bytes where the committed bundle was 143,313). Neither could be caught from the source, which is why the audit exists and why the build now verifies both. Releases published before the fix cannot be installed; take a build from the fixed pipeline instead of patching one by hand, because a re-signed APK is a different app identity to Android and will not update over the old one.
 
 ## Where the code comes from
 

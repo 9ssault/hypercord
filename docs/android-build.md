@@ -125,11 +125,19 @@ release work: `android/signing.gradle` hangs a `requireReleaseSigning` task off
 `preReleaseBuild` and throws with the names of the two variables, because AGP
 quietly omits its own `validateSigningRelease` when nothing is configured.
 
-An unsigned release on purpose is asked for with `HYPERCORD_ALLOW_UNSIGNED=1`, and
-the build says so in its log. That APK installs, and it cannot update over an
-install signed with a different key; Android simply refuses the update. It must not
-be published, which is why `release/acceptance.json` records each artifact as
-signed or as "unsigned: no keystore was provided".
+There is no unsigned release path, because there is no unsigned *installable* APK:
+Android answers `INSTALL_PARSE_FAILED_NO_CERTIFICATES` for an APK with no signature
+block, so the 0.3.16 loader could not be installed at all. Without a keystore the
+release workflows generate a self-signed key for that run instead, and every artifact
+the build accepts carries a signature block that `release/acceptance.json` records
+by name (`signature_block`). A different key cannot update an existing install, which
+is why a stored keystore is the supported arrangement.
+
+`scripts/size-budget.json` is the other gate on the artifact: `npm run check:size`
+measures what was built (APKs, `app.asar`, the unpacked app, installers) against it
+and exits non-zero over the line, with `--output release/size.json` writing the
+measurement down. Both release workflows run it before an artifact becomes a
+candidate.
 
 ### 5. Publish
 
