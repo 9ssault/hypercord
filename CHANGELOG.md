@@ -17,7 +17,10 @@ what is written here is this client's own record.
   crashed on a clean checkout because its guard tested the directory (a checkout with the
   gitlinks uninitialised has the directory, empty), and a token-shaped test fixture made
   GitHub's push protection refuse the push. The Electron suites stay where they are, in the
-  release gate, on runners with a display.
+  release gate, on runners with a display - so the half of the sheet/vs-preload contract that
+  only ever needed a window is checked in plain node instead: every `hc.<group>.<method>` the
+  settings pages call is read off `src/panes.js` and matched against the api `src/preload.cjs`
+  exposes, which turns "a button that throws a TypeError on click" into a failing suite.
 
 ## 0.3.10
 

@@ -89,6 +89,84 @@ const channels = [...new Set(asked)];
 ok("the preload's own calls are readable", channels.length >= 20, "channels " + channels.length);
 ok("and they include the pages' data channels", channels.includes("ui:assets") && channels.includes("plugins:list") && channels.includes("plugins:section"), JSON.stringify(channels.slice(0, 8)));
 
+/* ---- 1b. every method the sheet calls is one the preload exposes --------- */
+
+// The channels above are half of the contract; the other half is the object the sheet
+// actually holds, `window.hypercord`. The sheet calls `hc.client.info()`, `hc.support.bundle()`,
+// `hc.themes.thumbnail(url)` - and a name that is not there is a TypeError in the window, on a
+// click, in a page no node suite ever loads. That was fine when the only thing checking the
+// sheet was the Electron suite; it is not fine now, because this file runs on every push and
+// the Electron suite does not.
+//
+// So the api is read off the preload's own source - the one place it is defined - by walking the
+// object literal `exposeInMainWorld("hypercord", { ... })` by its indentation, which is how that
+// file is written (two spaces per level: a group at two, its members at four, a nested group's
+// members at six). A parse that finds nothing would make the check below vacuous, so the
+// inventory is asserted before it is used, the same way the channel list is.
+const apiStart = preloadText.indexOf('exposeInMainWorld("hypercord", {');
+const apiLines = apiStart > -1 ? preloadText.slice(apiStart).split("\n").slice(1) : [];
+const exposed = new Map(); // group -> Set(member), groups and members at the top level only
+const nested = new Map(); // "group.member" -> Set(member), for the one object with a depth of three
+let currentGroup = "";
+let currentNested = "";
+for (const line of apiLines) {
+  if (/^\}\);\s*$/.test(line)) break; // the end of the exposed object
+  const group = /^  ([A-Za-z_$][\w$]*): \{\s*$/.exec(line);
+  if (group) {
+    currentGroup = group[1];
+    currentNested = "";
+    if (!exposed.has(currentGroup)) exposed.set(currentGroup, new Set());
+    continue;
+  }
+  const nestedGroup = /^    ([A-Za-z_$][\w$]*): \{\s*$/.exec(line);
+  if (nestedGroup && currentGroup) {
+    currentNested = currentGroup + "." + nestedGroup[1];
+    if (!nested.has(currentNested)) nested.set(currentNested, new Set());
+    exposed.get(currentGroup).add(nestedGroup[1]);
+    continue;
+  }
+  const member = /^ {4,6}([A-Za-z_$][\w$]*)\s*[:(]/.exec(line);
+  if (!member) continue;
+  if (currentNested && /^      /.test(line)) nested.get(currentNested).add(member[1]);
+  else if (currentGroup && /^    /.test(line)) exposed.get(currentGroup).add(member[1]);
+}
+
+const exposedGroups = [...exposed.keys()];
+const exposedMembers = exposedGroups.reduce((total, group) => total + exposed.get(group).size, 0);
+ok(
+  "the preload's exposed api is readable",
+  exposedGroups.length >= 8 && exposedMembers >= 20,
+  JSON.stringify({ groups: exposedGroups.length, members: exposedMembers, names: exposedGroups }),
+);
+ok(
+  "and it includes the groups the sheet's pages call",
+  ["panes", "client", "support", "themes", "plugins", "tokens", "logs", "update", "account", "api"].every((group) => exposed.has(group)),
+  JSON.stringify(["panes", "client", "support", "themes", "plugins", "tokens", "logs", "update", "account", "api"].filter((group) => !exposed.has(group))),
+);
+
+const panesText = fs.readFileSync(path.join(src, "panes.js"), "utf8");
+const sheetCalls = [...new Set([...panesText.matchAll(/\bhc\.([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)/g)].map((match) => match[1] + "." + match[2]))];
+ok("the sheet's own calls are readable", sheetCalls.length >= 15, JSON.stringify(sheetCalls.slice(0, 6)));
+const unknownGroups = sheetCalls.filter((call) => !exposed.has(call.split(".")[0]));
+ok("every group the sheet calls is exposed", unknownGroups.length === 0, JSON.stringify(unknownGroups));
+const unknownMembers = sheetCalls.filter((call) => {
+  const [group, member] = call.split(".");
+  if (!exposed.has(group)) return false; // already reported as a missing group
+  return !exposed.get(group).has(member) && !nested.has(call);
+});
+ok(
+  "and every method it calls is one the preload exposes",
+  unknownMembers.length === 0,
+  "called but not exposed: " + JSON.stringify(unknownMembers),
+);
+// The other direction, so the check above cannot pass by the sheet having stopped calling
+// anything: the two blocks this release added are called by name.
+ok(
+  "including the ones this release added, by name",
+  ["client.info", "client.reapply", "support.bundle", "themes.thumbnail", "themes.index"].every((call) => sheetCalls.includes(call)),
+  JSON.stringify(["client.info", "client.reapply", "support.bundle", "themes.thumbnail", "themes.index"].filter((call) => !sheetCalls.includes(call))),
+);
+
 /* ---- 2. the host comes up and registers them all ------------------------- */
 
 // The host must not require Electron itself: it is given it, which is what makes
