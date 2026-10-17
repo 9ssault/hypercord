@@ -502,6 +502,66 @@ export function pickClientAuth(probe) {
 }
 
 /**
+ * The script that signs this client in through its own token login.
+ *
+ * Why this exists, in one sentence: every storage placement below writes the token into a
+ * page whose own `localStorage` is unreadable (Discord throws ReferenceError there), so the
+ * write lands in a same-origin frame's storage that the client does not read - the page then
+ * routes to /app, bounces back to /login, and the log says `used=false verdict=rejected` for
+ * a token Discord accepts over HTTP. The client does have a token login of its own: on the
+ * 1.0.9262 build `loginToken(token)` dispatches LOGIN, stores the token and starts the
+ * session, and it lands on /channels/@me in about two seconds.
+ *
+ * The module is found the client's own way: the runtime's `findByProps("login", "logout")`
+ * when this page has a runtime in it, and otherwise the client's registry cache, scanned for
+ * an exports object that can sign a token in. Nothing here guesses a module id, and the
+ * answer is a short string that never carries the token.
+ */
+export function tokenLoginScript(secret) {
+  const value = JSON.stringify(rawValue(secret));
+  return `(async () => {
+  const token = ${value};
+  const scrub = (err) => {
+    const said = String((err && err.message) || err || "no reason given");
+    return (token ? said.split(String(token)).join("<the token>") : said).slice(0, 100);
+  };
+  const wanted = (exports) => Boolean(exports) && (typeof exports.loginToken === "function" || typeof exports.startSession === "function");
+  const find = () => {
+    try {
+      const V = typeof window !== "undefined" ? window.Vencord : null;
+      if (V && V.Webpack && typeof V.Webpack.findByProps === "function") {
+        const found = V.Webpack.findByProps("login", "logout");
+        if (wanted(found)) return found;
+      }
+    } catch (err) { /* the registry scan below is the answer then */ }
+    const registry = ${registryLookupSource()};
+    if (!registry) return null;
+    let requireFunction = null;
+    try { registry.push([["hypercord-token-login-" + Date.now()], {}, (require_) => { requireFunction = require_; }]); } catch (err) { return null; }
+    const cache = requireFunction && requireFunction.c;
+    if (!cache) return null;
+    for (const id of Object.keys(cache)) {
+      const exports = cache[id] && cache[id].exports;
+      if (wanted(exports)) return exports;
+    }
+    return null;
+  };
+  try {
+    const auth = find();
+    if (!auth) return "err:the client's own auth module is not in this page";
+    if (typeof auth.loginToken === "function") {
+      await auth.loginToken(token);
+      return "ok:client loginToken";
+    }
+    await auth.startSession(token);
+    return "ok:client startSession";
+  } catch (err) {
+    return "err:" + scrub(err);
+  }
+})()`;
+}
+
+/**
  * The script that asks the client to sign in with the token, through the client's own
  * module - the path that does not depend on knowing which storage key it reads.
  *

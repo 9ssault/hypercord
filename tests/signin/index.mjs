@@ -34,6 +34,7 @@ import {
   signInCandidates,
   signInForms,
   storageProbeScript,
+  tokenLoginScript,
   tokenWriteScript,
 } from "../../src/signin.js";
 
@@ -466,6 +467,38 @@ const notCallable = await runClient(clientScript, { 42226: { exports: { login: "
 ok("an export that is not callable says so", notCallable.startsWith("err:") && /not callable/.test(notCallable), notCallable);
 const noRegistry = new Function("return " + clientScript)();
 ok("a page with no registry at all says so", String(await noRegistry).startsWith("err:") && /registry/.test(String(await noRegistry)), String(await noRegistry));
+
+/* ---- the client's own token login --------------------------------------- */
+
+// The storage placements above are the older ecosystem's and this build bounces them: the
+// page's own localStorage throws, the write lands in a frame's, and the client routes to /app
+// then straight back to /login. What *is* measured to work on 1.0.9262 is the client's own
+// `loginToken`, found by props ("login", "logout") and called with the raw token - it lands
+// on /channels/@me. These assertions pin that call, its answer, and its redaction.
+const directScript = tokenLoginScript(LIVE_TOKEN);
+ok("the token login names the client's own function", directScript.includes("loginToken") && directScript.includes("findByProps"));
+ok("and it is a script the page can run", (() => {
+  try {
+    new Function("return " + directScript);
+    return true;
+  } catch {
+    return false;
+  }
+})());
+const directCalls = [];
+const directAnswer = await runClient(directScript, {
+  5: { exports: { loginToken: (token) => { directCalls.push(token); return Promise.resolve(); }, logout() {} } },
+});
+ok("the client's token login is called with the raw token", directCalls.length === 1 && directCalls[0] === LIVE_TOKEN, String(directCalls.length));
+ok("and the answer says what was called, without the token", directAnswer === "ok:client loginToken" && !directAnswer.includes(LIVE_TOKEN), directAnswer);
+const directRefused = await runClient(directScript, {
+  5: { exports: { loginToken: () => { throw new Error("token " + LIVE_TOKEN + " refused by the client"); }, logout() {} } },
+});
+ok("a client refusal is a reason, redacted", directRefused.startsWith("err:") && !directRefused.includes(LIVE_TOKEN), directRefused);
+const directMissing = await runClient(directScript, {});
+ok("a page whose auth module is absent says so", directMissing.startsWith("err:") && /auth module/.test(directMissing), directMissing);
+const directFallback = await runClient(directScript, { 5: { exports: { startSession(token) { directCalls.push(token); } } } });
+ok("a build that only has startSession is signed in the same way", directFallback === "ok:client startSession" && directCalls.at(-1) === LIVE_TOKEN, directFallback);
 
 console.log("\npassed " + passed + "  failed " + failed);
 process.exit(failed === 0 ? 0 : 1);

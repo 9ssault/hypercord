@@ -23,7 +23,7 @@ import { PluginHost } from "./plugin-host.js";
 import { createThemes } from "./themes.js";
 import { createTokens, redact } from "./tokens.js";
 import { inspect, listInstalls, patchFreshness } from "./patcher.js";
-import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looksLikeUserToken, pickClientAuth, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
+import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looksLikeUserToken, pickClientAuth, signInCandidates, storageProbeScript, tokenLoginScript, tokenWriteScript } from "./signin.js";
 
 const DISCORD_API = "https://discord.com/api/v9";
 
@@ -443,6 +443,28 @@ export function createHost({
     // Ask before writing: the probe's answer is what orders the placements, and a
     // placement it rules out is recorded as not attempted rather than as a failure.
     const probe = await probeAuth(win);
+    // The client's own token login first, because it is the only path measured to work: the
+    // storage placements below write into a page whose own localStorage is unreadable, so the
+    // write lands in a frame's storage the client does not read - the window routes to /app,
+    // bounces to /login, and the verdict is `rejected` for a token Discord accepts over HTTP.
+    // `loginToken` is the client's own function for exactly this and lands on /channels/@me.
+    try {
+      const direct = String(await win.webContents.executeJavaScript(tokenLoginScript(secret), true));
+      logSignIn("client token login: " + direct.slice(0, 160));
+      if (direct.startsWith("ok")) {
+        const outcome = await waitForSignIn(win);
+        tried.push({ form: direct.replace(/^ok:/, ""), result: outcome.verdict, url: outcome.pathname, used: true });
+        if (outcome.verdict === "accepted") {
+          // the session the client just made is what the store keeps, so a later start signs
+          // in with the key this client itself uses rather than the one it was handed
+          const captured = await captureSession(win, probe);
+          if (captured.ok && captured.value !== secret) tokens.put(id, captured.value, { label: id });
+          return { ok: true, account: id, stored: direct.replace(/^ok:/, ""), used: true, captured: captured.where, tried };
+        }
+      }
+    } catch (err) {
+      logSignIn("client token login failed: " + redact(String((err && err.message) || err)).slice(0, 140));
+    }
     // Two passes over every placement, because a client can take a token on one boot
     // and not the next: one click should not have to be clicked twice.
     const queue = [];

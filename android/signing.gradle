@@ -5,21 +5,26 @@
 // cannot update over an install signed with a different key. That path has to be asked
 // for (HYPERCORD_ALLOW_UNSIGNED=1) and it says so in the log, because "we meant to sign
 // this" and "we forgot the keystore" produce the same broken update otherwise.
-def keystorePath = System.getenv('HYPERCORD_KEYSTORE_PATH')
-def keystorePassword = System.getenv('HYPERCORD_SIGNING_PASSWORD')
-def keyAlias = System.getenv('HYPERCORD_KEY_ALIAS') ?: 'hypercord'
-def keyPassword = System.getenv('HYPERCORD_KEY_PASSWORD') ?: keystorePassword
-def signed = keystorePath != null && keystorePassword != null
+// The locals carry a `release` prefix on purpose: a local named `keyAlias` or
+// `keyPassword` shadows the SigningConfig property of the same name inside the block
+// below, so `keyAlias keyAlias` is read as calling the String - which is exactly what the
+// 0.3.17 Android job died on (`No signature of method: java.lang.String.call() ...
+// [hypercord]`, at the alias line).
+def releaseKeystorePath = System.getenv('HYPERCORD_KEYSTORE_PATH')
+def releaseKeystorePassword = System.getenv('HYPERCORD_SIGNING_PASSWORD')
+def releaseKeyAlias = System.getenv('HYPERCORD_KEY_ALIAS') ?: 'hypercord'
+def releaseKeyPassword = System.getenv('HYPERCORD_KEY_PASSWORD') ?: releaseKeystorePassword
+def signed = releaseKeystorePath != null && releaseKeystorePassword != null
 def allowUnsigned = System.getenv('HYPERCORD_ALLOW_UNSIGNED') == '1'
 
 android {
     signingConfigs {
         release {
             if (signed) {
-                storeFile file(keystorePath)
-                storePassword keystorePassword
-                keyAlias keyAlias
-                keyPassword keyPassword
+                storeFile file(releaseKeystorePath)
+                storePassword releaseKeystorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             }
         }
     }
