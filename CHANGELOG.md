@@ -22,6 +22,20 @@ what is written here is this client's own record.
   settings pages call is read off `src/panes.js` and matched against the api `src/preload.cjs`
   exposes, which turns "a button that throws a TypeError on click" into a failing suite.
 
+## 0.3.13
+
+### The Linux feed suite stopped contradicting itself
+
+No product change: the same client as 0.3.12, with the last of the assertions the release gate had
+been reading as "cannot run on this runner" fixed.
+
+- On a Linux run that is not an AppImage there is no updater to drive, and `tests/feed-live` says
+  so: it asserts that the build answers `elsewhere`, names the AppImage as the reason, and never
+  asks the feed for anything. It *also* asserted that the update came from the suite's own feed -
+  a state that same run can never reach. Both lines were in one `if`, so on every Linux runner the
+  suite failed one assertion of its own that no run could satisfy. The feed assertion now applies
+  where there is an updater to drive, which is what it was always about.
+
 ## 0.3.12
 
 ### The Restart button works, and the gate that hid it says what it saw

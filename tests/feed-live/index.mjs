@@ -382,7 +382,13 @@ async function run() {
   }
 
   ok("the packed build starts and its own page answers", Boolean(state), target ? "no update state was readable" : "no page appeared in 3.5 minutes");
-  if (state) {
+  // Only where there is an updater to drive. A Linux run that is not an AppImage answers
+  // `elsewhere` on purpose - the three assertions below say so, and that it never touched the
+  // network - and asking it for `feed` as well was a contradiction this suite carried from the
+  // day the AppImage case was added: on the runners, where no AppImage is what runs, the two
+  // lines could never both be true. (It went unseen because the dbus warning in every Linux log
+  // made the release step call this a skipped suite; see the verdict check in release.yml.)
+  if (state && !refusesToCheck) {
     ok("the update came from this suite's feed, not from a build that shipped its own", state.mode === "feed" && String(state.feed || "").startsWith(base), JSON.stringify({ mode: state.mode, feed: state.feed }));
   }
 
