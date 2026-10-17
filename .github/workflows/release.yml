@@ -285,6 +285,10 @@ jobs:
           # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
           if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
             echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            # The failing assertions by name, first: the tail below is mostly the client's own
+            # handler noise ("No handler registered for 'note'"), and in the 0.3.18 macOS run it
+            # was exactly what pushed the two FAIL lines out of the 80 lines that got printed.
+            grep -E "^FAIL " "$log" || true
             tail -80 "$log"
             exit 1
           fi
@@ -338,6 +342,10 @@ jobs:
           # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
           if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
             echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            # The failing assertions by name, first: the tail below is mostly the client's own
+            # handler noise ("No handler registered for 'note'"), and in the 0.3.18 macOS run it
+            # was exactly what pushed the two FAIL lines out of the 80 lines that got printed.
+            grep -E "^FAIL " "$log" || true
             tail -80 "$log"
             exit 1
           fi
@@ -490,6 +498,10 @@ jobs:
           # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
           if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
             echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            # The failing assertions by name, first: the tail below is mostly the client's own
+            # handler noise ("No handler registered for 'note'"), and in the 0.3.18 macOS run it
+            # was exactly what pushed the two FAIL lines out of the 80 lines that got printed.
+            grep -E "^FAIL " "$log" || true
             tail -80 "$log"
             exit 1
           fi
