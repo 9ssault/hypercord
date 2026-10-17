@@ -1,0 +1,181 @@
+# What a push and a pull request pass, on the cheapest runner that can run it.
+#
+# Why this file exists: two defects this repository shipped through a green working
+# tree, both of which were only visible in a *clean checkout* or at the moment of an
+# actual push.
+#
+#   * `npm run vendor:check` died with `ENOENT: no such file or directory, open
+#     '.../vendor/equicord/package.json'` instead of the sentence it was written to
+#     print. The guard tested for the *directory*, and a checkout that never
+#     initialised the gitlinks has the directory - empty. So the guard passed, the
+#     next line read a file that was not there, and the one thing the message needed
+#     to say ("clone it first") never reached anybody.
+#   * a test fixture was three dot-separated base64url parts starting `MTIz...`,
+#     which is the shape of a live Discord bot token. GitHub's push protection
+#     refused the push, and the fix was to make a fixture that is a token by the
+#     code's own rules and by nothing else's.
+#
+# Both are the same class of failure: something that behaves differently in a tree
+# somebody else has, and nothing in the release gate would have said so - that gate
+# runs on a developer's checkout, where the forks are cloned and the fixtures are
+# already committed.
+#
+# So this job is deliberately small and deliberate about what it installs: the tree
+# *as a stranger gets it*, from the lockfile, with the vendored forks absent, and
+# then every command that has a documented outcome in that state.
+#
+# What it does not run, and why that is not a gap being papered over: the Electron
+# suites (`tests/preload`, `tests/updater`, `tests/feed-live`, `tests/baseline`) and
+# the packaged check. They live in `.github/workflows/release.yml`, on runners that
+# have a display, and `tests/feed-live` drives the installers that pipeline builds -
+# there is nothing here for them to drive, and duplicating them would add a second
+# place for the same failure to appear without adding a check.
+name: Check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+# Read-only on purpose: nothing in this workflow may touch a release, a tag or a
+# single file in the repository.
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push makes an older run's answer irrelevant, and these runs are cheap to
+  # redo. The release pipeline is the opposite (`cancel-in-progress: false` there):
+  # a half-built release is worse than a slow one.
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-checkout:
+    name: A clean checkout installs, checks, and refuses what it cannot do
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Report the checkout
+        shell: bash
+        run: |
+          node --version
+          npm --version
+          git log -1 --format='%h %s'
+          echo "vendor/equicord holds $(ls -A vendor/equicord 2>/dev/null | wc -l) file(s)"
+          echo "vendor/vencord holds $(ls -A vendor/vencord 2>/dev/null | wc -l) file(s)"
+
+      # The claim every step below rests on. `vendor/equicord` and `vendor/vencord` are
+      # recorded as gitlinks and this repository has no `.gitmodules`, so a fresh clone
+      # gets those two paths *empty*. If that ever stops being true, the refusal step
+      # below is testing nothing at all - and a test that cannot fail is worse than no
+      # test - so it is asserted here rather than assumed.
+      - name: A fresh checkout really does have the vendored trees empty
+        shell: bash
+        run: |
+          for tree in vendor/equicord vendor/vencord; do
+            if [ -n "$(ls -A "$tree" 2>/dev/null)" ]; then
+              echo "FAIL $tree is not empty, so this checkout is not what a fresh clone gets."
+              echo "     The refusal contract below would pass without testing anything."
+              exit 1
+            fi
+          done
+          echo "both vendored trees are empty here, as they are for a stranger"
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      - name: The committed runtime and the Android addon bundle are current
+        shell: bash
+        run: |
+          # `build:runtime:check` is a fast audit: it does not build anything, it says
+          # whether `vendor/runtime` - the only copy of the runtime a packed client
+          # carries - is still the one the vendored sources produce.
+          npm run build:runtime:check
+          npm run build:addons:check
+          # And the file the packed app cannot do without, named outright, because the
+          # check above reports and this is the artifact a release ships.
+          test -s vendor/runtime/browser.js || {
+            echo "FAIL vendor/runtime/browser.js is missing or empty: a packed client without it has no runtime and no plugin of the catalogue can run."
+            exit 1
+          }
+
+      - name: The unit suites
+        run: npm run test:units
+
+      # The refusal contract, which is the reason this workflow exists.
+      #
+      # A command that cannot run here - because the two trees it needs are not in a fresh
+      # clone - has exactly one acceptable failure: a sentence that names the path and says
+      # what to do, and a non-zero exit. A stack trace about a file that was expected is the
+      # defect this step was written for, and it is asserted against *forbidden patterns*,
+      # not just for the expected one, because a message that happens to be right while the
+      # process dies somewhere else is the same bug wearing a disguise.
+      - name: The commands that need the vendored forks refuse, with the reason
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+
+          refuses() {
+            label="$1"; expected="$2"; forbidden="$3"; shift 3
+            out="$(mktemp)"
+            if "$@" > "$out" 2>&1; then
+              echo "FAIL $label succeeded on a tree with no vendored forks; it should refuse."
+              cat "$out"; status=1; return
+            fi
+            if ! grep -qF "$expected" "$out"; then
+              echo "FAIL $label refused for the wrong reason. Expected the sentence:"
+              echo "     $expected"
+              cat "$out"; status=1; return
+            fi
+            if grep -qE "$forbidden" "$out"; then
+              echo "FAIL $label reached the filesystem instead of the guard - the failure is a"
+              echo "     stack trace, not an answer:"
+              cat "$out"; status=1; return
+            fi
+            echo "ok   $label refused, and said what to do about it"
+          }
+
+          refuses "vendor:check" "no vendored core at vendor/equicord - clone it first" "ENOENT|^\s*Error:|at Module" npm run vendor:check
+          refuses "vendor" "no vendored upstream at vendor/vencord - clone it first" "ENOENT|^\s*Error:|at Module" npm run vendor
+          refuses "build:runtime" "the vendored tree has no build to run" "ENOENT|at Module" npm run build:runtime
+
+          # `npm run vendor` in its writing mode must not have written anything before it
+          # refused: the catalogue is a committed artifact, and a refusal that half-rewrote
+          # it would leave the tree worse than it found it.
+          #
+          # `git diff --quiet` exits 1 for "differences", and its own codes for "git could
+          # not run at all" - which is what an exported tree without a `.git` gives. Those two
+          # are told apart rather than lumped together: a real difference is a failure, and a
+          # check that could not be made says so instead of reporting a difference it never saw
+          # (the same distinction `scripts/release.mjs` makes about its dirty check).
+          # In a condition, on purpose: these steps run under `bash -e`, and a bare
+          # `git diff --quiet` that exits 1 ("there were differences") would end the step on
+          # that line - before the message explaining *what* differed could be printed. A step
+          # whose failure is a bare exit code is the thing this whole file is against.
+          if git diff --quiet -- plugins/manifest.json; then
+            echo "ok   the refusals wrote nothing: plugins/manifest.json is untouched"
+          else
+            diff_status=$?
+            if [ "$diff_status" -eq 1 ]; then
+              echo "FAIL a refused vendor run still changed plugins/manifest.json:"
+              git diff --stat -- plugins/manifest.json || true
+              status=1
+            else
+              echo "note a refused vendor run's output could not be checked: git diff exited $diff_status,"
+              echo "     which is what a tree with no .git gives - this step reports it rather than"
+              echo "     claiming the file was untouched"
+            fi
+          fi
+
+          exit "$status"

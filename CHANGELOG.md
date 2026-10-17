@@ -9,8 +9,15 @@ what is written here is this client's own record.
 
 ## Unreleased
 
-Nothing yet. This section collects what lands between releases; 0.3.10 is everything
-below it.
+- A push or a pull request now checks the tree **as a fresh clone gets it**
+  (`.github/workflows/check.yml`): install from the lockfile, the unit suites, the runtime and
+  addon audits, and the contract that the commands needing the vendored forks refuse with a
+  sentence naming the path to clone rather than dying with a stack trace about a missing file.
+  Both failure modes that motivated it were invisible in a working tree - `npm run vendor:check`
+  crashed on a clean checkout because its guard tested the directory (a checkout with the
+  gitlinks uninitialised has the directory, empty), and a token-shaped test fixture made
+  GitHub's push protection refuse the push. The Electron suites stay where they are, in the
+  release gate, on runners with a display.
 
 ## 0.3.10
 
