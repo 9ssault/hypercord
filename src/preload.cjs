@@ -108,11 +108,6 @@ contextBridge.exposeInMainWorld("hypercord", {
     open: (view) => call("panes:open", String(view || "commands")),
     close: () => call("panes:close"),
   },
-  // the client's own process: the one thing a page cannot do for itself, and the only
-  // answer to a plugin that patches Discord as it loads (see the channel in src/host.js)
-  client: {
-    relaunch: () => call("client:relaunch"),
-  },
   // The built runtime's settings. The page it runs in has no storage of its own - Discord
   // removes `localStorage` and `sessionStorage` there - so the runtime keeps them in
   // Hypercord's data directory through the shell instead of forgetting them at every start.
@@ -202,9 +197,20 @@ contextBridge.exposeInMainWorld("hypercord", {
     use: (account) => call("tokens:use", String(account || "")),
     store: () => call("tokens:store"),
   },
-  // which client this is, and the one file a person can hand to somebody else. Both
-  // answer with no control server: they are about this machine and this process.
+  // Which client this is, the one file a person can hand to somebody else, and the two things
+  // only the shell can do for a page: restart this process, and record a re-apply request.
+  // `info` and `reapply` answer with no control server - they are about this machine and this
+  // process.
+  //
+  // One `client` group, and it has to stay one. A second `client:` key in this literal is not
+  // an error - it is the last one winning, in silence - which is how `relaunch` came to be
+  // dropped while `info` and `reapply` stayed, and how the settings pages' Restart button came
+  // to answer "this client has no way to restart itself" in a client that has one. The suite
+  // reads this bridge's keys, so the pair of them is checked now: see tests/preload.
   client: {
+    // the one thing a page cannot do for itself, and the only answer to a plugin that patches
+    // Discord as it loads (see the channel in src/host.js)
+    relaunch: () => call("client:relaunch"),
     info: () => call("client:info"),
     // a patched client cannot re-apply its own patch (Electron read its entry point at
     // boot), so this records the request for the shell's next start and says so

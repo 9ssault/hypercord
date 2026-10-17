@@ -277,6 +277,17 @@ jobs:
           fi
           # `|| true`: with `bash -e` a grep that finds nothing would abort the step
           # before it can print why the suite really failed.
+          # The suite's own verdict outranks the reason list below, and it has to. That list is for
+          # a runner that could not *start* a suite; every Linux log also carries dbus warnings
+          # ("Failed to connect to the bus"), which match it. Reading a suite that ran and failed
+          # as "cannot run on this runner" is how two failing assertions kept this step green on
+          # Linux for four releases while Windows and macOS failed the job over the same two
+          # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
+          if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
+            echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            tail -80 "$log"
+            exit 1
+          fi
           reason=$(grep -Eim1 "cannot open display|Unable to open X display|Missing X server|Xvfb failed|no X11 display|Xlib|Failed to connect to the bus|sandbox helper binary|SUID sandbox|zygote_host_impl_linux|Failed to create a ProcessSingleton" "$log" || true)
           if [ -n "$reason" ]; then
             echo "SKIPPED (cannot run on this runner): the updater suite launches the real client."
@@ -319,6 +330,17 @@ jobs:
           fi
           # `|| true`: with `bash -e` a grep that finds nothing would abort the step
           # before it can print why the suite really failed.
+          # The suite's own verdict outranks the reason list below, and it has to. That list is for
+          # a runner that could not *start* a suite; every Linux log also carries dbus warnings
+          # ("Failed to connect to the bus"), which match it. Reading a suite that ran and failed
+          # as "cannot run on this runner" is how two failing assertions kept this step green on
+          # Linux for four releases while Windows and macOS failed the job over the same two
+          # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
+          if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
+            echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            tail -80 "$log"
+            exit 1
+          fi
           reason=$(grep -Eim1 "cannot open display|Unable to open X display|Missing X server|Xvfb failed|no X11 display|Xlib|Failed to connect to the bus|sandbox helper binary|SUID sandbox|zygote_host_impl_linux|Failed to create a ProcessSingleton" "$log" || true)
           if [ -n "$reason" ]; then
             echo "SKIPPED (cannot run on this runner): the preload suite launches the real client."
@@ -452,6 +474,17 @@ jobs:
           fi
           # `|| true`: with `bash -e` a grep that finds nothing would abort the step before it can
           # print why the suite really failed.
+          # The suite's own verdict outranks the reason list below, and it has to. That list is for
+          # a runner that could not *start* a suite; every Linux log also carries dbus warnings
+          # ("Failed to connect to the bus"), which match it. Reading a suite that ran and failed
+          # as "cannot run on this runner" is how two failing assertions kept this step green on
+          # Linux for four releases while Windows and macOS failed the job over the same two
+          # lines: the gate was reporting a skip it had not earned, and shipping tests nobody read.
+          if grep -Eq "^FAIL |[0-9]+  failed [0-9]+" "$log" && ! grep -Eq "[0-9]+  failed 0$" "$log"; then
+            echo "FAIL the suite ran on $LABEL and its own verdict was a failure:"
+            tail -80 "$log"
+            exit 1
+          fi
           reason=$(grep -Eim1 "cannot open display|Unable to open X display|Missing X server|Xvfb failed|no X11 display|Xlib|Failed to connect to the bus|sandbox helper binary|SUID sandbox|zygote_host_impl_linux|Failed to create a ProcessSingleton" "$log" || true)
           if [ -n "$reason" ]; then
             echo "SKIPPED (cannot run on this runner): the feed suite launches the packed client."

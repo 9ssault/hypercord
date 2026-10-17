@@ -22,6 +22,31 @@ what is written here is this client's own record.
   settings pages call is read off `src/panes.js` and matched against the api `src/preload.cjs`
   exposes, which turns "a button that throws a TypeError on click" into a failing suite.
 
+## 0.3.12
+
+### The Restart button works, and the gate that hid it says what it saw
+
+Three things were red on every platform, and the release pipeline reported none of them.
+
+- **The Restart button in the settings pages works.** `src/preload.cjs` builds one bridge object
+  and it carried `client:` **twice** - `relaunch` in the first, `info` and `reapply` in the second.
+  A repeated key in an object literal is not an error, it is the last one winning, in silence, so
+  the page got `client.info` and `client.reapply` and no `client.relaunch`: pressing Restart
+  answered "this client has no way to restart itself: close it and open it again" in a client that
+  has one. The two groups are one group now, and the suite fails if a key is ever repeated.
+- **A window suite that ran and failed is no longer read as "cannot run on this runner".** Every
+  Linux log carries dbus warnings, and "Failed to connect to the bus" was on the list of reasons
+  that mean "this runner cannot open a window" - so a suite that ran and failed its own assertions
+  was classified as *skipped* on Linux while Windows and macOS failed the job over the same two
+  lines. That is why 0.3.10 shipped with a red preload suite that nobody saw. A verdict the suite
+  printed itself (`passed 184  failed 2`) now outranks that list; the list still decides for a
+  suite that never reached a verdict.
+- **The theme library's contract is written down as it is.** Opening the Themes tab reads the
+  published index once, Load forces a fresh read, and nothing is fetched for a tab nobody opened.
+  The suite now asserts exactly that - no read before the tab is drawn, one unforced read as it is
+  drawn, and one forced read when Load is pressed - instead of asserting a rule the code stopped
+  following when the tab became the library's browser in 0.3.10.
+
 ## 0.3.11
 
 ### A failed platform no longer takes the whole release down with it

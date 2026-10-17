@@ -258,7 +258,7 @@ const PLAIN_PAGE = `<!doctype html><html><head><title>channels</title></head><bo
 // shell answers - and recorded, because a call that never happens is the failure
 // this suite exists to catch
 const opened = [];
-const calls = { plugins: 0, tokens: 0, uses: [], adds: [], forgets: 0, closes: 0, themeRows: 0, beef: [], beefSections: 0, settings: [], toggles: [], themeInstalls: [], restarts: 0 };
+const calls = { plugins: 0, tokens: 0, uses: [], adds: [], forgets: 0, closes: 0, themeRows: 0, themeIndex: 0, themeIndexForces: [], beef: [], beefSections: 0, settings: [], toggles: [], themeInstalls: [], restarts: 0 };
 let tokenRows = [];
 // the plugins a switch has turned on in this run: a catalogue that never changed would
 // answer the reload after a press with the state it started in, which is not what a shell
@@ -446,8 +446,14 @@ ipcMain.handle("themes:install", (_event, source, name) => {
   calls.themeInstalls.push([String(source), name === undefined ? "" : String(name)]);
   return { ok: true, id: "whatever" };
 });
-// the published theme library, as the shell hands it over: trimmed to what a card shows
-ipcMain.handle("themes:index", (_event, force) => ({
+// the published theme library, as the shell hands it over: trimmed to what a card shows. Every
+// read is counted and every read says whether it was forced, because *when* this one thing is
+// fetched is part of the contract: the Themes tab's own draw reads it, the Load button reads it
+// again by force, and nothing reads it for a tab nobody opened.
+ipcMain.handle("themes:index", (_event, force) => {
+  calls.themeIndex += 1;
+  calls.themeIndexForces.push(force === true);
+  return {
   ok: true,
   cached: false,
   fetchedAt: Date.now(),
@@ -475,7 +481,8 @@ ipcMain.handle("themes:index", (_event, force) => ({
     },
   ],
   forced: Boolean(force),
-}));
+  };
+});
 ipcMain.handle("account:current", () => ({ account: "selftest", accounts: ["selftest", "second"] }));
 ipcMain.handle("account:switch", () => ({ ok: true }));
 ipcMain.handle("update:state", () => ({ mode: "dev", supported: false, error: "" }));
@@ -838,6 +845,10 @@ async function run() {
     openedSheet.parent === "html" && openedSheet.zIndex === "2147483000",
     JSON.stringify({ parent: openedSheet.parent, z: openedSheet.zIndex }),
   );
+  // Nothing has read the theme library yet, and no tab drawn so far is the one that would: the
+  // library is fetched by the Themes tab as it is drawn, never on its own, so a client nobody
+  // has opened that tab in is not talking to anything.
+  ok("no tab drawn so far has read the theme library", calls.themeIndex === 0, String(calls.themeIndex));
   // The page-rendering path is the page's own, and it is what every visit below relies
   // on: showing a section directly fills it, without asking the preload to place it.
   const shownThemes = await page(win, `window.hypercordPanes.show("themes")`);
@@ -850,6 +861,11 @@ async function run() {
     }))()`,
   );
   ok("and showing a section directly still renders it, with the installed themes", shownThemes === "themes" && themed.rows > 0 && themed.shown[0] === "themes", JSON.stringify({ shown: shownThemes, rows: themed.rows }));
+  ok(
+    "drawing the Themes tab is what reads the library, once and unforced",
+    calls.themeIndex === 1 && calls.themeIndexForces.join(",") === "false",
+    JSON.stringify({ reads: calls.themeIndex, forced: calls.themeIndexForces }),
+  );
   // the acceptance criterion, stated plainly: opening the manager must not create a
   // second window for it to live in
   ok("opening the manager created no second window", BrowserWindow.getAllWindows().length === 1, "windows " + BrowserWindow.getAllWindows().length);
@@ -1383,8 +1399,9 @@ async function run() {
   );
   ok("and the All chip puts everything back", categories.restored === categories.cards, String(categories.restored));
 
-  // The theme library: the one thing in this browser that is fetched, and only when it is
-  // asked for. A theme installed from it goes through the same store as a theme from a
+  // The theme library: the one thing in this browser that is fetched. Drawing the tab is what
+  // asks for it (and the two reads below are the only ones this suite ever sees: the draw, and
+  // the forced press). A theme installed from it goes through the same store as a theme from a
   // pasted link, which is what makes it trustworthy - there is one install path.
   const library = await page(
     win,
@@ -1408,9 +1425,14 @@ async function run() {
   })()`,
   );
   ok(
-    "the library is empty until it is asked for, and then it lists themes",
-    library.before === 0 && library.cards === 2 && library.first === "DTM-08" && /library/.test(library.note),
-    JSON.stringify({ before: library.before, cards: library.cards, first: library.first, note: library.note }),
+    "the library is listed without pressing anything, and Load reads it once more by force",
+    library.before === 2 &&
+      library.cards === 2 &&
+      library.first === "DTM-08" &&
+      /library/.test(library.note) &&
+      calls.themeIndex === 2 &&
+      calls.themeIndexForces.join(",") === "false,true",
+    JSON.stringify({ before: library.before, cards: library.cards, first: library.first, note: library.note, reads: calls.themeIndex, forced: calls.themeIndexForces }),
   );
   ok(
     "a library card carries the author and the tags the index gave it",

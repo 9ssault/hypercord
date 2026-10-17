@@ -1749,10 +1749,11 @@
 
   /* ---- the theme library --------------------------------------------------- */
 
-  // A browser of published themes. It is read when somebody presses Load and not before -
-  // nothing here is fetched on its own, so an idle client is not talking to anything - and
-  // a theme installed from it goes through the same store as one installed from a link:
-  // fetched once, at the moment of install, then a file on disk.
+  // A browser of published themes. It is read when the Themes tab is drawn and when somebody
+  // presses Load (a forced fresh read), and at no other time: nothing here is fetched for a tab
+  // nobody opened, so an idle client is not talking to anything. A theme installed from it goes
+  // through the same store as one installed from a link: fetched once, at the moment of
+  // install, then a file on disk.
 
   async function loadThemeLibrary(force = false) {
     if (libraryBusy) return;

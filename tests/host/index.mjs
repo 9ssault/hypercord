@@ -107,6 +107,13 @@ const apiStart = preloadText.indexOf('exposeInMainWorld("hypercord", {');
 const apiLines = apiStart > -1 ? preloadText.slice(apiStart).split("\n").slice(1) : [];
 const exposed = new Map(); // group -> Set(member), groups and members at the top level only
 const nested = new Map(); // "group.member" -> Set(member), for the one object with a depth of three
+// A key defined twice is not a syntax error in JavaScript - it is the last one winning, in
+// silence, and everything the first one held is gone. The map below merges them, so the repeat
+// itself has to be what is recorded, or this whole section reads the api as if nothing were
+// missing: that is how `client.relaunch` was dropped while `client.info` and `client.reapply`
+// stayed, and the settings pages' Restart button spent four releases answering "this client has
+// no way to restart itself" in a client that has one.
+const repeatedGroups = [];
 let currentGroup = "";
 let currentNested = "";
 for (const line of apiLines) {
@@ -115,7 +122,8 @@ for (const line of apiLines) {
   if (group) {
     currentGroup = group[1];
     currentNested = "";
-    if (!exposed.has(currentGroup)) exposed.set(currentGroup, new Set());
+    if (exposed.has(currentGroup)) repeatedGroups.push(currentGroup);
+    else exposed.set(currentGroup, new Set());
     continue;
   }
   const nestedGroup = /^    ([A-Za-z_$][\w$]*): \{\s*$/.exec(line);
@@ -142,6 +150,12 @@ ok(
   "and it includes the groups the sheet's pages call",
   ["panes", "client", "support", "themes", "plugins", "tokens", "logs", "update", "account", "api"].every((group) => exposed.has(group)),
   JSON.stringify(["panes", "client", "support", "themes", "plugins", "tokens", "logs", "update", "account", "api"].filter((group) => !exposed.has(group))),
+);
+ok("no group is defined twice, which would silently drop the first one's members", repeatedGroups.length === 0, JSON.stringify(repeatedGroups));
+ok(
+  "and client carries the restart beside the two records about this client",
+  ["relaunch", "info", "reapply"].every((member) => exposed.get("client").has(member)),
+  JSON.stringify([...exposed.get("client")]),
 );
 
 const panesText = fs.readFileSync(path.join(src, "panes.js"), "utf8");
