@@ -51,6 +51,24 @@ try {
   /* plain Node: `fs` *is* the disk there, and there is no asar support to escape */
 }
 
+/**
+ * Which filesystem a path needs. The two are not interchangeable in either direction:
+ *
+ *   * a path that *is* an archive - `resources/app.asar` - must not go to Electron's `fs`,
+ *     because asking whether it exists opens it without delete sharing and the rename the
+ *     patch is made of then fails `EBUSY`. That is what `disk` (original-fs) is for.
+ *   * a path *inside* an archive - the packaged client's own
+ *     `resources/app.asar/src/loader.cjs`, and everything the manifest reads under it - only
+ *     exists for Electron's `fs`. `original-fs` has no asar support, so it answers "no" to a
+ *     file that is really there, and a packaged client refused to patch with "the loader is
+ *     not here" when the loader was.
+ *
+ * So the choice is made per path, by the one thing that tells them apart: a separator after
+ * the archive name.
+ */
+const insideArchive = (file) => /\.asar[\\/]/i.test(String(file || ""));
+const fsFor = (file) => (insideArchive(file) ? nodeFs : disk);
+
 const ORIGINAL = "hypercord.app.asar";
 const APP_DIR = "app";
 const MANIFEST = "hypercord.json";
@@ -87,7 +105,7 @@ const CHANNEL_ORDER = { stable: 0, ptb: 1, canary: 2 };
 
 function defaultExists(file) {
   try {
-    return disk.existsSync(file);
+    return fsFor(file).existsSync(file);
   } catch {
     return false;
   }
@@ -95,7 +113,7 @@ function defaultExists(file) {
 
 function defaultReaddir(dir) {
   try {
-    return disk.readdirSync(dir);
+    return fsFor(dir).readdirSync(dir);
   } catch {
     return [];
   }
@@ -103,7 +121,7 @@ function defaultReaddir(dir) {
 
 function defaultReadFile(file) {
   try {
-    return disk.readFileSync(file, "utf8");
+    return fsFor(file).readFileSync(file, "utf8");
   } catch {
     return "";
   }
@@ -129,7 +147,7 @@ function compareVersions(a, b) {
  */
 function digest(file) {
   try {
-    return "sha256:" + crypto.createHash("sha256").update(disk.readFileSync(file)).digest("hex").slice(0, 16);
+    return "sha256:" + crypto.createHash("sha256").update(fsFor(file).readFileSync(file)).digest("hex").slice(0, 16);
   } catch {
     return null;
   }
@@ -153,7 +171,7 @@ export function runtimeFacts(appRoot, { exists = defaultExists } = {}) {
     if (!exists(file)) continue;
     let bytes = 0;
     try {
-      bytes = disk.statSync(file).size;
+      bytes = fsFor(file).statSync(file).size;
     } catch {
       bytes = 0;
     }
@@ -161,7 +179,7 @@ export function runtimeFacts(appRoot, { exists = defaultExists } = {}) {
   }
   let provenance = null;
   try {
-    const generated = JSON.parse(disk.readFileSync(path.join(root, "plugins", "manifest.json"), "utf8")) || {};
+    const generated = JSON.parse(fsFor(root).readFileSync(path.join(root, "plugins", "manifest.json"), "utf8")) || {};
     const upstream = generated.provenance && typeof generated.provenance === "object" ? generated.provenance : null;
     if (upstream) {
       provenance = {
@@ -496,7 +514,7 @@ function readBakedAssets(loader) {
   for (const file of [path.join(path.dirname(loader), "hypercord.json"), path.join(path.dirname(loader), "..", "hypercord.json")]) {
     let found = null;
     try {
-      found = JSON.parse(disk.readFileSync(file, "utf8")) || null;
+      found = JSON.parse(fsFor(file).readFileSync(file, "utf8")) || null;
     } catch {
       found = null;
     }

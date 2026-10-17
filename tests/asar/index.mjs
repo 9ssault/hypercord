@@ -158,6 +158,39 @@ try {
   ok("unpatching restores the original archive byte for byte", unpatched.ok === true && native.existsSync(target.asar) && !native.existsSync(target.original));
   const bytes = native.readFileSync(target.asar);
   ok("and the bytes are the ones it started with", bytes.equals(before), bytes.length + " bytes, identical: " + bytes.equals(before));
+
+  /* ---- the other direction: a loader that lives *inside* an archive ------- */
+
+  // A packaged client is its own asar, so the loader it patches Discord with is not a file on
+  // the disk at all - it is an entry inside `resources/app.asar`. Asking `original-fs` about
+  // that path answers "no", because that module has no asar support, and a client that used it
+  // for everything refused to patch with "the loader is not here" while the loader was there.
+  // The two questions are told apart by the path, and this is the regression for the second one.
+  const ownSource = path.join(scratch, "own-src");
+  fs.mkdirSync(path.join(ownSource, "src"), { recursive: true });
+  fs.writeFileSync(path.join(ownSource, "src", "loader.cjs"), "module.exports = {};\n");
+  const ownAsar = path.join(scratch, "own-app.asar");
+  const { createPackage } = await import("@electron/asar");
+  await createPackage(ownSource, ownAsar);
+
+  const packagedPatch = patch(found.install, {
+    loader: path.join(ownAsar, "src", "loader.cjs"),
+    version: "0.0.2",
+    appRoot: ownAsar,
+    assets: { css: "body{}" },
+  });
+  ok(
+    "a packaged client, whose loader is inside its own archive, patches an install too",
+    packagedPatch.ok === true,
+    String(packagedPatch.error || "").slice(0, 120) || "ok",
+  );
+  const insideManifest = inspect(found.install);
+  ok(
+    "and the record keeps the loader path it was actually given",
+    insideManifest.state === "patched" && String(insideManifest.manifest.loader).endsWith(path.join("src", "loader.cjs")),
+    insideManifest.state === "patched" ? insideManifest.manifest.loader : insideManifest.state,
+  );
+  ok("and that install unpaches like any other", unpatch(found.install).ok === true);
 } catch (err) {
   failed += 1;
   console.log("FAIL the suite did not finish: " + String((err && err.message) || err));
