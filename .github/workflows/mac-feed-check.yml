@@ -1,0 +1,40 @@
+# Temporary: drives the packed macOS build through `tests/feed-live`, which is the one
+# suite that failed on this platform and the only one that cannot run anywhere else.
+# Deleted once the fix is confirmed.
+name: Mac feed check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  feed:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/mac-feed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Build the installers (unsigned, never published)
+        run: npm run dist -- --mac --x64 --arm64 --publish never
+      - name: List what was produced
+        run: ls -la dist | head -40
+      - name: Run the feed suite
+        run: |
+          log="$RUNNER_TEMP/feed.log"
+          npm run test:feed-live > "$log" 2>&1 || true
+          grep -E "^(ok|FAIL|#|note)|passed " "$log" || tail -60 "$log"
+      - name: Keep the log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-feed-log
+          path: ${{ runner.temp }}/feed.log
+          if-no-files-found: warn
