@@ -20,6 +20,7 @@
 // scrape halfway through rolls itself back. Nothing here guesses a version: the
 // `app-<version>` directory is discovered, because Discord's updater changes it
 // on every release.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -92,6 +93,142 @@ function compareVersions(a, b) {
     if (diff !== 0) return diff;
   }
   return 0;
+}
+
+/**
+ * A short, labelled digest of a file - the identity of the bytes, for a report.
+ *
+ * Truncated on purpose, and labelled with its algorithm so nobody mistakes sixteen hex
+ * characters for something to compare against a published artifact. A file that cannot
+ * be read answers null rather than a digest of nothing.
+ */
+function digest(file) {
+  try {
+    return "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which vendored runtime this build ships, as facts rather than a version string.
+ *
+ * There is no version number for the runtime anywhere in the tree: `vendor/runtime/` is
+ * `browser.js` and `browser.css`, and the only provenance that exists is the generated
+ * `plugins/manifest.json`. So the identity recorded here is the bytes themselves (size
+ * and a truncated digest) plus the two upstream commits that produced them, and a build
+ * with no runtime beside it records *that*, with the reason - a report that says nothing
+ * is worse than one that says "not found".
+ */
+export function runtimeFacts(appRoot, { exists = defaultExists } = {}) {
+  const root = String(appRoot || "");
+  const files = [];
+  for (const name of ["browser.js", "browser.css"]) {
+    const file = path.join(root, "vendor", "runtime", name);
+    if (!exists(file)) continue;
+    let bytes = 0;
+    try {
+      bytes = fs.statSync(file).size;
+    } catch {
+      bytes = 0;
+    }
+    files.push({ name: "vendor/runtime/" + name, bytes, sha256: digest(file) });
+  }
+  let provenance = null;
+  try {
+    const generated = JSON.parse(fs.readFileSync(path.join(root, "plugins", "manifest.json"), "utf8")) || {};
+    const upstream = generated.provenance && typeof generated.provenance === "object" ? generated.provenance : null;
+    if (upstream) {
+      provenance = {
+        generatedAt: String(generated.generatedAt || ""),
+        core: String(upstream.core || ""),
+        coreCommit: String(upstream.coreCommit || ""),
+        merged: String(upstream.merged || ""),
+        mergedCommit: String(upstream.mergedCommit || ""),
+      };
+    }
+  } catch {
+    provenance = null;
+  }
+  return {
+    files,
+    provenance,
+    note: files.length ? "" : "this build has no vendor/runtime, so the runtime it ships is not recorded",
+  };
+}
+
+/**
+ * The platform this build runs on. Defaults come from the process and every one of them
+ * can be injected, the same way the updater takes `platform` and `env` - a test has to be
+ * able to put this build anywhere.
+ */
+export function platformFacts(opts = {}) {
+  const versions = opts.versions && typeof opts.versions === "object" ? opts.versions : process.versions;
+  return {
+    os: String(opts.platform || process.platform),
+    arch: String(opts.arch || process.arch),
+    release: String(opts.osRelease || os.release()),
+    type: String(opts.osType || os.type()),
+    electron: String((versions && versions.electron) || ""),
+    chrome: String((versions && versions.chrome) || ""),
+    node: String((versions && versions.node) || ""),
+  };
+}
+
+/**
+ * The manifest a patch writes: what it did, who did it, and what it shipped.
+ *
+ * `version` is deliberately Discord's own and stays that way - it is the version of the
+ * client that was patched. The build that *did* the patching is `patchedByVersion`, named
+ * that way because a reader who confuses the two would compare Discord's number against
+ * Hypercord's and conclude nonsense.
+ *
+ * Baked assets are preserved when the caller supplies none: refreshing a patch must never
+ * blank a stylesheet that a previous patch put there, which is a real way to break a
+ * client that looked fine a second earlier.
+ */
+export function patchManifest({ install, loader, assets, opts = {} }) {
+  const root = opts.appRoot !== undefined ? String(opts.appRoot) : path.join(path.dirname(loader), "..");
+  const previous = opts.previous && typeof opts.previous === "object" ? opts.previous : {};
+  const baked = assets && Object.keys(assets).length ? assets : previous.assets && typeof previous.assets === "object" ? previous.assets : {};
+  return {
+    tool: "hypercord",
+    loader,
+    original: ORIGINAL,
+    appAsar: install.appAsar,
+    channel: install.channel,
+    version: install.version,
+    patchedByVersion: String(opts.version || ""),
+    patchedAt: String(previous.patchedAt || "") || new Date().toISOString(),
+    runtime: runtimeFacts(root, opts),
+    platform: platformFacts(opts),
+    assets: baked,
+  };
+}
+
+/**
+ * Is the build recorded in a manifest older than the build asking?
+ *
+ * Numbers, never strings: as text "0.3.9" is greater than "0.3.10", which is the whole
+ * reason this goes through compareVersions. A version that is not a plain dotted number - a
+ * pre-release tag, a development string, nothing at all - cannot be ordered, and the answer
+ * says so rather than guessing: a wrong "older" in a warning is worse than no warning.
+ */
+export function patchFreshness(manifest, runningVersion) {
+  const recorded = String((manifest && manifest.patchedByVersion) || "");
+  const running = String(runningVersion || "");
+  const plain = /^\d+(\.\d+)*$/;
+  if (!recorded) {
+    return { state: "unknown", recorded, running, older: false, reason: "the build that patched this install was not recorded (it was patched before this was recorded)" };
+  }
+  if (!running) return { state: "unknown", recorded, running, older: false, reason: "this run does not know its own version" };
+  if (!plain.test(recorded) || !plain.test(running)) {
+    return { state: "unorderable", recorded, running, older: false, reason: "the recorded build " + recorded + " and this build " + running + " cannot be ordered" };
+  }
+  const order = compareVersions(recorded, running);
+  if (order < 0) return { state: "older", recorded, running, older: true, reason: "patched by " + recorded + " and this client is " + running };
+  if (order > 0) return { state: "newer", recorded, running, older: false, reason: "patched by " + recorded + ", which is newer than this client (" + running + ")" };
+  return { state: "current", recorded, running, older: false, reason: "" };
 }
 
 /** The `app-<version>` directories inside an install root, newest first. */
@@ -365,7 +502,34 @@ export function patch(install, opts = {}) {
   const assets = opts.assets && typeof opts.assets === "object" && Object.keys(opts.assets).length ? opts.assets : readBakedAssets(loader);
   const state = inspect(install, opts);
   if (state.state === "foreign" || state.state === "missing") return { ok: false, state: state.state, error: state.error };
-  if (state.state === "patched") return { ok: true, already: true, state: "patched" };
+  if (state.state === "patched") {
+    // Patched is not the same as *right*. The manifest records which build patched this
+    // install, what runtime it shipped and what stylesheet it baked - and a client that has
+    // updated itself since is new code beside an old record and an old stylesheet. So the
+    // patched case refreshes the record in place when anything it holds has moved; the asar
+    // rename and the entry directory are left exactly as they are, because replacing those
+    // is unpatching and patching again, not refreshing.
+    const previous = state.manifest && typeof state.manifest === "object" ? state.manifest : {};
+    const next = patchManifest({ install, loader, assets, opts: { ...opts, previous } });
+    const bakedBefore = previous.assets && typeof previous.assets === "object" ? String(previous.assets.css || "") : "";
+    const bakedNow = next.assets && typeof next.assets === "object" ? String(next.assets.css || "") : "";
+    const wanted = assets && assets.css !== undefined ? String(assets.css || "") : bakedBefore;
+    const changed =
+      String(previous.patchedByVersion || "") !== next.patchedByVersion ||
+      !previous.runtime ||
+      !previous.platform ||
+      JSON.stringify(previous.runtime) !== JSON.stringify(next.runtime) ||
+      JSON.stringify(previous.platform) !== JSON.stringify(next.platform) ||
+      bakedNow !== wanted;
+    if (!changed || opts.dryRun) return { ok: true, already: true, state: "patched", reapplied: false, steps: [] };
+    try {
+      fs.writeFileSync(install.manifest, JSON.stringify(next, null, 1) + "\n");
+    } catch (err) {
+      return { ok: false, state: "patched", error: "the patch record could not be refreshed: " + String((err && err.message) || err) };
+    }
+    log("[hypercord] patch: refreshed the record in place (patched by " + (next.patchedByVersion || "an unrecorded build") + ")");
+    return { ok: true, already: true, state: "patched", reapplied: true, steps: ["refresh " + MANIFEST] };
+  }
   if (!loader) return { ok: false, error: "a loader path is required to patch a client" };
   if (!install.exists(loader)) return { ok: false, error: "the loader is not here: " + loader };
 
@@ -390,24 +554,7 @@ export function patch(install, opts = {}) {
   add("write index.js", () => fs.writeFileSync(indexPath, entrySource(loader)), () => fs.rmSync(indexPath, { force: true }));
   add(
     "write " + MANIFEST,
-    () =>
-      fs.writeFileSync(
-        install.manifest,
-        JSON.stringify(
-          {
-            tool: "hypercord",
-            loader,
-            original: ORIGINAL,
-            appAsar: install.appAsar,
-            channel: install.channel,
-            version: install.version,
-            patchedAt: new Date().toISOString(),
-            assets,
-          },
-          null,
-          1,
-        ) + "\n",
-      ),
+    () => fs.writeFileSync(install.manifest, JSON.stringify(patchManifest({ install, loader, assets, opts }), null, 1) + "\n"),
     () => fs.rmSync(install.manifest, { force: true }),
   );
 
@@ -497,7 +644,11 @@ export function launch(install, opts = {}) {
   try {
     const child = spawnImpl(command.cmd, command.args || [], { detached: true, stdio: "ignore", env: { ...process.env, ...(opts.env || {}) } });
     if (child && typeof child.unref === "function") child.unref();
-    return { ok: true, command: command.cmd, args: command.args || [] };
+    // The handle travels with the answer, because the one who started Discord is the one who
+    // can hear it stop - and Discord applies a staged update as it goes down, which is the
+    // moment a *new* `app-<version>` becomes the one a shortcut will start. It is deliberately
+    // not waited on: the process is detached and unref'd, so this is an observer, not a parent.
+    return { ok: true, command: command.cmd, args: command.args || [], child: child || null };
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) };
   }

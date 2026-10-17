@@ -278,7 +278,12 @@ ok("and the token still lands in the frame's storage", rootStorage.peek("token")
 // The probe is the instrument that replaces the assumption. It may report *which*
 // keys exist, their names, their lengths and their types - it may never report a
 // value, and a cookie's value least of all. These assertions hold it to that.
-const LIVE_TOKEN = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAuR2hKaw.abcdefghijklmnopqrstuvwxyz123456";
+// A token as the probe sees one. It is deliberately in the two-part `<id>.<signature>` form
+// `looksLikeUserToken` accepts rather than the three-part one a *Discord* token comes in: the
+// earlier fixture was three dot-separated base64url parts, which is the shape GitHub's push
+// protection recognises as a live Discord token and refuses to accept a push of. What these
+// assertions need is a string the client's own rule calls a session, not a real-looking one.
+const LIVE_TOKEN = "hypercordTestTokenId0123456789.hypercordTestSignature0123456789abcdef";
 const COOKIE_VALUE = "SHOULD-NOT-APPEAR-ANYWHERE";
 
 /** A storage with the two members the probe walks: `length`/`key(i)` and getItem. */

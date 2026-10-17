@@ -22,6 +22,7 @@ import { createBeef } from "./beef.js";
 import { PluginHost } from "./plugin-host.js";
 import { createThemes } from "./themes.js";
 import { createTokens, redact } from "./tokens.js";
+import { inspect, listInstalls, patchFreshness } from "./patcher.js";
 import { appRoute, captureSessionScript, clientSignInScript, decideSignIn, looksLikeUserToken, pickClientAuth, signInCandidates, storageProbeScript, tokenWriteScript } from "./signin.js";
 
 const DISCORD_API = "https://discord.com/api/v9";
@@ -95,6 +96,9 @@ export function createHost({
   let sessionToken = ""; // memory only, when the OS keychain is unavailable
   const assets = { css: "", promptHtml: "", panesHtml: "", panesCss: "", panesJs: "" };
   const registered = [];
+  // The decision the shell made about which client this run is, when a shell made one. Null
+  // inside a patched Discord, where no shell ran at all - the facts are measured instead.
+  let clientPolicy = null;
 
   /* ---- state: plain json, and a token that is never in it in clear ---------- */
 
@@ -600,6 +604,9 @@ export function createHost({
     // the sign-in prompt follows this, so storing a token anywhere makes the prompt
     // go away everywhere
     push("tokens:changed", tokens ? tokens.list() : []);
+    // which client this is goes out with everything else, so the page can say it without
+    // asking, and so a client that changes (a patch applied, an install appearing) says so
+    push("client:info", clientInfo());
   }
 
   /**
@@ -639,6 +646,309 @@ export function createHost({
     const status = await plugins.startEnabled();
     log("[hypercord] plugins: " + JSON.stringify(status));
     return status;
+  }
+
+  /* ---- which client this is ------------------------------------------------ */
+
+  /**
+   * What this process is, from the process itself.
+   *
+   * Read here rather than taken from a caller, and that is the whole point: in a patched
+   * client this host runs inside *Discord's* main process, where src/main.js never ran. So
+   * "which client am I" has to be answerable from here or it is not answerable at all.
+   */
+  function runningApp() {
+    const name = String((app && typeof app.getName === "function" && app.getName()) || "");
+    return { name, ours: /hypercord/i.test(name), packaged: Boolean(app && app.isPackaged) };
+  }
+
+  /**
+   * The patch record of the install this process is running inside, or null.
+   *
+   * In a patched Discord the main process resolves its own modules inside the version
+   * directory we patched, so `resourcesPath` *is* that install's resources directory and the
+   * manifest is one known path inside it - the same file src/loader.cjs already reads for its
+   * assets. A file that is not there, or is not ours, answers null rather than a guess.
+   */
+  function runningInstall() {
+    const resources = String(process.resourcesPath || "");
+    if (!resources) return null;
+    const manifest = path.join(resources, "app", "hypercord.json");
+    try {
+      const record = JSON.parse(fs.readFileSync(manifest, "utf8")) || null;
+      if (!record || record.tool !== "hypercord") return null;
+      return { resources, manifest, record, discord: String(record.version || "") };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The build that is *running*, which is not the same as the build this process is.
+   *
+   * Inside Discord `app.getVersion()` is Discord's number, so comparing it against the build
+   * recorded in the manifest would compare Discord's version with Hypercord's and conclude
+   * nonsense. The honest source is the app that owns the loader this install was patched
+   * with: the manifest records its path, and its package.json sits beside it. When that
+   * cannot be read the answer is empty, which reads as "cannot be ordered" downstream rather
+   * than as a wrong version.
+   */
+  function runningBuildVersion(inside) {
+    if (inside && inside.record && inside.record.loader) {
+      try {
+        const beside = path.join(path.dirname(String(inside.record.loader)), "..", "package.json");
+        const pkg = JSON.parse(fs.readFileSync(beside, "utf8")) || {};
+        if (pkg.version) return String(pkg.version);
+      } catch {
+        return "";
+      }
+    }
+    return String((app && typeof app.getVersion === "function" && app.getVersion()) || "");
+  }
+
+  /** The manifest, trimmed to what a report needs - the baked stylesheet stays out of it. */
+  function patchRecord(install) {
+    const state = inspect(install);
+    const record = state.manifest && typeof state.manifest === "object" ? state.manifest : null;
+    return {
+      state: state.state,
+      version: String((record && record.version) || install.version || ""),
+      patchedByVersion: String((record && record.patchedByVersion) || ""),
+      patchedAt: String((record && record.patchedAt) || ""),
+      runtime: record && record.runtime ? record.runtime : null,
+      platform: record && record.platform ? record.platform : null,
+      error: String(state.error || ""),
+    };
+  }
+
+  /** Every Discord install on this machine, newest first, with what state each is in. */
+  function discordInstalls() {
+    try {
+      return listInstalls().map((install) => ({
+        channel: String(install.channel || ""),
+        channelName: String(install.channelName || ""),
+        version: String(install.version || ""),
+        root: String(install.root || ""),
+        patch: patchRecord(install),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Which client this is, as data: the process, the Discord it stands in front of, whether the
+   * patch took, and - when the build that patched an install is not the build asking - that
+   * too. Plain values only, so it can cross the IPC boundary as it is.
+   */
+  function clientInfo() {
+    const me = runningApp();
+    const inside = runningInstall();
+    const installs = discordInstalls();
+    const newest = installs[0] || null;
+    const running = runningBuildVersion(inside);
+    const record = inside ? inside.record : newest && newest.patch.state === "patched" ? newest.patch : null;
+    const freshness = record ? patchFreshness({ patchedByVersion: record.patchedByVersion }, running) : null;
+    return {
+      mode: inside ? "patched" : me.ours ? "window" : "other",
+      title: inside
+        ? "inside " + (me.name || "the client") + ", patched by Hypercord"
+        : me.ours
+          ? "Hypercord's own window"
+          : me.name
+            ? "inside " + me.name
+            : "inside an unnamed process",
+      host: me.name,
+      packaged: me.packaged,
+      version: running,
+      discord: inside ? inside.discord : newest ? newest.version : "",
+      manifest: inside ? inside.manifest : "",
+      patchedBy: String((record && record.patchedByVersion) || ""),
+      patchedAt: String((record && record.patchedAt) || ""),
+      runtime: (record && record.runtime) || null,
+      platform: (record && record.platform) || null,
+      freshness,
+      policy: clientPolicy
+        ? { attach: Boolean(clientPolicy.attach), reason: String(clientPolicy.reason || ""), state: String(clientPolicy.state || ""), channel: String(clientPolicy.channel || ""), version: String(clientPolicy.version || "") }
+        : null,
+      installs,
+      os: process.platform,
+      arch: process.arch,
+      at: Date.now(),
+    };
+  }
+
+  /**
+   * Ask for the patch to be refreshed, from wherever this client is.
+   *
+   * A patched client cannot re-apply its own patch: Electron read the entry point when the
+   * process started, so nothing written now takes effect in this process. What this can do is
+   * record the request for the one process that *can* write it - the shell, at its next start.
+   * Staying silent about that would be the worse answer: a button that appears to work and
+   * changes nothing until a restart nobody mentioned.
+   */
+  function requestReapply() {
+    const file = path.join(userData, "repatch.request");
+    const me = runningApp();
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ requestedAt: new Date().toISOString(), from: me.name || "unknown", version: runningBuildVersion(runningInstall()) }, null, 1) + "\n",
+      );
+      log("[hypercord] a patch refresh was requested; Hypercord applies it at its next start");
+      return { ok: true, queued: true, path: file, note: "Hypercord refreshes the patch the next time it starts" };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  }
+
+  /**
+   * One file a person can send to somebody else: which client this is, which Discord and which
+   * runtime are in play, whether the patch took, what the stores hold, and this host's own log.
+   *
+   * Two things make it safe to hand over. It is assembled from facts that are already
+   * non-secret - key rows are the store's own masks, never a token - and the whole text passes
+   * through `redact` once more on the way out with *every stored secret supplied*, because a
+   * plugin's error text or a path is exactly where a pasted secret turns up. And it says in its
+   * own header what it deliberately leaves out, because the reader of a support file should not
+   * have to trust that someone thought about it.
+   */
+  function supportBundle() {
+    const lines = [];
+    const say = (label, value) => lines.push(label + ": " + (value === undefined || value === null || value === "" ? "not reported" : String(value)));
+    const info = clientInfo();
+    say("written", new Date().toISOString());
+    lines.push("");
+    lines.push("== this process ==");
+    say("client", info.title);
+    say("host process", info.host || "unnamed");
+    say("mode", info.mode);
+    say("build", info.version || "unknown");
+    say("packaged", info.packaged ? "yes" : "no");
+    say("operating system", info.os + " " + info.arch);
+    if (info.policy) {
+      say("attach decision", info.policy.attach ? "attached" : "kept this window");
+      say("attach reason", info.policy.reason);
+    }
+    lines.push("");
+    lines.push("== the Discord in front of it ==");
+    for (const install of info.installs) {
+      lines.push(
+        "  " + install.channelName + " " + (install.version || "unknown version") + " - " + install.patch.state + " - " + install.root,
+      );
+      if (install.patch.patchedByVersion) lines.push("      patched by Hypercord " + install.patch.patchedByVersion + " at " + install.patch.patchedAt);
+      if (install.patch.error) lines.push("      " + install.patch.error);
+    }
+    if (!info.installs.length) lines.push("  no Discord install was found");
+    lines.push("");
+    lines.push("== the patch ==");
+    say("record", info.manifest || "no patch record is readable from this process");
+    say("patched by", info.patchedBy || "not recorded");
+    say("patched at", info.patchedAt || "not recorded");
+    say("this build", info.version || "unknown");
+    say("freshness", info.freshness ? info.freshness.state + (info.freshness.reason ? " - " + info.freshness.reason : "") : "nothing recorded to compare");
+    if (info.runtime) {
+      for (const file of info.runtime.files || []) lines.push("  runtime " + file.name + " " + file.bytes + " bytes " + (file.sha256 || "no digest"));
+      if (info.runtime.provenance) {
+        const p = info.runtime.provenance;
+        lines.push("  built from " + p.core + " " + p.coreCommit + " with " + p.merged + " " + p.mergedCommit + " merged (" + p.generatedAt + ")");
+      }
+      if (info.runtime.note) lines.push("  " + info.runtime.note);
+    } else {
+      lines.push("  runtime: not recorded");
+    }
+    if (info.platform) {
+      const p = info.platform;
+      lines.push("  recorded platform " + p.os + " " + p.arch + " " + (p.release || "") + ", electron " + (p.electron || "?") + ", chrome " + (p.chrome || "?") + ", node " + (p.node || "?"));
+    }
+    lines.push("");
+    lines.push("== updates ==");
+    const update = updater ? updater.describe() : null;
+    say("mode", update ? update.mode : "no updater in this run");
+    if (update) {
+      say("supported", update.supported ? "yes" : "no");
+      say("feed", update.feed || "");
+      say("last checked", update.checkedAt ? new Date(update.checkedAt).toISOString() : "never");
+      say("available", update.version || "none seen");
+      say("downloaded", update.downloaded || "nothing");
+      say("note", update.note || "");
+      say("last error", update.error || "");
+    }
+    lines.push("");
+    lines.push("== plugins ==");
+    const status = plugins ? plugins.status() : null;
+    if (status) {
+      say("catalogue", status.catalogue);
+      say("enabled", status.enabled);
+      say("running", Array.isArray(status.running) ? status.running.length : 0);
+      for (const id of Object.keys(status.broken || {})) lines.push("  broken: " + id + " - " + String(status.broken[id]));
+    } else {
+      lines.push("  no plugin host in this run");
+    }
+    lines.push("");
+    lines.push("== themes, keys and beef ==");
+    const installed = themes ? themes.list() : [];
+    say("themes installed", Array.isArray(installed) ? installed.length : 0);
+    say("themes enabled", Array.isArray(installed) ? installed.filter((one) => one && one.enabled).length : 0);
+    const rows = tokens ? tokens.list() : [];
+    say("keys stored", Array.isArray(rows) ? rows.length : 0);
+    for (const row of Array.isArray(rows) ? rows : []) {
+      // the store's own masks and nothing else - there is no path by which a token reaches this file
+      lines.push("  " + String(row.account) + " \"" + String(row.label || "") + "\" fingerprint " + String(row.fingerprint || "") + " ends " + String(row.last4 || "") + (row.memoryOnly ? " (this session only)" : ""));
+    }
+    const generator = beef ? beef.state() : null;
+    if (generator) {
+      say("beef generator", generator.ready ? "ready" : "not ready");
+      say("beef source", generator.sourceLabel || generator.source || "");
+      say("beef categories", Array.isArray(generator.categories) ? generator.categories.length : 0);
+      say("beef last error", generator.lastError || "");
+    }
+    lines.push("");
+    lines.push("== log (this host's own lines, newest last) ==");
+    for (const line of logRing.slice(-200)) lines.push("  " + line);
+    lines.push("");
+    lines.push("== not in this file ==");
+    lines.push("  token values, passkeys, cookies, page storage, message contents, theme and generator css.");
+    lines.push("  Account ids, labels, fingerprints and file paths are included; the log is this host's own.");
+
+    const secrets = [];
+    if (tokens) {
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const value = tokens.get(String(row.account));
+        if (value) secrets.push(value);
+      }
+    }
+    const text = redact(lines.join("\n") + "\n", ...secrets);
+    // downloads first, then documents, then the client's own directory: somewhere a person can
+    // find, and a directory that always exists. The name is stamped, and the colons of an ISO
+    // timestamp are replaced, because a colon is not a legal character in a Windows file name.
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const candidates = [];
+    for (const kind of ["downloads", "documents"]) {
+      try {
+        const dir = app && typeof app.getPath === "function" ? String(app.getPath(kind) || "") : "";
+        if (dir) candidates.push(path.join(dir, "hypercord-support-" + stamp + ".txt"));
+      } catch {
+        /* a path this platform does not have: the next one */
+      }
+    }
+    if (userData) candidates.push(path.join(userData, "hypercord-support-" + stamp + ".txt"));
+    let wrote = "";
+    let failure = "";
+    for (const file of candidates) {
+      try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, text);
+        wrote = file;
+        break;
+      } catch (err) {
+        failure = String((err && err.message) || err);
+      }
+    }
+    if (!wrote) return { ok: false, error: failure || "there was nowhere to write a support file" };
+    log("[hypercord] support bundle written to " + wrote);
+    return { ok: true, path: wrote, bytes: Buffer.byteLength(text), lines: text.split("\n").length - 1, text };
   }
 
   /* ---- the log the settings page reads ------------------------------------- */
@@ -983,12 +1293,26 @@ export function createHost({
       }
     });
 
+    // Which client this is, and the two things a person can do about it: ask for the patch to be
+    // refreshed where a refresh is possible, and put everything worth knowing in one file. Each
+    // of these answers without a control server, like every other channel here.
+    handle("client:info", () => clientInfo());
+    handle("client:reapply", () => requestReapply());
+    handle("support:bundle", () => supportBundle());
+
     handle("themes:list", () => (themes ? themes.list() : []));
     // the library browser: one fetch when the page asks for it, through the same theme
     // store that installs from a link, so a theme from the library and a theme from a
     // pasted URL are the same thing by the time either is on disk
     handle("themes:index", (_event, force) =>
       themes ? themes.index({ force: Boolean(force) }) : { ok: false, error: "no theme store in this run" },
+    );
+    // a preview picture, fetched by this process and handed to the page as a data URL:
+    // Discord's own Content-Security-Policy decides what the page's images may be, and one
+    // row of the library keeps its thumbnail on a third party's host, so the page is never
+    // the one asking for it. One request per preview somebody opens, then nothing.
+    handle("themes:thumbnail", (_event, url) =>
+      themes ? themes.thumbnail(String(url || "")) : { ok: false, error: "no theme store in this run" },
     );
     handle("themes:css", () => (themes ? themes.css() : ""));
     handle("themes:install", async (_event, source, name) => {
@@ -1171,6 +1495,14 @@ export function createHost({
     updateState: () => (updater ? updater.describe() : { mode: "dev", supported: false, error: "no updater in this run" }),
     addToken,
     useToken,
+    /** the shell's own answer about which client this is, recorded for the settings page */
+    setClient: (policy) => {
+      clientPolicy = policy && typeof policy === "object" ? policy : null;
+      return clientPolicy;
+    },
+    clientInfo,
+    supportBundle,
+    requestReapply,
     setControlToken,
     readState,
     // the pieces a caller may need to reason about, rather than a second copy of them

@@ -27,6 +27,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHost } from "./host.js";
+import { attachPolicy, newestInstalls, updatePlan } from "./attach.js";
 import { sandboxDecision } from "./linux-sandbox.js";
 import { findDiscord, patch } from "./patcher.js";
 import passkeys from "./passkeys.cjs";
@@ -176,11 +177,13 @@ console.log("[hypercord] the runtime is handed to the window's preload (" + Math
 
 /* ---- the real client ----------------------------------------------------- */
 
-// Finding Discord is not the same as being Discord. When an install is here,
-// `--attach` patches it once and starts it: the client the user gets is the actual
-// Discord, with Hypercord in front of it, not a window of ours showing the web app.
-function attachToDiscord({ launch = true } = {}) {
-  const found = findDiscord();
+// Finding Discord is not the same as being Discord. Attaching patches the install
+// once and starts it, so the client the user gets is the actual Discord with
+// Hypercord in front of it, not a window of ours showing the web app. Whether this
+// run is that one is decided in src/attach.js and passed in as `install`; this
+// function only does the work it was handed.
+function attachToDiscord({ launch = true, install = null } = {}) {
+  const found = install ? { ok: true, install, installs: [install] } : findDiscord();
   if (!found.ok) {
     console.log("[hypercord] no Discord install found: " + found.error);
     return { ok: false, error: found.error };
@@ -190,6 +193,9 @@ function attachToDiscord({ launch = true } = {}) {
     // our stylesheet and the themes are baked in at patch time, so the real client
     // shows them without the shell having to be running at all
     assets: { css: host ? host.css() : "" },
+    // which build did this goes into the manifest, because a client running inside Discord
+    // cannot ask the process it is in (there, `app.getVersion()` is Discord's number)
+    version: app.getVersion(),
     log: (line) => console.log(line),
   });
   if (!done.ok) {
@@ -205,6 +211,68 @@ function attachToDiscord({ launch = true } = {}) {
   // no client running to look at, so the fallback window is the right answer rather than
   // an exit.
   return { ...done, started };
+}
+
+/* ---- a Discord that has moved on ----------------------------------------- */
+
+// The request a patched client can leave behind but cannot act on: Electron read the entry
+// point when that process started, so the only place a patch can be written is here, at the
+// shell's next start. Written by the Access keys / Logs page (see `client:reapply`).
+function repatchRequest() {
+  return path.join(app.getPath("userData"), "repatch.request");
+}
+
+/**
+ * Patch the install a person's shortcut will actually start, if anything of ours is not on it.
+ *
+ * Discord's own updater installs a *new* `app-<version>` directory rather than updating the one
+ * it had (Squirrel's documented behaviour), and applies it at the app's next start - so nothing
+ * of ours travels with it, and the shortcut then starts a client with no Hypercord in it. This
+ * is the answer: the newest install is inspected (src/attach.js decides, so the reasoning lives
+ * in one place), patched if it needs it, and refreshed in place if the build that patched it was
+ * an older one.
+ *
+ * What it deliberately does not do is start anything: a person who closed Discord should not
+ * find it reopened. Patching now means the next start - ours or the shortcut's - is patched.
+ */
+function followDiscord({ why = "start" } = {}) {
+  const plan = updatePlan({ installs: newestInstalls(), version: app.getVersion() });
+  if (plan.action === "none" || plan.action === "refuse") {
+    console.log("[hypercord] no Discord install needed patching (" + why + "): " + plan.reason);
+    return plan;
+  }
+  const done = patch(plan.install, {
+    loader: path.join(here, "loader.cjs"),
+    assets: { css: host ? host.css() : "" },
+    version: app.getVersion(),
+    log: (line) => console.log(line),
+  });
+  const named = String(plan.install.channelName || "Discord") + " " + String(plan.install.version || "");
+  console.log(
+    done.ok
+      ? "[hypercord] " + named + " patched (" + plan.reason + ") - it is the client from the next start on"
+      : "[hypercord] " + named + " could not be patched: " + String(done.error || done.state || "no reason given"),
+  );
+  return { ...plan, done };
+}
+
+/** Apply a refresh a patched client asked for, and say what happened. */
+function applyRepatchRequest() {
+  const file = repatchRequest();
+  if (!fs.existsSync(file)) return { ok: true, applied: false };
+  let asked = {};
+  try {
+    asked = JSON.parse(fs.readFileSync(file, "utf8")) || {};
+  } catch {
+    asked = {};
+  }
+  const result = followDiscord({ why: "asked for from inside the client at " + String(asked.requestedAt || "some point") });
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {
+    /* the file is a request, not a record: a refusal to remove it is not a failure to apply it */
+  }
+  return { ok: true, applied: true, plan: result };
 }
 
 /* ---- the measurement mode ------------------------------------------------ */
@@ -327,23 +395,48 @@ async function boot() {
     createWindow();
     return;
   }
-  // `--attach` means "the client is the real Discord": it is patched, started, and this
-  // shell is finished. Keeping a window open here would mean two complete clients alive at
-  // once - two Discord renderers, two GPU workloads, two plugin hosts, two token stores -
-  // for one client the user is looking at in the other, and that doubled client is the
-  // idle memory this shell used to cost. A machine with nothing to patch keeps the
-  // fallback window, which is exactly what it always was.
-  if (process.argv.includes("--attach")) {
-    const attached = attachToDiscord();
+  // The real client is what this run is for: with a Discord install in front of it, the client
+  // IS that Discord, patched - and this window is the fallback for a machine with nothing to
+  // patch, for an install somebody else's loader owns, for `--no-attach`, and for a development
+  // run. Which of the two this is comes from src/attach.js, and the answer is recorded either
+  // way: a window that appears instead of the real client is otherwise indistinguishable from a
+  // client that failed to start.
+  //
+  // A refresh asked for from inside a patched client is applied first, because that process
+  // could not apply it itself and this is the one moment it can be.
+  const policy = attachPolicy({ packaged: app.isPackaged, found: findDiscord() });
+  host.setClient(policy);
+  console.log("[hypercord] " + (policy.attach ? "the real client is the client: " : "this window is the client: ") + policy.reason);
+  if (policy.attach) {
+    // A refresh asked for from inside a patched client was left for the one run that can apply
+    // it. It is applied here, before the launch, because this process is about to patch anyway.
+    applyRepatchRequest();
+    const attached = attachToDiscord({ install: policy.install });
     const running = attached.ok && attached.started && attached.started.ok !== false;
     if (running) {
+      // Discord applies a staged update as it goes down and starts the new version at its next
+      // start, so the moment it stops is the moment to make sure the version its shortcut will
+      // start has our patch on it.
+      const child = attached.started && attached.started.child;
+      if (child && typeof child.on === "function") {
+        child.on("exit", (code, signal) => {
+          console.log("[hypercord] the client Discord exited (" + String(signal || code) + ")");
+          followDiscord({ why: "Discord stopped" });
+        });
+      }
       // the host goes down before the process does, so nothing of ours is left mid-flight
       await host.stop();
       console.log("[hypercord] the real client is patched and running: Discord owns the client now, and this shell has nothing left to show, so it exits");
       app.exit(0);
       return;
     }
-    console.log("[hypercord] there was nothing to attach to, so this window is the client");
+    console.log("[hypercord] the real client did not start, so this window is the client: " + String(attached.error || "no reason given"));
+    host.setClient({ ...policy, attach: false, reason: "attaching failed: " + String(attached.error || "the client did not start") });
+  } else if (fs.existsSync(repatchRequest())) {
+    // A request is standing and this run will not touch an install at all - a development run, an
+    // install another loader owns, or `--no-attach`. Saying so is the difference between a button
+    // that did nothing and a queue that is waiting for the right run.
+    console.log("[hypercord] a patch refresh is still requested; it is applied by a run that attaches (" + policy.reason + ")");
   }
   // no tray and no hidden window: the app is exactly the window
   createWindow();

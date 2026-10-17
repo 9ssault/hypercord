@@ -45,6 +45,11 @@
   let libraryThemes = [];
   let libraryFrom = "";
   let libraryQuery = "";
+  // the library's filter and its order: the API behind it offers neither, so both live here
+  // and both are re-applied every time the list is drawn
+  let libraryKind = "any";
+  let librarySort = "downloads";
+  let libraryBusy = false;
   // "Forget everything" cannot be undone, so it takes two clicks. A browser confirm
   // dialog is not used on purpose: it is modal, it can be suppressed, and the sheet
   // has a status line to say what is about to happen.
@@ -377,7 +382,18 @@
       // the card behind the switch is not what was pressed
       event.stopPropagation();
       if (button.disabled) return;
-      Promise.resolve(onToggle(!checked)).catch((err) => say(text(label) + ": " + why(err), "bad"));
+      // the live state, not the render-time closure: a switch whose page does not
+      // re-render it (a plugin's own settings) would otherwise save the same value
+      // for ever while its knob never moves - measured: two clicks saved false
+      // twice and the knob stayed on. The flip is optimistic; a refusal puts it back.
+      const next = !button.classList.contains("on");
+      button.classList.toggle("on", next);
+      button.setAttribute("aria-checked", next ? "true" : "false");
+      Promise.resolve(onToggle(next)).catch((err) => {
+        button.classList.toggle("on", !next);
+        button.setAttribute("aria-checked", !next ? "true" : "false");
+        say(text(label) + ": " + why(err), "bad");
+      });
     });
     return button;
   }
@@ -1657,6 +1673,10 @@
     const box = $("hp-quickCss");
     if (box) box.value = typeof quick === "string" ? quick : "";
     renderThemes(Array.isArray(list) ? list : []);
+    // The library is why most people open this tab, so the first time the tab is drawn it
+    // reads itself. Nothing is fetched for a tab nobody opened, the service caches its own
+    // reply for twenty minutes, and a second visit draws the copy already in hand.
+    if (!libraryThemes.length && !libraryBusy) loadThemeLibrary(false);
   }
 
   /**
@@ -1735,43 +1755,112 @@
   // fetched once, at the moment of install, then a file on disk.
 
   async function loadThemeLibrary(force = false) {
+    if (libraryBusy) return;
+    libraryBusy = true;
     const note = $("hp-themeLibraryNote");
     if (note) note.textContent = "reading the library\u2026";
-    const res = await guard("theme library", () => hc.themes.index(force === true));
+    let res = null;
+    try {
+      res = await guard("theme library", () => hc.themes.index(force === true));
+    } finally {
+      libraryBusy = false;
+    }
     if (!res || res.ok === false) {
-      libraryThemes = [];
-      fillGrid("hp-themeLibrary", [], "the theme library could not be read");
+      // A failed read never throws away the copy already on screen: two hundred cards
+      // disappearing because a second request timed out is worse than a stale list.
+      if (!libraryThemes.length) fillGrid("hp-themeLibrary", [], "the theme library could not be read");
+      if (note) {
+        note.textContent =
+          text((res && res.error) || "the theme library could not be read") +
+          (libraryThemes.length ? " \u00b7 still showing the copy read a moment ago" : "");
+      }
       return;
     }
     libraryThemes = Array.isArray(res.themes) ? res.themes : [];
     libraryFrom = text(res.from || "");
+    offerKinds();
     renderThemeLibrary(res.cached === true);
   }
 
+  /**
+   * The kinds the index actually contains. A filter offering a kind nothing in the library
+   * carries is a filter that can only produce an empty page, so the two narrow options start
+   * disabled and are switched on when the list holds one.
+   */
+  function offerKinds() {
+    const select = $("hp-themeLibraryKind");
+    if (!select) return;
+    const kinds = new Set(libraryThemes.map((entry) => kindOf(entry)));
+    for (const option of Array.from(select.options)) {
+      option.disabled = option.value !== "any" && !kinds.has(option.value);
+    }
+    if (libraryKind !== "any" && !kinds.has(libraryKind)) libraryKind = "any";
+    select.value = libraryKind;
+  }
+
+  /**
+   * What an entry is, as far as the index says. Its rows are published as themes; a row that
+   * labels itself a snippet is one. Nothing is inferred from a description, because a guess
+   * here files entries under a filter they do not belong to.
+   */
+  function kindOf(entry) {
+    return text(entry.kind || entry.type || entry.category)
+      .trim()
+      .toLowerCase() === "snippet"
+      ? "snippet"
+      : "theme";
+  }
+
+  // the words the note under the library uses for each order, so the picker and the note agree
+  const SORT_NAMES = { downloads: "most downloaded", likes: "most liked", updated: "recently updated", name: "by name" };
+
+  /** The order the picker asked for, with the name breaking ties so the list is stable. */
+  function sortLibrary(rows) {
+    const byName = (a, b) => text(a.name).localeCompare(text(b.name));
+    const copy = rows.slice();
+    if (librarySort === "name") return copy.sort(byName);
+    if (librarySort === "likes") return copy.sort((a, b) => Number(b.likes || 0) - Number(a.likes || 0) || byName(a, b));
+    if (librarySort === "updated") {
+      const at = (row) => {
+        const when = Date.parse(text(row.updated));
+        return Number.isNaN(when) ? 0 : when;
+      };
+      return copy.sort((a, b) => at(b) - at(a) || byName(a, b));
+    }
+    return copy.sort((a, b) => Number(b.downloads || 0) - Number(a.downloads || 0) || byName(a, b));
+  }
+
   function renderThemeLibrary(cached = false) {
-    const rows = libraryQuery
-      ? libraryThemes.filter((entry) =>
-          [text(entry.name), text(entry.author), text(entry.description), (Array.isArray(entry.tags) ? entry.tags : []).join(" ")]
-            .join(" ")
-            .toLowerCase()
-            .includes(libraryQuery),
-        )
-      : libraryThemes;
+    const rows = sortLibrary(
+      libraryThemes.filter((entry) => {
+        if (libraryKind !== "any" && kindOf(entry) !== libraryKind) return false;
+        if (!libraryQuery) return true;
+        return [text(entry.name), text(entry.author), text(entry.description), (Array.isArray(entry.tags) ? entry.tags : []).join(" ")]
+          .join(" ")
+          .toLowerCase()
+          .includes(libraryQuery);
+      }),
+    );
     const note = $("hp-themeLibraryNote");
     if (note) {
       note.textContent =
         rows.length +
-        (libraryQuery ? " of " + libraryThemes.length : "") +
-        " theme(s) in the library" +
+        " of " +
+        libraryThemes.length +
+        " in the library" +
+        (libraryQuery || libraryKind !== "any" ? " after filtering" : "") +
+        " \u00b7 " +
+        text(SORT_NAMES[librarySort] || librarySort) +
         (libraryFrom ? " \u00b7 " + libraryFrom : "") +
         (cached ? " \u00b7 read a moment ago" : "");
     }
-    fillGrid("hp-themeLibrary", rows.map(libraryCard), libraryThemes.length ? "nothing in the library matches that search" : "the library is empty");
+    fillGrid("hp-themeLibrary", rows.map(libraryCard), libraryThemes.length ? "nothing in the library matches that" : "the library is empty");
   }
 
   function libraryCard(entry) {
     const badges = (Array.isArray(entry.tags) ? entry.tags : []).slice(0, 3).map((tag) => ({ text: text(tag) }));
     if (Number(entry.downloads) > 0) badges.push({ text: text(entry.downloads) + " downloads" });
+    if (Number(entry.likes) > 0) badges.push({ text: text(entry.likes) + " likes" });
     // a theme that is already installed is marked rather than offered again: installing
     // twice would be two files with the same contents and two switches to keep in step
     const already = installedThemes.some((one) => text(one.url) === text(entry.download));
@@ -1793,6 +1882,13 @@
           disabled: already,
           run: () => installFromLibrary(entry),
         },
+        {
+          id: "preview",
+          label: "Preview",
+          title: "fetch " + text(entry.name) + "\u2019s preview picture once and draw it under the list",
+          disabled: !text(entry.thumbnail),
+          run: () => previewTheme(entry),
+        },
       ],
     });
   }
@@ -1805,6 +1901,87 @@
       await loadThemes();
       renderThemeLibrary();
     }
+  }
+
+  /* ---- one preview at a time ----------------------------------------------- */
+
+  // Which entry the preview under the grid belongs to. It is compared before a fetched
+  // picture is drawn, because a fast click on two cards is two fetches in flight and only
+  // the last one asked for may end up on screen.
+  let previewEntry = "";
+
+  /**
+   * Fetch one theme's preview, through the shell, and draw it under the grid.
+   *
+   * Nothing is hotlinked: the address is handed to the shell, which fetches the bytes and
+   * answers with a data URL, because the image policy on this page is Discord's own. The
+   * picture is only ever drawn from a data URL - an address that came back as anything else
+   * is refused rather than put in an `img`, which is the one place a remote page could
+   * otherwise get a request out of this client.
+   */
+  async function previewTheme(entry) {
+    const box = $("hp-themeLibraryPreview");
+    if (!box) return;
+    const name = text(entry.name);
+    const wanted = text(entry.thumbnail);
+    previewEntry = text(entry.id);
+    box.classList.remove("hidden");
+    box.textContent = "";
+    box.appendChild(previewCaption(name + " \u00b7 fetching the preview\u2026"));
+    if (!wanted) {
+      box.textContent = "";
+      box.appendChild(previewCaption(name + ": the library publishes no preview for this one"));
+      return;
+    }
+    const res = await guard("the preview of " + name, () => hc.themes.thumbnail(wanted));
+    if (previewEntry !== text(entry.id)) return; // another card was asked for while this was in flight
+    box.textContent = "";
+    const dataUrl = text(res && res.dataUrl);
+    if (!res || res.ok === false || !dataUrl.startsWith("data:image/")) {
+      box.appendChild(
+        previewCaption(name + ": " + text((res && res.error) || "the preview came back as something other than an image")),
+      );
+      return;
+    }
+    const image = document.createElement("img");
+    image.alt = "preview of " + name;
+    image.src = dataUrl;
+    const caption = previewCaption(
+      name +
+        " \u00b7 " +
+        Math.round(Number(res.bytes || 0) / 1024) +
+        " kb \u00b7 read " +
+        (res.cached === true ? "a moment ago" : "just now") +
+        (entry.page ? " \u00b7 " + text(entry.page) : ""),
+    );
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "ghost";
+    close.textContent = "Close the preview";
+    close.addEventListener("click", () => closePreview());
+    box.append(image, caption, close);
+  }
+
+  /**
+   * A caption line. Built as an element, so a name from the library is never markup - and a
+   * paragraph rather than a `figcaption`, because this block is a div holding a picture, a
+   * line and a button, and a caption that is neither the first nor the last child of its
+   * figure is not what a figure is for.
+   */
+  function previewCaption(line) {
+    const node = document.createElement("p");
+    node.className = "previewLine";
+    node.textContent = text(line);
+    return node;
+  }
+
+  /** Drop the open preview, and with it the picture it was holding in memory. */
+  function closePreview() {
+    const box = $("hp-themeLibraryPreview");
+    previewEntry = "";
+    if (!box) return;
+    box.classList.add("hidden");
+    box.textContent = "";
   }
 
   /* ---- logs ---------------------------------------------------------------- */
@@ -1822,6 +1999,109 @@
     if (Array.isArray(res)) return res.map(text);
     if (res && Array.isArray(res.lines)) return res.lines.map(text);
     return res && res.text ? [text(res.text)] : [];
+  }
+
+  /* ---- which client this is ------------------------------------------------ */
+
+  /**
+   * The shell's answer to "which Discord am I standing in front of, and did the patch
+   * take?", as cards. Every row is something the shell reported; a fact it does not have is
+   * said as such rather than left blank, because a blank row reads as a healthy row. Nothing
+   * here is fetched - it all comes back from this process.
+   */
+  async function loadClientAbout() {
+    const container = $("hp-clientAbout");
+    const note = $("hp-clientNote");
+    if (!container) return;
+    const facts = await guard("client identity", () => hc.client.info());
+    if (!facts || facts.ok === false) {
+      beefRows(container, [], "the shell did not say which client this is");
+      return;
+    }
+    const rows = [];
+    rows.push(["Running", text(facts.title)]);
+    if (facts.policy) {
+      rows.push(["Attach decision", facts.policy.attach ? "attached to the client on this machine" : "kept this window"]);
+      rows.push(["Why", text(facts.policy.reason)]);
+    }
+    if (facts.manifest) rows.push(["Patch record", text(facts.manifest)]);
+    if (facts.patchedBy) {
+      rows.push(["Patched by", "Hypercord " + text(facts.patchedBy) + " on " + text(facts.patchedAt || "an unrecorded date")]);
+    }
+    if (facts.freshness) {
+      rows.push([
+        "Patch freshness",
+        facts.freshness.older
+          ? "stale \u00b7 " + text(facts.freshness.reason)
+          : "current" + (facts.freshness.reason ? " \u00b7 " + text(facts.freshness.reason) : ""),
+      ]);
+    }
+    const runtime = facts.runtime;
+    if (runtime && Array.isArray(runtime.files) && runtime.files.length) {
+      for (const file of runtime.files) {
+        rows.push(["Baked " + text(file.name), text(file.bytes) + " bytes \u00b7 " + text(file.sha256 || "no digest recorded")]);
+      }
+      if (runtime.provenance) {
+        rows.push([
+          "Runtime built from",
+          text(runtime.provenance.core) +
+            " " +
+            text(runtime.provenance.coreCommit) +
+            " and " +
+            text(runtime.provenance.merged) +
+            " " +
+            text(runtime.provenance.mergedCommit),
+        ]);
+      }
+    } else if (runtime) {
+      rows.push(["Baked runtime", text(runtime.note || "not recorded")]);
+    }
+    const installs = Array.isArray(facts.installs) ? facts.installs : [];
+    for (const install of installs) {
+      const patch = install.patch && typeof install.patch === "object" ? install.patch : {};
+      rows.push([
+        text(install.channelName || install.channel || "Discord") + " " + text(install.version || "version unknown"),
+        text(install.root) +
+          " \u00b7 " +
+          text(patch.state) +
+          (patch.patchedByVersion ? " \u00b7 patched by Hypercord " + text(patch.patchedByVersion) : "") +
+          (patch.error ? " \u00b7 " + text(patch.error) : ""),
+      ]);
+    }
+    if (!installs.length) rows.push(["Discord", "no install of it was found on this machine"]);
+    rows.push([
+      "This process",
+      text(facts.os) + " " + text(facts.arch) + " \u00b7 packaged: " + (facts.packaged ? "yes" : "no") + " \u00b7 Hypercord " + text(facts.version || "unknown"),
+    ]);
+    beefRows(container, rows, "the shell did not say which client this is");
+    if (note) {
+      note.textContent =
+        facts.freshness && facts.freshness.older
+          ? "this install carries a patch from an older build: refreshing it re-records the manifest and re-bakes the files, and Discord has to be restarted to pick that up"
+          : "read from this process, not from a server";
+    }
+  }
+
+  /** Ask for the patch to be refreshed. Says plainly that it lands at the next start. */
+  async function reapplyPatch() {
+    const res = await guard("refresh the patch", () => hc.client.reapply());
+    if (!res) return;
+    if (res.ok === false) {
+      say("the patch could not be refreshed: " + text(res.error), "bad");
+      return;
+    }
+    say(text(res.note || "the patch is refreshed the next time Hypercord starts"), "good");
+  }
+
+  /** One file to hand to somebody else, written by the shell and never by this page. */
+  async function saveSupportBundle() {
+    const res = await guard("support bundle", () => hc.support.bundle());
+    if (!res) return;
+    if (res.ok === false) {
+      say("the support bundle could not be written: " + text(res.error), "bad");
+      return;
+    }
+    say("support bundle written to " + text(res.path) + " (" + text(res.bytes) + " bytes; no key is in it)", "good");
   }
 
   /**
@@ -1860,6 +2140,10 @@
    * otherwise the state above - and the pane always has something true to show.
    */
   async function loadLogs() {
+    // The About cards sit at the top of this page, so the page being drawn is the moment
+    // they are read - a Logs tab showing facts from the last time it was open would be the
+    // one page whose whole job is to be current.
+    loadClientAbout();
     const out = $("hp-logsOut");
     const note = $("hp-logsNote");
     if (out) out.textContent = "reading\u2026";
@@ -2435,6 +2719,22 @@
     }
     on("hp-beefRefresh", "click", () => loadBeef());
     on("hp-logsRefresh", "click", () => loadLogs());
+    on("hp-supportBundle", "click", () => saveSupportBundle());
+    on("hp-clientReapply", "click", () => reapplyPatch());
+    const libraryKindPicker = $("hp-themeLibraryKind");
+    if (libraryKindPicker) {
+      libraryKindPicker.addEventListener("change", () => {
+        libraryKind = text(libraryKindPicker.value) || "any";
+        renderThemeLibrary();
+      });
+    }
+    const librarySortPicker = $("hp-themeLibrarySort");
+    if (librarySortPicker) {
+      librarySortPicker.addEventListener("change", () => {
+        librarySort = text(librarySortPicker.value) || "downloads";
+        renderThemeLibrary();
+      });
+    }
     on("hp-updateCheck", "click", () => checkUpdates());
     on("hp-tokenForget", "click", () => forgetKeys());
     return true;

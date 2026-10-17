@@ -179,6 +179,9 @@ contextBridge.exposeInMainWorld("hypercord", {
     // the public theme library, read when the page asks for it: `force` is the Load
     // button, and everything else is answered from what the shell already read
     index: (force) => call("themes:index", Boolean(force)),
+    // one preview picture, on the page's behalf: the shell fetches it and answers with a
+    // data URL, because the page's own image policy is Discord's and not ours
+    thumbnail: (url) => call("themes:thumbnail", String(url || "")),
     css: () => call("themes:css"),
     install: (source, name) => call("themes:install", String(source || ""), name === undefined ? undefined : String(name)),
     remove: (id) => call("themes:remove", String(id || "")),
@@ -198,6 +201,17 @@ contextBridge.exposeInMainWorld("hypercord", {
     rename: (account, label) => call("tokens:rename", String(account || ""), label === undefined ? "" : String(label)),
     use: (account) => call("tokens:use", String(account || "")),
     store: () => call("tokens:store"),
+  },
+  // which client this is, and the one file a person can hand to somebody else. Both
+  // answer with no control server: they are about this machine and this process.
+  client: {
+    info: () => call("client:info"),
+    // a patched client cannot re-apply its own patch (Electron read its entry point at
+    // boot), so this records the request for the shell's next start and says so
+    reapply: () => call("client:reapply"),
+  },
+  support: {
+    bundle: () => call("support:bundle"),
   },
   on,
 });
@@ -1356,8 +1370,11 @@ function wireEntry(host, view, open) {
       // The quiet failure, named: the click landed, and there is no column to put a page in -
       // and this is the one path where the reason cannot be shown in the sheet itself, because
       // the sheet is the thing that could not be placed. So it is said to the shell instead,
-      // where it reaches the log both clients keep.
+      // where it reaches the log both clients keep - and to the person, as a notification,
+      // because a click that moves the sidebar highlight and opens nothing reads as the
+      // settings being broken, and the reason belongs to whoever just watched it happen.
       report("a Hypercord section was clicked and Discord's settings content column was not found, so nothing was opened (this client will not draw a panel over the client)");
+      call("notify", "Hypercord", "That section could not be opened: Discord's settings content column was not found. Nothing was drawn over the client.").catch(() => {});
       return;
     }
     if (typeof open === "function") open();
@@ -1818,29 +1835,56 @@ function ensurePrompt() {
 }
 
 /**
- * Put the prompt under Discord's email and password fields.
+ * Is this node Hypercord's own markup? Nothing of ours is ever the login form.
  *
- * It is placed by measurement rather than by living inside Discord's own tree:
- * Discord's login card is re-rendered by React, which throws away nodes it does
- * not know about, and a stray node in there can also upset the form's layout. So
- * the prompt stays a child of the document and is positioned against the form's
- * box, directly beneath it, at the same width - it reads as part of the card
- * without being part of Discord's tree. Discord's class names are generated and
- * change between releases, so a miss is not an error: the prompt then keeps the
- * position it was mounted at.
+ * Every element we inject carries `data-hypercord` - the settings sheet, our entries in
+ * Discord's sidebar, and the token prompt itself - and it is the same test the sheet's own
+ * placement uses (`closest("[data-hypercord]")`). Written once here so the two anchors
+ * below cannot disagree about what is ours.
  */
-function promptAnchor() {
-  const selectors = ['form[class*="auth"]', '[class*="authBox"] form', '[class*="loginForm"] form', 'main form', 'form'];
-  for (const selector of selectors) {
+function isOurMarkup(node) {
+  return Boolean(node && node.closest && node.closest("[data-hypercord]"));
+}
+
+/**
+ * The login form, and nothing else, is what the token prompt may stand beside.
+ *
+ * It is placed by measurement rather than by living inside Discord's own tree: Discord's
+ * login card is re-rendered by React, which throws away nodes it does not know about, and a
+ * stray node in there can also upset the form's layout. So the prompt stays a child of the
+ * document and is positioned against the form's box, directly beneath it, at the same width.
+ * Discord's class names are generated and change between releases, so a miss is not an
+ * error: the prompt then keeps the position it was mounted at.
+ *
+ * Two things are never that form. The first is any of ours: Hypercord's Access keys page
+ * carries exactly the shape the fallback below looks for - a text field and a password field
+ * inside a form (`src/panes.html`) - so without the exclusion the token option opened over
+ * the settings page it is configured from, anchored to its own field, and the prompt's own
+ * paste form is the same shape again. The second is a form that is not asking for an account
+ * and a secret: the auth-marked shapes are tried first, and the shape itself covers a
+ * release that renamed them.
+ */
+function promptLoginAnchor() {
+  const marked = ['form[class*="auth"]', '[class*="authBox"] form', '[class*="loginForm"] form'];
+  for (const selector of marked) {
     const found = document.querySelector(selector);
-    // an off-screen or collapsed form is not where somebody is looking
-    if (found && found.getBoundingClientRect().width >= 80) return found;
+    // an off-screen or collapsed form is not where somebody is looking, and neither is ours
+    if (found && !isOurMarkup(found) && found.getBoundingClientRect().width >= 80) return found;
+  }
+  for (const form of document.querySelectorAll("form")) {
+    if (isOurMarkup(form)) continue;
+    if (form.getBoundingClientRect().width < 80) continue;
+    const secret = form.querySelector('input[type="password"]');
+    const name = form.querySelector('input[type="text"], input[type="email"], input:not([type])');
+    if (secret && name) return form;
   }
   return null;
 }
 
 function positionPrompt(prompt) {
-  const anchor = promptAnchor();
+  // the same anchor the gate accepted, so the card is measured against the form it opened
+  // for: two different finders could match two different forms on one page
+  const anchor = promptLoginAnchor();
   if (!prompt) return false;
   if (!anchor) {
     prompt.setAttribute("data-anchored", "false");
@@ -1861,11 +1905,23 @@ function positionPrompt(prompt) {
   return true;
 }
 
-/** The prompt is level with the form: it follows the window, with no timer. */
+/**
+ * The prompt is level with the form, and only there: it follows the window, with
+ * no timer. Opening waits for the login form, which renders after the prompt does -
+ * and a page that never grows one (a signed-in client) never opens it. An open
+ * prompt whose form is gone - signing in through the form below unmounts it - closes
+ * with it, so it can never be left standing as a modal over the client.
+ */
+let promptArmed = false;
 function followPrompt() {
   const prompt = document.getElementById("hypercord-token-prompt");
-  if (!prompt || prompt.getAttribute("data-open") !== "true") return;
-  positionPrompt(prompt);
+  if (!prompt || promptDismissed || !promptArmed) return;
+  if (promptLoginAnchor()) {
+    positionPrompt(prompt);
+    prompt.setAttribute("data-open", "true");
+  } else if (prompt.getAttribute("data-open") === "true") {
+    prompt.setAttribute("data-open", "false");
+  }
 }
 
 let promptFollowing = false;
@@ -1921,9 +1977,12 @@ async function refreshPrompt() {
     const mask = current.last4 ? "\u2026" + String(current.last4) : String(current.account);
     fill($(prompt, '[data-hc="prompt-who"]'), (current.label || current.account) + " (" + mask + ")");
   }
-  prompt.setAttribute("data-open", "true");
+  // armed, not opened: the form this stands beside may not have rendered yet, and a
+  // signed-in client has no form at all - followPrompt opens it the moment an anchor
+  // exists, and that moment never comes where there is nothing to stand beside
+  promptArmed = true;
   followOnce();
-  positionPrompt(prompt);
+  followPrompt();
 }
 
 /** Sign in with the stored token, from the prompt next to the login form. */
@@ -2020,8 +2079,7 @@ async function boot() {
   // no timer, and nothing outside the prompt is written. Re-measuring is a
   // rect read; the style is only touched when it actually moved.
   const observer = new MutationObserver(() => {
-    const prompt = document.getElementById("hypercord-token-prompt");
-    if (prompt && prompt.getAttribute("data-open") === "true") positionPrompt(prompt);
+    followPrompt();
     followSettings();
   });
   try {

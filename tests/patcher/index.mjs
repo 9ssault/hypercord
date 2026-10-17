@@ -8,10 +8,11 @@
 //
 //   node tests/patcher/index.mjs
 import { createRequire } from "node:module";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { entrySource, findDiscord, inspect, launch, listInstalls, patch, unpatch } from "../../src/patcher.js";
+import { entrySource, findDiscord, inspect, launch, listInstalls, patch, patchFreshness, unpatch } from "../../src/patcher.js";
 
 const require = createRequire(import.meta.url);
 const loader = require("../../src/loader.cjs");
@@ -470,6 +471,91 @@ const nothing = loader.loadConfig({ mainDir: "", dir: path.join(root, "nowhere")
 ok("with no config anywhere it reports nothing found", nothing.found === "" && nothing.css === "");
 
 ok("the loader did not attach while being tested", loader.started.ok === false, JSON.stringify(loader.started));
+
+/* ---- 3.5 what a patch records about itself ------------------------------ */
+
+// The build that patched an install, the runtime it shipped and the platform it ran on -
+// recorded in the manifest, because there is no other place a client running inside Discord
+// can read any of it, and a report that says nothing is worse than one that says "not found".
+const appRoot = path.join(root, "app-root");
+fs.mkdirSync(path.join(appRoot, "vendor", "runtime"), { recursive: true });
+fs.mkdirSync(path.join(appRoot, "plugins"), { recursive: true });
+const runtimeJs = Buffer.from("// the built runtime bundle\n".repeat(40));
+const runtimeCss = Buffer.from("body{color:#fff}\n");
+fs.writeFileSync(path.join(appRoot, "vendor", "runtime", "browser.js"), runtimeJs);
+fs.writeFileSync(path.join(appRoot, "vendor", "runtime", "browser.css"), runtimeCss);
+fs.writeFileSync(
+  path.join(appRoot, "plugins", "manifest.json"),
+  JSON.stringify({
+    generatedAt: "2026-10-13T22:48:14.002Z",
+    provenance: { core: "Equicord", coreCommit: "e0e85c8d", merged: "Vencord", mergedCommit: "16ec4ea8" },
+  }),
+);
+// computed here from the fixture's own bytes rather than written down: a hardcoded digest
+// would fail the first time the runtime is rebuilt, which is not a bug in the patch
+const sha = (buffer) => "sha256:" + crypto.createHash("sha256").update(buffer).digest("hex").slice(0, 16);
+const readManifest = (install) => JSON.parse(fs.readFileSync(path.join(install.resources, "app", "hypercord.json"), "utf8"));
+
+const h = makeInstall("h");
+const recorded = patch(h.found.install, { loader: loaderFile, version: "9.9.9", appRoot, assets: { css: ".first{}" } });
+const hManifest = readManifest(h.found.install);
+ok("the patch records which build patched it", recorded.ok === true && hManifest.patchedByVersion === "9.9.9", String(hManifest.patchedByVersion));
+ok("and the client's own version stays in `version`", hManifest.version === "1.0.136", String(hManifest.version));
+ok(
+  "the runtime it shipped is recorded as bytes, not as a version",
+  hManifest.runtime.files.length === 2 && hManifest.runtime.files[0].bytes === runtimeJs.length && hManifest.runtime.files[0].sha256 === sha(runtimeJs),
+  JSON.stringify(hManifest.runtime.files),
+);
+ok(
+  "and the upstream commits it was built from",
+  Boolean(hManifest.runtime.provenance) && hManifest.runtime.provenance.coreCommit === "e0e85c8d" && hManifest.runtime.provenance.merged === "Vencord",
+  JSON.stringify(hManifest.runtime.provenance),
+);
+ok(
+  "the platform is recorded too",
+  hManifest.platform.os === process.platform && Boolean(hManifest.platform.arch) && hManifest.platform.node === process.versions.node,
+  JSON.stringify(hManifest.platform),
+);
+
+const againPatch = patch(h.found.install, { loader: loaderFile, version: "9.9.9", appRoot, assets: { css: ".first{}" } });
+ok("patching an install this same build already patched is a no-op", againPatch.ok === true && againPatch.already === true && againPatch.reapplied === false, JSON.stringify(againPatch));
+
+// when the build moves on, the record is refreshed in place: the asar rename and the entry
+// directory ARE the patch, so a refresh must leave both exactly as they are
+const beforeAsar = fs.readFileSync(path.join(h.resources, "hypercord.app.asar"));
+const beforeEntry = fs.readFileSync(path.join(h.resources, "app", "index.js"), "utf8");
+const refreshed = patch(h.found.install, { loader: loaderFile, version: "9.10.0", appRoot });
+const hRefreshed = readManifest(h.found.install);
+ok("a newer build refreshes the record in place", refreshed.ok === true && refreshed.reapplied === true && hRefreshed.patchedByVersion === "9.10.0", JSON.stringify(refreshed));
+ok("the client's own archive is not touched by a refresh", fs.readFileSync(path.join(h.resources, "hypercord.app.asar")).equals(beforeAsar));
+ok("nor is the entry point", fs.readFileSync(path.join(h.resources, "app", "index.js"), "utf8") === beforeEntry);
+ok("and a stylesheet a previous patch baked survives a refresh that brings none", hRefreshed.assets.css === ".first{}", JSON.stringify(hRefreshed.assets));
+ok("the timestamp of the first patch is kept", hRefreshed.patchedAt === hManifest.patchedAt, hRefreshed.patchedAt + " vs " + hManifest.patchedAt);
+ok("and that install still unpaches like any other", unpatch(h.found.install).ok === true);
+
+// a build with no runtime beside it says so rather than recording an empty truth
+const i = makeInstall("i");
+const barePatch = patch(i.found.install, { loader: loaderFile, version: "9.9.9", appRoot: path.join(root, "no-app-root") });
+const bareManifest = readManifest(i.found.install);
+ok(
+  "a build with no vendor/runtime records that it has none",
+  barePatch.ok === true && bareManifest.runtime.files.length === 0 && bareManifest.runtime.note.includes("no vendor/runtime"),
+  JSON.stringify(bareManifest.runtime),
+);
+ok("and provenance it cannot read is null, not invented", bareManifest.runtime.provenance === null, JSON.stringify(bareManifest.runtime.provenance));
+ok("that install unpaches like any other", unpatch(i.found.install).ok === true);
+
+// freshness: numbers, never strings. "0.3.9" > "0.3.10" as text, which is the whole point
+const fresh = (manifest, version) => patchFreshness(manifest, version);
+ok("a build older than this client is reported older", fresh({ patchedByVersion: "0.3.9" }, "0.3.10").state === "older" && fresh({ patchedByVersion: "0.3.9" }, "0.3.10").older === true);
+ok("and the comparison is numeric, not textual", fresh({ patchedByVersion: "0.3.10" }, "0.3.9").state === "newer");
+ok("the same build is current", fresh({ patchedByVersion: "0.3.10" }, "0.3.10").state === "current");
+ok("an install patched before this was recorded is unknown, not stale", fresh({}, "0.3.10").state === "unknown" && fresh({}, "0.3.10").older === false);
+ok(
+  "a pre-release tag cannot be ordered, and is not called older",
+  fresh({ patchedByVersion: "0.4.0-beta.1" }, "0.3.10").state === "unorderable" && fresh({ patchedByVersion: "0.4.0-beta.1" }, "0.3.10").older === false,
+  JSON.stringify(fresh({ patchedByVersion: "0.4.0-beta.1" }, "0.3.10")),
+);
 
 fs.rmSync(root, { recursive: true, force: true });
 

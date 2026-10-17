@@ -134,31 +134,69 @@
     </form>
     <div id="hp-themeList" class="grid" role="list"></div>
 
-    <!-- the library: a browser of published themes, read when Load is pressed. Nothing
-         here is fetched until then, and a theme installed from here is fetched once,
-         like one installed from a link. -->
-    <h3>Browse the theme library</h3>
-    <div class="filters" id="hp-themeLibraryFilters">
-      <input id="hp-themeLibrarySearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search the library&hellip;" />
-      <button type="button" id="hp-themeLibraryLoad" class="ghost">Load the library</button>
-    </div>
-    <p id="hp-themeLibraryNote" class="hint"></p>
-    <div id="hp-themeLibrary" class="grid" role="list"></div>
-
     <h3>Quick CSS</h3>
     <textarea id="hp-quickCss" spellcheck="false" rows="6" placeholder="/* one-off css, no install needed */"></textarea>
     <div class="row">
       <button type="button" id="hp-quickSave">Save quick CSS</button>
     </div>
     </div>
+
+    <!-- The published-theme library, and the one part of this page the runtime's own theme tab
+         never replaces: that tab browses the themes installed in *this* client, and it has no
+         library at all. So this stands outside #hp-themeFallback and is drawn whatever the
+         window has. It is read when the page opens (the service caches its own reply for twenty
+         minutes, so opening the page twice is one request), and the filtering and sorting are
+         done here because the API it reads offers neither. -->
+    <h3>Browse the theme library</h3>
+    <div class="filters" id="hp-themeLibraryFilters">
+      <input id="hp-themeLibrarySearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search the library&hellip;" />
+      <select id="hp-themeLibraryKind" aria-label="What the library lists">
+        <option value="any">themes and snippets</option>
+        <option value="theme">themes only</option>
+        <option value="snippet">snippets only</option>
+      </select>
+      <select id="hp-themeLibrarySort" aria-label="How the library is sorted">
+        <option value="downloads">most downloaded</option>
+        <option value="likes">most liked</option>
+        <option value="updated">recently updated</option>
+        <option value="name">by name</option>
+      </select>
+      <button type="button" id="hp-themeLibraryLoad" class="ghost">Reload the library</button>
+    </div>
+    <p id="hp-themeLibraryNote" class="hint">the library is read the first time this tab is opened</p>
+    <div id="hp-themeLibrary" class="grid" role="list"></div>
+    <!-- One preview at a time, under the grid. The picture is fetched by the shell and handed
+         over as a data URL - never hotlinked, because the image policy on this page is
+         Discord's - and it is fetched for the one entry somebody asks about. A hundred and
+         thirty thumbnails at half a megabyte each is not a download a list may start on its
+         own. Opening another preview replaces this one, which is what keeps it to one. -->
+    <div id="hp-themeLibraryPreview" class="preview hidden"></div>
   </section>
 
   <!-- logs -------------------------------------------------------- -->
   <section class="view" data-view="logs">
     <h2>Logs</h2>
     <p class="hint">What this client reports about itself. Nothing here is read from the control server.</p>
+
+    <!-- About this client: which process this host is inside, which Discord it stands in
+         front of, and whether the patch took. One row per fact, from the shell's own answer
+         on `client:info`; a fact the shell does not have is said as unknown rather than left
+         blank, because a blank row reads as a broken page. -->
+    <h3>About this client</h3>
+    <div id="hp-clientAbout" class="grid" role="list"></div>
+    <p id="hp-clientNote" class="hint"></p>
+
     <div class="row">
       <button type="button" id="hp-logsRefresh">Refresh</button>
+      <!-- Refresh the patch on the install this client is standing in front of. A patched
+           client cannot re-apply its own patch - Electron read the entry point at start - so
+           this records the request and the shell applies it at its next start, which the
+           button's own status line says out loud. See `client:reapply` in src/host.js. -->
+      <button type="button" id="hp-clientReapply" class="ghost">Refresh the patch</button>
+      <!-- one file a person can send to somebody else: this client, its Discord, its patch
+           state, its stores and its own log. Written where it can be found, never carrying a
+           token - see `supportBundle` in src/host.js. -->
+      <button type="button" id="hp-supportBundle" class="ghost">Save a support bundle</button>
     </div>
     <p id="hp-logsNote" class="hint"></p>
     <pre id="hp-logsOut" class="out tall" aria-live="polite"></pre>

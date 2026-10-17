@@ -366,6 +366,37 @@
   margin-top: 4px;
 }
 
+/* The one open theme preview. Constrained on purpose: a published thumbnail is a wide
+   screenshot at roughly half a megabyte, and it is here to be recognised, not studied -
+   so it is capped, never stretched past its own size, and the caption keeps its address
+   selectable for anybody who wants the full picture. */
+#hypercord-panes .preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--hc-border, var(--background-modifier-accent, rgba(78, 80, 88, 0.48)));
+  border-radius: 8px;
+  background: var(--hc-bg-secondary, var(--background-secondary, rgba(0, 0, 0, 0.2)));
+}
+
+#hypercord-panes .preview img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+}
+
+#hypercord-panes .preview .previewLine {
+  color: var(--hc-text-muted, var(--header-secondary, #b5bac1));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 #hypercord-panes .addon {
   display: flex;
   flex-direction: column;

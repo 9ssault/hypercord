@@ -140,6 +140,38 @@ if (host) {
   ok("and it carries every section as its own page", views.every((view) => String(assets.panesHtml).includes('data-view="' + view + '"')), JSON.stringify(views.filter((view) => !String(assets.panesHtml).includes('data-view="' + view + '"'))));
   ok("css() is the one style string", typeof host.css() === "string" && host.css().length > 0, String(typeof host.css()));
 
+  // A sheet is one script and one fragment, and the script finds its controls by id. An id the
+  // script looks up that the markup does not carry is a control that is never wired - a page
+  // with a button that does nothing, or a block that stays blank forever - and nothing else in
+  // this suite would notice. So every id is accounted for: it is in the markup, or the script
+  // builds it itself (the account switcher's strip), or it is a prefix for a row the script
+  // makes (ending in "-").
+  const lookedUp = new Set();
+  for (const found of String(assets.panesJs).matchAll(/\$\("([^"]+)"\)/g)) lookedUp.add(found[1]);
+  // `on(id, event, fn)` is how every control is wired, and it looks the element up by that
+  // id - so the ids passed to it are part of the same invariant
+  for (const found of String(assets.panesJs).matchAll(/\bon\("([^"]+)",\s*"[a-z]+"/g)) lookedUp.add(found[1]);
+  const markup = String(assets.panesHtml);
+  const builtByScript = new Set();
+  for (const found of String(assets.panesJs).matchAll(/\.id\s*=\s*"([^"]+)"/g)) builtByScript.add(found[1].replace(/\s*\+.*$/, ""));
+  const unaccounted = [...lookedUp].filter((id) => {
+    if (!id.startsWith("hp-")) return false; // only the sheet's own tree is this sheet's business
+    if (markup.includes('id="' + id + '"')) return false;
+    if (builtByScript.has(id)) return false;
+    return !id.endsWith("-");
+  });
+  ok(
+    "every id the sheet's script looks up is in the markup or built by the script itself",
+    unaccounted.length === 0,
+    "unaccounted: " + JSON.stringify(unaccounted),
+  );
+  // and the two blocks this release added are wired to the channels that answer them
+  ok(
+    "the About block and the library's filters are all in the markup",
+    ["hp-clientAbout", "hp-clientNote", "hp-supportBundle", "hp-clientReapply", "hp-themeLibrary", "hp-themeLibraryKind", "hp-themeLibrarySort", "hp-themeLibraryPreview"].every((id) => markup.includes('id="' + id + '"')),
+    JSON.stringify(["hp-clientAbout", "hp-clientNote", "hp-supportBundle", "hp-clientReapply", "hp-themeLibrary", "hp-themeLibraryKind", "hp-themeLibrarySort", "hp-themeLibraryPreview"].filter((id) => !markup.includes('id="' + id + '"'))),
+  );
+
   /* ---- 4. opening a page is a push, through the plugin that owns it ------- */
 
   pushed.length = 0;
@@ -203,6 +235,95 @@ if (host) {
   ok("refreshing it reads the engine, not a server", refreshed && refreshed.ok === true && refreshed.source === "builtin banks" && refreshed.categories.length > 0, JSON.stringify(refreshed && { ok: refreshed.ok, source: refreshed.source, categories: refreshed.categories && refreshed.categories.length }));
   const readLine = await call("plugins:sectionAction", "hyperBeef", "inspect", "<@1> you are trash, kys");
   ok("and the line lab answers in this process", readLine && readLine.ok === true && readLine.read && readLine.read.route === "beef", JSON.stringify(readLine && readLine.error));
+
+  /* ---- 5b2. which client this is, and the file a person can send --------- */
+
+  // The About block and the support bundle are the two things that make a bug report
+  // possible at all: which process the host is inside, which Discord it stands in front of,
+  // and whether the patch took. All three answer with no control server and no network.
+  const info = await call("client:info");
+  ok("client:info answers without a control server", Boolean(info) && typeof info === "object" && typeof info.title === "string" && info.title.length > 0, JSON.stringify(info && info.title));
+  ok("and says which process this host is inside", typeof info.host === "string" && ["patched", "window", "other"].includes(info.mode), JSON.stringify({ host: info.host, mode: info.mode }));
+  ok("with no shell having decided anything, the decision is absent rather than invented", info.policy === null, JSON.stringify(info.policy));
+  ok("and every install it found is described by its patch state", Array.isArray(info.installs) && info.installs.every((one) => typeof one.patch.state === "string"), JSON.stringify(info.installs));
+  const recorded = host.setClient({ attach: true, reason: "a Discord install is here and it is the client", state: "patched", channel: "stable", version: "1.0.0" });
+  ok("a shell's own verdict is recorded", Boolean(recorded) && recorded.attach === true, JSON.stringify(recorded));
+  const withPolicy = await call("client:info");
+  ok(
+    "and read back as plain values, so the page can say who decided this window",
+    Boolean(withPolicy.policy) && withPolicy.policy.attach === true && withPolicy.policy.reason.includes("Discord install"),
+    JSON.stringify(withPolicy.policy),
+  );
+  ok("a verdict that is nonsense is dropped rather than half-kept", host.setClient("not an object") === null);
+
+  const reapplyAsked = await call("client:reapply");
+  ok(
+    "asking for a patch refresh records the request and says when it applies",
+    Boolean(reapplyAsked) && reapplyAsked.ok === true && reapplyAsked.queued === true && /next time it starts/.test(String(reapplyAsked.note)),
+    JSON.stringify(reapplyAsked),
+  );
+  ok("and the request is on disk where the shell looks for it", fs.existsSync(path.join(userData, "repatch.request")));
+
+  const bundled = await call("support:bundle");
+  ok(
+    "a support bundle is written somewhere a person can find",
+    Boolean(bundled) && bundled.ok === true && typeof bundled.path === "string" && bundled.path.endsWith(".txt"),
+    JSON.stringify(bundled && { ok: bundled.ok, path: bundled.path, error: bundled.error }),
+  );
+  ok("the file on disk is exactly the text it reported", fs.readFileSync(bundled.path, "utf8") === bundled.text && bundled.bytes > 200, String(bundled.bytes));
+  ok(
+    "it carries every section a reader needs",
+    [
+      "== this process ==",
+      "== the Discord in front of it ==",
+      "== the patch ==",
+      "== updates ==",
+      "== plugins ==",
+      "== themes, keys and beef ==",
+      "== log (this host's own lines, newest last) ==",
+      "== not in this file ==",
+    ].every((section) => bundled.text.includes(section)),
+    bundled.text.slice(0, 200),
+  );
+  ok("and it says what it deliberately leaves out", /token values, passkeys, cookies/.test(bundled.text));
+  ok("a timestamp in a Windows file name is legal", !/[:]/.test(path.basename(bundled.path)), path.basename(bundled.path));
+
+  // The one assertion that matters most here: this file is made to leave the machine, so a
+  // stored key must not be in it, in any form a reader could recover. This machine has no
+  // keychain (the stub says so), which is exactly the state the store keeps a key in memory
+  // for - and `tokens:put` refuses without a cipher on purpose, so the store is asked
+  // directly here rather than through a channel that would rightly say no.
+  // Deliberately *not* shaped like a Discord token. An earlier version of this fixture was
+  // (three dot-separated base64url parts, the first of which matched `[MN][A-Za-z0-9]{23}`),
+  // which is a string that reads as a live credential to every secret scanner on the way into
+  // a repository - GitHub's push protection refused the commit that carried it. What the
+  // assertions below need is a long, valid-shaped secret (the store validates it), never a
+  // real-looking one, so this is a token by the store's rules and by nothing else's.
+  const secret = "hypercord-test-token-not-a-real-one-0123456789abcdef";
+  const stored = host.tokens.put("4242", secret, { label: "a key for this test", memoryOnly: true });
+  ok("the store holds a key for the bundle to have to hide", Boolean(stored) && stored.ok === true, JSON.stringify(stored));
+  const withSecret = await call("support:bundle");
+  ok("a stored key is never in the bundle", !withSecret.text.includes(secret) && !withSecret.text.includes(secret.slice(0, 12)), "present: " + String(withSecret.text.includes(secret) || withSecret.text.includes(secret.slice(0, 12))));
+  ok("and the key is still named by its mask, so the file is useful", withSecret.text.includes("4242") && /ends [A-Za-z0-9]{1,4}/.test(withSecret.text), withSecret.text.split("\n").filter((line) => line.includes("4242")).join(" | "));
+  await call("tokens:remove", "4242");
+
+  /* ---- 5b3. a theme preview is fetched by the shell, not the page -------- */
+
+  // The page cannot be the one asking: the image policy it lives under is Discord's, and one
+  // row of the real library keeps its thumbnail on a third party's host. So the address goes
+  // to the shell and a data URL comes back - and the refusals happen here, before any request,
+  // which is why this is asserted with no network stub at all.
+  ok("the preview channel is registered", registered.has("themes:thumbnail"));
+  const noAddress = await call("themes:thumbnail", "not an address");
+  ok("a preview address that is not an address is refused without a request", noAddress && noAddress.ok === false && /not an address/.test(noAddress.error), JSON.stringify(noAddress));
+  const httpPreview = await call("themes:thumbnail", "http://themes.equicord.org/thumbnails/x.png");
+  ok("and one that is not https is refused too", httpPreview && httpPreview.ok === false && /only fetched over https/.test(httpPreview.error), JSON.stringify(httpPreview));
+  const strangerPreview = await call("themes:thumbnail", "https://evil.example/x.png");
+  ok(
+    "and one on a host this client does not fetch names the host rather than fetching it",
+    strangerPreview && strangerPreview.ok === false && /evil\.example/.test(strangerPreview.error),
+    JSON.stringify(strangerPreview),
+  );
 
   /* ---- 5c. the restart a patch-based plugin needs ------------------------ */
 

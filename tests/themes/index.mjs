@@ -173,14 +173,19 @@ const LIBRARY = [
   {
     id: 47,
     name: "DTM-08",
+    type: "theme",
     description: "a glossy theme",
     author: { github_name: "XYZenix" },
     tags: ["dark", "glossy"],
     likes: 3,
     downloads: 368,
     release_date: "2021-05-06T12:27:37.177Z",
+    thumbnail_url: "https://themes.equicord.org/thumbnails/DTM-08_47.png",
     source: "https://github.com/XYZenix/DTM-08",
   },
+  // The real index publishes both kinds - "theme" and "snippet" - so the browser's filter
+  // reads the row rather than guessing from its description.
+  { id: 12, name: "Quick Fix", type: "snippet", description: "one css rule", tags: [], likes: 1, downloads: 9 },
   { id: 9, description: "no name: this row has nothing to show" },
   "not an object at all",
 ];
@@ -202,9 +207,17 @@ const library = createThemes({ userData: libraryHome, log: () => {}, fetchImpl: 
 ok("a client that is only looking at its own themes fetches nothing", library.fetchCount() === 0, String(library.fetchCount()));
 
 const first = await library.index();
-ok("the library is read when it is asked for", first.ok === true && first.themes.length === 1, JSON.stringify(first).slice(0, 200));
+ok("the library is read when it is asked for", first.ok === true && first.themes.length === 2, JSON.stringify(first).slice(0, 200));
 const only = first.themes[0];
 ok("and trimmed to what a card shows", only.name === "DTM-08" && only.author === "XYZenix" && /glossy/.test(only.description), JSON.stringify(only));
+ok(
+  "with the kind and the preview address the index publishes",
+  only.kind === "theme" && only.thumbnail === "https://themes.equicord.org/thumbnails/DTM-08_47.png",
+  JSON.stringify({ kind: only.kind, thumbnail: only.thumbnail }),
+);
+const snippetRow = first.themes.find((one) => one.kind === "snippet");
+ok("and a row the index calls a snippet is listed as one", Boolean(snippetRow) && snippetRow.name === "Quick Fix", JSON.stringify(first.themes.map((one) => one.kind)));
+ok("a row with no thumbnail says so rather than carrying an empty address", snippetRow.thumbnail === "", JSON.stringify(snippetRow.thumbnail));
 ok("with the documented download url, built from the id", only.download === "https://api.themes.equicord.org/download/47", only.download);
 ok("a row with no name is not a card", !first.themes.some((one) => one.download === "https://api.themes.equicord.org/download/9"), JSON.stringify(first.themes.map((one) => one.id)));
 ok("reading it once cost one request", libraryCalls === 1, String(libraryCalls));
@@ -229,6 +242,69 @@ library.setEnabled(installed.id, true);
 library.css();
 ok("and once installed, rendering it fetches nothing", library.fetchCount() === reads, String(library.fetchCount()));
 fs.rmSync(libraryHome, { recursive: true, force: true });
+
+/* ---- 10b. previews: fetched by the shell, drawn from a data url --------------- */
+
+// A thumbnail is a picture on the library's host (one row of the real index keeps its on a
+// stranger's GitHub Pages), and the page it would be drawn in has Discord's image policy
+// rather than ours - so the bytes are fetched here and answered with a data URL. These are
+// the four rules that keep that from being worse than no previews at all.
+const previewHome = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-preview-"));
+let previewCalls = 0;
+let previewType = "image/png";
+let previewSize = 8;
+let previewStatus = 200;
+const previewThemes = createThemes({
+  userData: previewHome,
+  log: () => {},
+  fetchImpl: async (url) => {
+    previewCalls += 1;
+    return {
+      ok: previewStatus === 200,
+      status: previewStatus,
+      headers: { get: (name) => (String(name).toLowerCase() === "content-type" ? previewType : "") },
+      arrayBuffer: async () => new Uint8Array(previewSize).buffer,
+    };
+  },
+});
+const goodPreview = "https://themes.equicord.org/thumbnails/DTM-08_47.png";
+const fetched = await previewThemes.thumbnail(goodPreview);
+ok("a preview is fetched here and handed over as a data url", fetched.ok === true && fetched.dataUrl.startsWith("data:image/png;base64,"), JSON.stringify(fetched).slice(0, 120));
+ok("and it says how big it was", fetched.bytes === 8 && previewCalls === 1, JSON.stringify({ bytes: fetched.bytes, calls: previewCalls }));
+const previewAgain = await previewThemes.thumbnail(goodPreview);
+ok("asking for the same preview again costs nothing", previewAgain.cached === true && previewCalls === 1, JSON.stringify({ cached: previewAgain.cached, calls: previewCalls }));
+
+const overHttp = await previewThemes.thumbnail("http://themes.equicord.org/x.png");
+ok("a preview over http is refused", overHttp.ok === false, JSON.stringify(overHttp));
+const strangerPreview = await previewThemes.thumbnail("https://evil.example/x.png");
+ok("a preview on a host this client does not fetch is refused, and the answer names the host", strangerPreview.ok === false && /evil\.example/.test(strangerPreview.error), JSON.stringify(strangerPreview));
+const notAnAddress = await previewThemes.thumbnail("not a url");
+ok("something that is not an address is refused", notAnAddress.ok === false, JSON.stringify(notAnAddress));
+ok("and none of those cost a request", previewCalls === 1, String(previewCalls));
+
+previewType = "text/html";
+const notAnImage = await previewThemes.thumbnail("https://themes.equicord.org/thumbnails/other.png");
+ok("an answer that is not an image is refused", notAnImage.ok === false && /text\/html/.test(notAnImage.error), JSON.stringify(notAnImage));
+previewType = "image/png";
+
+previewSize = 5 * 1024 * 1024;
+const huge = await previewThemes.thumbnail("https://themes.equicord.org/thumbnails/huge.png");
+ok("a preview past the size cap is refused rather than held", huge.ok === false && /larger than/.test(huge.error), JSON.stringify(huge));
+previewSize = 8;
+
+previewStatus = 503;
+const down = await previewThemes.thumbnail("https://api.themes.equicord.org/thumbnails/down.png");
+ok("a preview that answers badly is an error, not a picture", down.ok === false && /503/.test(down.error), JSON.stringify(down));
+previewStatus = 200;
+
+const noFetch = createThemes({ userData: previewHome, log: () => {}, fetchImpl: null });
+const noFetchAnswer = await noFetch.thumbnail(goodPreview);
+ok("a run with no fetch available says so instead of throwing", noFetchAnswer.ok === false && /no fetch/.test(noFetchAnswer.error), JSON.stringify(noFetchAnswer));
+// four requests in total: the one that was cached, the one that answered the wrong type, the
+// one that was too big and the one that answered 503. The three refusals happen before any
+// request is made, which is the point of refusing them there.
+ok("and the refusals that need no network cost no request", previewCalls === 4, String(previewCalls));
+fs.rmSync(previewHome, { recursive: true, force: true });
 
 fs.rmSync(home, { recursive: true, force: true });
 fs.rmSync(srcDir, { recursive: true, force: true });

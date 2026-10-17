@@ -1675,6 +1675,17 @@ async function run() {
   })()`,
   );
   ok("choosing one of Discord's own sections clears every entry of ours", handedBack.open === 0 && handedBack.current === 0, JSON.stringify(handedBack));
+  // The token prompt belongs beside the login form and nowhere else: this page has
+  // no login form on it, so even a token change must not raise the prompt here as
+  // the centred modal it becomes without an anchor. A signed-in client manages its
+  // keys in the Accounts and Access keys pages instead.
+  settingsWindow.webContents.send("push", "tokens:changed", []);
+  await wait(250);
+  const promptHere = await page(
+    settingsWindow,
+    `((document.getElementById("hypercord-token-prompt") || {}).getAttribute ? document.getElementById("hypercord-token-prompt").getAttribute("data-open") : "missing")`,
+  );
+  ok("with no login form on the page the token prompt stays closed", promptHere !== "true", JSON.stringify(promptHere));
   // Leave the sheet as it was found: open on this section. Choosing Discord's row
   // closed our page, and a closed page is display:none - a field inside it cannot
   // take focus, which is exactly what the caret tests below measure. Reopening here
@@ -2216,6 +2227,19 @@ async function run() {
     JSON.stringify(fromMerged.seen).slice(0, 220),
   );
   ok("that page logged no error", merged.errors.length === 0, merged.errors.join(" | ").slice(0, 200));
+  // Every row the merge offers, not just the first: each one is clicked and each one has
+  // to land on the page it names, with exactly that page showing. A set where some rows
+  // opened nothing - the highlight moving while the content stands still - reads on the
+  // live client as the settings breaking past the runtime's own rows.
+  for (const view of mergedSeen.entryViews) {
+    const landed = await clickEntry(merged.win, view);
+    ok(
+      "merged entry opens its own page: " + view,
+      landed.clicked && landed.seen.open === "true" && landed.seen.visible.length === 1 && landed.seen.visible[0] === view,
+      JSON.stringify(landed.seen).slice(0, 220) + " for " + view,
+    );
+  }
+  ok("clicking every merged entry logged no error", merged.errors.length === 0, merged.errors.join(" | ").slice(0, 200));
 
   // The same shape with the runtime's *older* name on the heading. Both spellings are in the
   // wild - a client that was patched before the rename still draws one of them - and a heading

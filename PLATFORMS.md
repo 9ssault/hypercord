@@ -99,7 +99,8 @@ asks the feed for anything.
 The same command on all three - there is no platform-specific way to do this:
 
 ```bash
-npm start -- --attach
+npm start                # a Discord install is patched and started as the client
+npm start -- --no-attach # the Electron window instead, whatever is installed
 ```
 
 `src/patcher.js` finds an install, renames `app.asar` to `hypercord.app.asar`
@@ -117,8 +118,10 @@ On every platform: PTB and Canary are found as well, stable is preferred over th
 the newest version wins inside a channel, a `resources/app` that is not ours is
 refused rather than touched, an install whose original was moved aside but has no
 entry point is repaired, and with no Discord installed the Electron window *is* the
-client. `--attach` only decides whether a real install is patched; the fallback
-window needs no flag.
+client. Which of the two a run is comes out of `src/attach.js`: attaching is what a
+packaged run with an install does, `--no-attach` asks for the window, `--attach`
+says it out loud (a development run keeps its own window unless it asks), and an
+install another loader owns is refused rather than patched over.
 
 All three branches are covered by `tests/patcher/index.mjs`, which discovers each
 layout from injected paths and then runs the whole round trip on it - inspect, patch,
@@ -186,8 +189,8 @@ children are processes of their own: ended by pid alone they survived the check 
 held the throwaway profile, which the removal retry only papered over. It removes
 that profile afterwards.
 
-If a real Discord is installed, `npm start -- --attach` patches it and starts the
-real client instead of this window (see [src/patcher.js](src/patcher.js)); the
+If a real Discord is installed, `npm start` patches it and starts the real client
+instead of this window (`--no-attach` is the way to ask for this window anyway) (see [src/patcher.js](src/patcher.js)); the
 Electron window is then the fallback. Nothing starts at boot and nothing stays
 resident: closing the window ends Hypercord.Cross-building macOS artifacts requires macOS (or an Apple-signed CI runner); Windows and Linux artifacts can both be produced from either. The packaging config trims what ships: `asar`, maximum compression, `en-US` only, no source maps, no TypeScript sources.
 

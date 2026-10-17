@@ -40,6 +40,16 @@ const LIBRARY_URL = "https://api.themes.equicord.org/themes";
 const LIBRARY_DOWNLOAD = "https://api.themes.equicord.org/download/";
 const LIBRARY_PAGE = "https://themes.equicord.org/theme/";
 const LIBRARY_TTL_MS = 10 * 60 * 1000;
+const LIBRARY_HOSTS = new Set(["api.themes.equicord.org", "themes.equicord.org"]);
+
+// A preview is a picture the library publishes, and the page it would be drawn in refuses
+// most of the web: the client's own Content-Security-Policy decides what its images may be,
+// and the index has at least one row whose thumbnail lives on a third party's GitHub Pages.
+// So the bytes are fetched *here*, once, and handed to the page as a data URL - one request
+// when somebody asks for that one preview, never one per card as a grid is drawn.
+const THUMBNAIL_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const THUMBNAIL_MAX_BYTES = 4 * 1024 * 1024;
+const THUMBNAIL_CACHE_MAX = 12;
 
 // A theme is injected into the page as CSS, so the only things worth refusing
 // are the things that would let it act like anything other than CSS.
@@ -176,6 +186,7 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
   let fetchCalls = 0; // only the online install path may move this
   let library = null; // the library index as it was read, with when it was read
   let libraryError = "";
+  const previews = new Map(); // the previews fetched, by address, bounded to a handful
 
   function blank() {
     return { version: 1, order: [], themes: {}, quickCss: "" };
@@ -267,8 +278,15 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
             author: person,
             description: String(row.description || ""),
             tags: Array.isArray(row.tags) ? row.tags.map(String) : [],
+            // what the row calls itself: the index really does carry both kinds (the two
+            // published ones are "theme" and "snippet"), so the filter reads it rather than
+            // guessing from a description
+            kind: String(row.type || ""),
             likes: Number(row.likes) || 0,
             downloads: Number(row.downloads) || 0,
+            // where the preview picture is, and where its page is - both shown only when
+            // somebody asks for that one entry
+            thumbnail: String(row.thumbnail_url || ""),
             updated: String(row.last_updated || row.release_date || ""),
             source: String(row.source || ""),
             download: id ? LIBRARY_DOWNLOAD + id : "",
@@ -282,6 +300,52 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
     } catch (err) {
       libraryError = String((err && err.message) || err).slice(0, 160);
       return { ok: false, error: libraryError };
+    }
+  }
+
+  /**
+   * One preview picture, fetched here and handed back as a data URL.
+   *
+   * Four rules, and each one is a way this could otherwise be worse than not having previews
+   * at all: the address must be https, the host must be one this client already trusts for
+   * theme content, the reply must say it is an image, and it must not be enormous - a
+   * published thumbnail is around half a megabyte and a grid of a hundred and thirty of them
+   * is not something to pull over somebody's connection. What was fetched is kept in a small
+   * bounded map, so looking at the same preview twice costs nothing and looking at two
+   * hundred previews does not keep two hundred pictures in memory.
+   */
+  async function thumbnail(url) {
+    const wanted = String(url || "").trim();
+    if (!wanted) return { ok: false, error: "no preview to fetch" };
+    let where = null;
+    try {
+      where = new URL(wanted);
+    } catch {
+      return { ok: false, error: "that preview is not an address: " + wanted.slice(0, 80) };
+    }
+    if (where.protocol !== "https:") return { ok: false, error: "a preview is only fetched over https, and that one is " + where.protocol.replace(":", "") };
+    if (!LIBRARY_HOSTS.has(where.host) && !IMPORT_HOSTS.has(where.host)) {
+      return { ok: false, error: "this client does not fetch pictures from " + where.host + "; open the theme's page to see its preview" };
+    }
+    if (previews.has(wanted)) return { ok: true, cached: true, ...previews.get(wanted) };
+    if (typeof fetchImpl !== "function") return { ok: false, error: "no fetch available to read a preview" };
+    try {
+      fetchCalls += 1;
+      const res = await fetchImpl(wanted, { headers: { accept: "image/*" } });
+      if (!res || !res.ok) return { ok: false, error: "the preview answered " + ((res && res.status) || "nothing") };
+      const type = String((res.headers && typeof res.headers.get === "function" ? res.headers.get("content-type") : "") || "").split(";")[0].trim().toLowerCase();
+      if (!THUMBNAIL_TYPES.has(type)) return { ok: false, error: "that preview is " + (type || "of an unnamed type") + ", not an image" };
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > THUMBNAIL_MAX_BYTES) {
+        return { ok: false, error: "that preview is " + Math.round(buffer.length / 1024) + " kb, larger than the " + Math.round(THUMBNAIL_MAX_BYTES / 1024) + " kb this client fetches" };
+      }
+      const answer = { dataUrl: "data:" + type + ";base64," + buffer.toString("base64"), bytes: buffer.length, type };
+      previews.set(wanted, answer);
+      while (previews.size > THUMBNAIL_CACHE_MAX) previews.delete(previews.keys().next().value);
+      log("[hypercord] theme library: preview fetched (" + buffer.length + " bytes)");
+      return { ok: true, cached: false, ...answer };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err).slice(0, 160) };
     }
   }
 
@@ -444,6 +508,7 @@ export function createThemes({ root = "", userData = "", log = () => {}, fetchIm
   return {
     list,
     index,
+    thumbnail,
     install,
     installDefault,
     remove,

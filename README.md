@@ -1,11 +1,14 @@
 # Hypercord
 
-Our own Discord client, and when a real Discord is installed it *can* be Discord:
-started with `--attach`, the client patches the official desktop client to load
-Hypercord's loader (byte-exact - `app.asar` is renamed, never rewritten) and
-starts it, so the client you chat in is the actual Discord with our loader in
-front of it, not a window of ours showing the web app. Without `--attach` - and on
-a machine with no Discord installed - the Electron window is the client. The
+Our own Discord client, and when a real Discord is installed it *is* Discord: the
+client patches the official desktop client to load Hypercord's loader (byte-exact -
+`app.asar` is renamed, never rewritten) and starts it, so the client you chat in is
+the actual Discord with our loader in front of it, not a window of ours showing the
+web app. That is the default rather than a flag, because an install is a fact about
+the machine: a packaged run with a Discord in front of it is that client. A machine
+with no Discord installed, a development run, an install another loader owns, and
+`--no-attach` all keep the Electron window instead - and the run says which of those
+it is, on the Logs page's About block and in the shell's own log. The
 installer installs Hypercord and touches nothing else: patching is the client's
 job, at the one moment it can be sure it is running and can report a refusal.
 
@@ -52,9 +55,9 @@ The whole ecosystem is present - that is the point of a client mod:
 
 ## How it runs
 
-Two paths, and the shell picks the better one:
+Two paths, and which one a run is comes out of `src/attach.js`:
 
-1. **`--attach` (and the real client).** `src/patcher.js` finds the installed
+1. **The real client - what a run with an install does.** `src/patcher.js` finds the installed
    Discord (Windows `%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`,
    macOS `/Applications|~/Applications/Discord{ PTB, Canary}.app`, Linux
    `~/.config/discord*/app-<v>/resources`, package roots and Flatpak), renames
@@ -63,8 +66,13 @@ Two paths, and the shell picks the better one:
    `src/loader.cjs` and then hands off to the real client. The loader injects one
    `<style>` element into Discord's own windows - the themes and the styles for the
    two pieces of Hypercord that live in Discord's tree - and nothing else.
-2. **The fallback window.** No Discord installed: `src/main.js` opens Discord web
-   with the same preload, settings pages and plugin host.Everything of ours lives inside Discord's own window: the token option under its
+2. **The fallback window.** No Discord installed, a development run, an install
+   another loader owns, or `--no-attach`: `src/main.js` opens Discord web with the
+   same preload, settings pages and plugin host. Every one of those answers is
+   recorded with its reason, so a window that appears instead of the real client can
+   say why it did.
+
+Everything of ours lives inside Discord's own window: the token option under its
 login fields, and Hypercord's settings as **pages inside Discord's own settings** -
 one entry per section (commands, plugins, our own Hyper plugins, themes, logs,
 accounts, access keys), added to Discord's own sidebar as a *copy* of one of its
@@ -75,6 +83,29 @@ holds its rows itself gets the same entries beside them, wearing the class of th
 row they were built beside. The pages open in Discord's settings content column.
 There is no second window, no overlay rail and no sheet of our own to find or
 raise; leaving Discord's settings leaves these pages with it.
+
+### When Discord updates itself
+
+Discord's own updater does not update an install in place: it unpacks a *new*
+`app-<version>` directory and applies it at the app's next start, so nothing of
+ours travels with it and the shortcut then starts a client with no Hypercord in it.
+A patch is therefore a fact about one version directory, and it is re-applied per
+version:
+
+* every run that attaches patches the newest install if it needs it, and a run
+  that started Discord watches it exit - the moment the staged update is applied -
+  and patches the version that will start next;
+* a patched client can ask for a refresh from inside itself (Logs → *Refresh the
+  patch*), which is written to a request file and applied by the next run that
+  attaches: a patched client cannot re-patch itself, because Electron read the entry
+  point when that process started;
+* the patch's own record says which build wrote it, what runtime it baked and a
+  digest of those bytes, so a client standing on a patch from an older Hypercord can
+  say so on the Logs page instead of looking healthy.
+
+What this deliberately does not do is start anything or kill anything: a person who
+closed Discord does not find it reopened, and a running client is never restarted to
+pick a patch up.
 
 ## Setup
 
@@ -92,8 +123,8 @@ npm test              # every suite: units (node), then the electron ones
 ### Desktop - run it
 
 ```bash
-npm start                     # the Electron window: Discord web + our preload
-npm start -- --attach         # patch a real Discord and start *that* as the client
+npm start                     # with a Discord installed, patch it and start *that* as the client
+npm start -- --no-attach      # the Electron window: Discord web + our preload
 npm run perf                  # --perf=45: the same client, measures each process, quits
 ```
 
@@ -108,7 +139,7 @@ re-patching a client to pick up a paragraph of CSS is the step people stop doing
 they are read from this repository live, when the client's window is created, so a
 restart is all they need.
 
-`--attach` needs an installed Discord. `src/patcher.js` looks under Windows
+Attaching needs an installed Discord. `src/patcher.js` looks under Windows
 `%LOCALAPPDATA%\Discord{,PTB,Canary}\app-<v>\resources`, macOS
 `/Applications|~/Applications/Discord{ PTB, Canary}.app`, Linux
 `~/.config/discord*/app-<v>/resources`, package roots and Flatpak. It renames
@@ -119,8 +150,8 @@ are left alone and refused rather than touched. With no Discord installed, the
 Electron window *is* the client, and nothing of ours starts at boot or stays
 resident: closing the window ends Hypercord.
 
-The same command works on all three platforms - `npm start -- --attach` - and only the
-paths and the way the client is started differ:
+The same command works on all three platforms - `npm start`, or `npm start -- --attach`
+to say it out loud - and only the paths and the way the client is started differ:
 
 | Platform | Where the install is found | How it is started |
 | --- | --- | --- |
@@ -150,6 +181,31 @@ npm run pack          # electron-builder --dir -> dist/win-unpacked (or the plat
 npm run check:packaged -- --fresh   # start the packed exe and read its page
 npm run dist          # the installers, into dist/
 ```
+
+#### What a clean clone has and does not have
+
+`git clone` + `npm ci` is enough to build this client, with one exception that is
+worth knowing before it bites: `vendor/equicord` and `vendor/vencord` are recorded
+as gitlinks and this repository has no `.gitmodules`, so a fresh clone gets those
+two paths **empty**. What that means, in order:
+
+| Command | On a clean clone |
+| --- | --- |
+| `npm ci` | works: `package-lock.json` is committed, and nothing in the desktop client needs the vendored forks |
+| `npm run test:units` | works, all suites: the catalogue the client ships is `plugins/manifest.json`, which *is* committed - `npm test` walks that file rather than the forks |
+| `npm run build:runtime:check` | works, and answers anyway: it reports the committed runtime as current and names the commits it was baked from (`Equicord 3cf8161e…, 2528kb from vendor/runtime/browser.js - the committed copy`), which is exactly what a checkout without the forks can check |
+| `npm run pack` | works, checked on a clean clone: `electron-builder --dir` packs `dist/linux-unpacked` (or the platform equivalent) and the packed `app.asar` carries `vendor/runtime/browser.js`, which is committed |
+| `npm run dist`, `npm run release` | the same commands as always, from the same clean tree; each platform's toolchain is the only extra thing they need, and `release` also starts the packed exe, so it wants a session (`xvfb-run` on a headless Linux box) |
+| `npm run vendor`, `npm run vendor:check` | **refuse**, naming both paths and what to do about them - `FAIL no vendored core at vendor/equicord - clone it first` and the same for `vendor/vencord` - exit 1, nothing written |
+| `npm run build:runtime` | stops with `the vendored tree has no build to run (vendor/equicord)`: the runtime is built *from* the forks (`vendor/equicord` as the base, Vencord merged in) |
+
+So if you are only building and running the client, clone and go. If you are
+generating the catalogue or the runtime - `npm run vendor`, `npm run build:runtime`
+- clone your checkouts of Equicord and Vencord into `vendor/equicord` and
+`vendor/vencord` first. Which commits this tree was last built from is recorded, not
+guessed: `plugins/manifest.json` carries `provenance.coreCommit` and
+`provenance.mergedCommit`, `npm run vendor` re-records whatever you cloned, and
+`npm run build:runtime` names the commits it baked into `vendor/runtime`.
 
 `build` in `package.json` decides what each platform gets:
 
@@ -410,13 +466,15 @@ hypercord/
   src/panes.html|js|css Hypercord's settings pages, mounted inside Discord's own
                         settings: commands, plugins, Hyper plugins, themes, logs,
                         accounts, access keys - one page each
+  src/attach.js         which client a run is (real Discord vs this window), and what
+                        to do about an install Discord has moved on from
   src/tokens.js         the user-token store: in the OS keychain, never in a log
   plugins/hyper/        the five Hyper plugins, and the set that is on by default
   plugins/manifest.json 371 entries of metadata: what the manager reads
   vendor/equicord       the vendored upstream core (GPL-3.0, licence kept verbatim)
-  tests/                node: plugin-host, themes, patcher, tokens, signin, bridge,
-                        release, loader, host, beef, shipped; electron: updater,
-                        preload, baseline (see Tests)
+  tests/                node: plugin-host, themes, patcher, attach, tokens, signin,
+                        bridge, release, loader, host, beef, shipped; electron:
+                        updater, preload, baseline (see Tests)
   PERF.md               the budget and the real readings
 ```
 
@@ -424,7 +482,7 @@ hypercord/
 
 ```bash
 npm test              # units, then the electron suites, in one go
-npm run test:units    # node: plugin-host, themes, patcher, tokens, signin,
+npm run test:units    # node: plugin-host, themes, patcher, attach, tokens, signin,
                       # bridge, release, loader, host, beef, shipped
 npm run test:electron # electron: updater, then preload, then feed-live
 npm run test:preload  # the injection path in a real window

@@ -127,7 +127,10 @@ console.log("# checking " + path.relative(root, exe) + (fresh ? " (fresh profile
 
 // The exe is started exactly as a user starts it, plus one switch that lets this
 // script look at the page. Nothing about the app changes.
-const args = ["--remote-debugging-port=" + String(port)];
+// `--no-attach` is said out loud rather than left to the harness flags: this check wants the
+// build's own window to look at, and a packaged build that decided to patch and start the
+// Discord installed on this machine would exit before there was anything to look at.
+const args = ["--no-attach", "--remote-debugging-port=" + String(port)];
 if (fresh) args.push("--user-data-dir=" + profileDir);
 // `detached` on Linux and macOS puts the child in a process group of its own, which is what
 // makes it possible to end *all* of it later: Electron's renderer, GPU and utility helpers are

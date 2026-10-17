@@ -338,7 +338,10 @@ async function run() {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "hypercord-feed-live-"));
   const lines = [];
 
-  child = spawn(exe, ["--remote-debugging-port=" + String(debugPort), "--user-data-dir=" + profile], {
+  // `--no-attach` on purpose: this is a build being driven from outside, and one that decided to
+  // patch and start the Discord installed on this machine would exit before the update loop this
+  // file exists to read had run.
+  child = spawn(exe, ["--no-attach", "--remote-debugging-port=" + String(debugPort), "--user-data-dir=" + profile], {
     env: { ...process.env, HYPERCORD_UPDATE_FEED: base },
     stdio: ["ignore", "pipe", "pipe"],
     detached: process.platform !== "win32",

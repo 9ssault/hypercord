@@ -58,8 +58,14 @@ function commitOf(dir) {
 
 /* ---- 1. merge: Vencord's plugins that Equicord does not have ------------- */
 
-if (!exists(core)) fail("no vendored core at vendor/equicord - clone it first");
-if (!exists(upstream)) fail("no vendored upstream at vendor/vencord - clone it first");
+// The directory is not the tree. A checkout that never had the gitlinks checked out - this
+// repository records `vendor/equicord` and `vendor/vencord` as gitlinks and has no
+// `.gitmodules` - has both paths as *empty directories*, which `exists` is perfectly happy
+// with, and the next read then died on `.../vendor/equicord/package.json` with a stack trace
+// instead of the one sentence that says what to do. Both halves are therefore checked, and
+// the sentence that names the path is reached in exactly the case it was written for.
+if (!exists(core) || !exists(path.join(core, "package.json"))) fail("no vendored core at vendor/equicord - clone it first");
+if (!exists(upstream) || !exists(path.join(upstream, "package.json"))) fail("no vendored upstream at vendor/vencord - clone it first");
 
 let added = 0;
 let alreadyThere = 0;
@@ -224,10 +230,12 @@ function rebrandText(text) {
 // src/main left the one heading a person actually sees wearing upstream's name. What is
 // excluded is the handful of files above, which name upstream as their subject, and the
 // documentation, which is upstream's own text about upstream.
-const ELIGIBLE = [
-  path.join(core, "package.json"),
-  ...new Set(walk(path.join(core, "src")).filter((file) => !ATTRIBUTED.some((dir) => file.startsWith(dir + path.sep)))),
-];
+const ELIGIBLE = problems
+  ? [] // no tree to read: the failure above already says which path to clone
+  : [
+      path.join(core, "package.json"),
+      ...new Set(walk(path.join(core, "src")).filter((file) => !ATTRIBUTED.some((dir) => file.startsWith(dir + path.sep)))),
+    ];
 
 let rewritten = 0;
 let hits = 0;

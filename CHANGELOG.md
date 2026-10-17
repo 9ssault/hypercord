@@ -9,8 +9,70 @@ what is written here is this client's own record.
 
 ## Unreleased
 
-Nothing yet. This section collects what lands between releases; 0.3.9 is everything
+Nothing yet. This section collects what lands between releases; 0.3.10 is everything
 below it.
+
+## 0.3.10
+
+### Three fixes that were waiting to ship
+
+- The sign-in token prompt now only ever appears on Discord's logged-out login form: storing a key from inside settings (or anywhere past the login screen) can no longer summon a modal on top of the signed-in client.
+- A Hypercord settings entry that cannot be placed says so in a notification, not just the shell log: a click that moves the highlight and opens nothing no longer reads as the settings being broken with no reason given.
+- A plugin's boolean settings save the value they show: the switch used to keep the state it was drawn with, so two clicks saved the same value twice while the knob never moved - it now flips with the press and only steps back if the save is refused.
+
+### The real client is the default, and it survives Discord updating itself
+
+- **A run with a Discord install now patches it and starts it without a flag.** `--attach`
+  still works and still says it out loud; `--no-attach` is the way to ask for this shell's own
+  window. Which of the two a run is comes out of `src/attach.js` rather than out of the argument
+  list, and the answer is recorded with its reason either way - on the Logs page's new About
+  block and in the shell's own log - because a window that appears instead of the real client is
+  otherwise indistinguishable from a client that failed to start.
+- **A run a harness started never attaches.** The electron suites, `scripts/check-packaged.mjs` and
+  `npm run perf` start a build with `--perf`, `--remote-debugging-port=…` or `--user-data-dir=…`,
+  and a packed build that answered those by patching and launching the Discord installed on the
+  machine would both break the check and touch a machine it was never asked to touch. Those three
+  switches now mean "this run is not somebody's client" and are named in the reason, alongside the
+  `--no-attach` the two packaged harnesses now pass themselves.
+- **Discord's own updater no longer silently unhooks the client.** It installs a new
+  `app-<version>` directory instead of updating the one it had, so nothing of ours travels with
+  it. A run that attaches now patches the newest install if it needs it, a run that started
+  Discord watches it exit - the moment a staged update is applied - and patches the version that
+  will start next. A patched client can ask for a refresh from inside itself, which is written as
+  a request and applied by the next run that attaches (a patched client cannot re-patch itself:
+  Electron read its entry point when that process started). Nothing is ever started or killed to
+  make this happen.
+- **A patch that is behind says so.** The patch record now carries `patchedByVersion` next to
+  Discord's own `version`, the version and a digest of the runtime it baked, and the platform and
+  Electron/Node versions it was made on - so a client standing on a patch from an older Hypercord
+  reports it as stale (with the numeric comparison that `0.3.9` vs `0.3.10` needs) instead of
+  looking healthy. Refreshing an existing patch rewrites the record and the baked stylesheet,
+  and never blanks assets a previous patch put there.
+
+### Which client this is, and a file to send somebody
+
+- The Logs page opens with an **About this client** block: the process this host is inside, which
+  Discord it stands in front of, which version, what the patch recorded (and whether it is
+  current), and every install found with its patch state. It is read from this process, so it
+  answers with no control server and no network, and a fact the shell cannot answer is said as
+  unknown rather than left blank.
+- **Save a support bundle** writes one text file with all of that plus the stores' state and this
+  host's own log, through `redact` with every stored secret supplied. A stored key never appears
+  in it, in any form; the file says in its own header what it deliberately leaves out.
+
+### The theme library is a browser now
+
+- Opening the Themes tab reads the published library once (the service caches its own reply, so a
+  second visit costs no request), and the list has its own **filter by kind**, **order by**
+  downloads, likes, age or name, and a search box. The kinds come from the index itself, and an
+  order or kind that would only ever produce an empty page is not offered.
+- A card can show a **preview**: the picture is fetched by the shell and drawn from a data URL,
+  never hotlinked, because the image policy in Discord's page is Discord's - one request for the
+  one preview somebody asks for, cached for a handful, capped in size, https only, and refused
+  with the host named when it is a host this client does not fetch.
+- The library's read is now guarded: a second failed read keeps the list already on screen rather
+  than blanking two hundred cards.
+
 
 ## 0.3.9
 
