@@ -24,12 +24,11 @@
 # *as a stranger gets it*, from the lockfile, with the vendored forks absent, and
 # then every command that has a documented outcome in that state.
 #
-# What it does not run, and why that is not a gap being papered over: the Electron
-# suites (`tests/preload`, `tests/updater`, `tests/feed-live`, `tests/baseline`) and
-# the packaged check. They live in `.github/workflows/release.yml`, on runners that
-# have a display, and `tests/feed-live` drives the installers that pipeline builds -
-# there is nothing here for them to drive, and duplicating them would add a second
-# place for the same failure to appear without adding a check.
+# `tests/feed-live` and the packaged check are not here, and that is deliberate: they
+# drive the installers the release pipeline builds, and there is nothing for them to
+# drive on a push. Everything that needs only a window is here, in the second job,
+# because a suite nobody runs is a suite that does not exist - and a developer's
+# machine is not a CI runner.
 name: Check
 
 on:
@@ -179,3 +178,89 @@ jobs:
           fi
 
           exit "$status"
+
+  # The two suites that open a real window, on the runner that can give them one.
+  #
+  # They were in the release gate only, which meant they ran once per tagged release:
+  # a change to the settings sheet could be merged, reviewed and pushed with nothing
+  # having rendered a page - and a page is exactly what those suites check (where the
+  # sheet mounts, which rows the entries wear, what a click lands on). The commands
+  # here are the release gate's own, which have run on this runner image before.
+  #
+  # `ELECTRON_DISABLE_SANDBOX` is set for the *test* run only: an ubuntu runner's kernel
+  # usually refuses an unprivileged user namespace and Chromium then refuses to start at
+  # all. The windows these suites create still ask for `sandbox: true`, so the isolation
+  # they assert is unchanged - see the Linux desktop job in release.yml.
+  windowed:
+    name: The suites that open a window
+    needs: clean-checkout
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ELECTRON_DISABLE_SANDBOX: '1'
+      ELECTRON_ENABLE_LOGGING: '1'
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Make sure a display is available
+        shell: bash
+        run: |
+          if command -v xvfb-run >/dev/null 2>&1; then
+            echo "xvfb-run is present: $(command -v xvfb-run)"
+            exit 0
+          fi
+          echo "xvfb-run is not installed; installing xvfb for the suites that open a window"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          command -v xvfb-run >/dev/null 2>&1 || { echo "FAIL xvfb could not be installed, so no window can be opened here"; exit 1; }
+          echo "xvfb-run installed: $(command -v xvfb-run)"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The injection path in a real window: the preload loaded exactly as the client
+      # loads it, into a page standing in for Discord's, checking the document - the one
+      # style element, the token option under the login form, Hypercord's own pages
+      # mounted inside Discord's settings, and the sheet's new blocks on the pages that
+      # carry them.
+      - name: The preload suite, in a real window
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/preload.log"
+          status=0
+          xvfb-run -a npm run test:preload > "$log" 2>&1 || status=$?
+          tail -60 "$log"
+          exit "$status"
+
+      # The updater against a feed of ours, with no network and no publish.
+      - name: The updater suite
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/updater.log"
+          status=0
+          xvfb-run -a npm run test:updater > "$log" 2>&1 || status=$?
+          tail -60 "$log"
+          exit "$status"
+
+      # A test run that produced nothing is not a pass: both suites print their own
+      # totals, and a suite that ends without one has crashed in a way the tail above
+      # only partly shows.
+      - name: Both suites reported their totals
+        shell: bash
+        run: |
+          for name in preload updater; do
+            log="$RUNNER_TEMP/$name.log"
+            if ! grep -qE '^passed [0-9]+  failed 0' "$log"; then
+              echo "FAIL the $name suite did not report a clean total:"
+              tail -40 "$log"
+              exit 1
+            fi
+            echo "ok   $name: $(grep -E '^passed [0-9]+  failed 0' "$log")"
+          done
