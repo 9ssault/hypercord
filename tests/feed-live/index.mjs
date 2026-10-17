@@ -211,12 +211,25 @@ async function freePort() {
   return port;
 }
 
-async function pageTarget(debugPort) {
+/**
+ * Every page the client is showing, not just the first one.
+ *
+ * The first page is not a contract: a packed macOS run lists Hypercord's own panes window
+ * beside Discord's, and reading `window.hypercord` off whichever page happens to come first
+ * is how the 0.3.18 macOS run reported "no update state was readable" while the client was
+ * busy downloading the update. Each page is tried; the one that answers with a state is the
+ * one the assertions use.
+ */
+async function pageTargets(debugPort) {
   // bounded for the same reason as the socket below: a request that stalls must be retried,
   // not waited on (a run killed mid-suite leaves a client behind that holds this port)
   const res = await fetch("http://127.0.0.1:" + debugPort + "/json/list", { signal: AbortSignal.timeout(4000) });
   const list = await res.json();
-  return (Array.isArray(list) ? list : []).find((row) => row.type === "page" && row.webSocketDebuggerUrl) || null;
+  // Discord's page first: Hypercord's own panes window carries a different bridge, and a page
+  // that answers `null` is not a client that failed to update, it is the wrong page.
+  return (Array.isArray(list) ? list : [])
+    .filter((row) => row.type === "page" && row.webSocketDebuggerUrl)
+    .sort((a, b) => Number(/^https?:/.test(String(b.url || ""))) - Number(/^https?:/.test(String(a.url || ""))));
 }
 
 function isAlive(pid) {
@@ -361,17 +374,41 @@ async function run() {
 
   let state = null;
   let target = null;
+  // Why the last read did not produce a state. "no update state was readable" on its own
+  // sent one release run looking at the client's logs for an answer the harness already had:
+  // a page that does not carry the bridge (its URL says which), or a call that threw or hung.
+  let why = "";
+  const seenPages = [];
   const deadline = Date.now() + 210000;
   try {
     while (Date.now() < deadline) {
       await wait(2000);
+      let pages = [];
       try {
-        target = target || (await pageTarget(debugPort));
-        if (!target) continue;
-        state = await evaluate(target.webSocketDebuggerUrl, "(window.hypercord && window.hypercord.update) ? window.hypercord.update.state() : null");
-      } catch {
+        pages = await pageTargets(debugPort);
+      } catch (err) {
+        why = "the debugging port did not list its pages (" + String(err.message || err) + ")";
         continue;
       }
+      if (!pages.length) {
+        why = "no page appeared yet";
+        continue;
+      }
+      for (const page of pages) {
+        try {
+          const read = await evaluate(page.webSocketDebuggerUrl, "(window.hypercord && window.hypercord.update) ? window.hypercord.update.state() : null");
+          if (read) {
+            state = read;
+            target = page;
+            break;
+          }
+          why = "this page carries no window.hypercord.update: " + String(page.url || page.title || "(no url)");
+        } catch (err) {
+          why = String(page.url || page.title || "(no url)") + ": " + String((err && err.message) || err);
+        }
+      }
+      const urls = pages.map((page) => String(page.url || "(no url)"));
+      if (!seenPages.length || urls.join(" ") !== seenPages[seenPages.length - 1]) seenPages.push(urls.join(" "));
       if (!state) continue;
       if (refusesToCheck || state.downloaded || state.error) break;
     }
@@ -381,7 +418,11 @@ async function run() {
     await wait(800);
   }
 
-  ok("the packed build starts and its own page answers", Boolean(state), target ? "no update state was readable" : "no page appeared in 3.5 minutes");
+  ok(
+    "the packed build starts and its own page answers",
+    Boolean(state),
+    "no update state was readable: " + (why || "nothing answered") + (seenPages.length ? " | pages seen: " + seenPages.join(" -> ") : ""),
+  );
   // Only where there is an updater to drive. A Linux run that is not an AppImage answers
   // `elsewhere` on purpose - the three assertions below say so, and that it never touched the
   // network - and asking it for `feed` as well was a contradiction this suite carried from the
@@ -422,14 +463,21 @@ async function run() {
     // the assertion that would notice a client which never asked its feed for anything. An exact
     // name and not an `includes`: the `.blockmap` beside the artifact carries its name too, and a
     // run that asked for the block map and nothing else has not downloaded the update.
-    const overTheWire = requests.includes(offer.artifact);
+    // Which artifact, exactly? Not the feed's top-level `path`: on an Apple Silicon runner the
+    // x64 build runs under Rosetta and electron-updater asks for the arm64 zip from the same
+    // `files` list, which is the right answer on that machine. What has to be true everywhere
+    // is that the client asked this suite's feed for an artifact that feed itself names - a
+    // name off the list, or a client inventing one, is the failure this assertion is for.
+    const named = [offer.artifact, ...[...offer.real.matchAll(/^\s*-\s*url:\s*(.+)$/gm)].map((match) => match[1].trim())];
+    const askedArtifact = requests.find((name) => named.includes(name));
     ok(
       "and the artifact reached it: over the wire, or from a copy it had already validated",
-      overTheWire || state?.downloaded === offer.offered,
-      JSON.stringify({ asked: requests.slice(0, 6), downloaded: state?.downloaded }),
+      Boolean(askedArtifact) || state?.downloaded === offer.offered,
+      JSON.stringify({ asked: requests.slice(0, 6), downloaded: state?.downloaded, feedNames: named }),
     );
+    if (askedArtifact && askedArtifact !== offer.artifact) say("the client asked for " + askedArtifact + " rather than the feed's path " + offer.artifact + ": this machine's architecture picks its own entry out of the feed")
     say("the feed served: " + (requests.length ? requests.slice(0, 6).join(", ") : "nothing"));
-    if (!overTheWire) say("the updater already held this exact artifact from an earlier run (same version, same checksum), so it validated that copy instead of downloading it again - a cold cache, which is what a release runner has, fetches it from the feed");
+    if (!askedArtifact) say("the updater already held this exact artifact from an earlier run (same version, same checksum), so it validated that copy instead of downloading it again - a cold cache, which is what a release runner has, fetches it from the feed");
   }
 
   // Nothing installs: the client was ended with the process tree, so no quit event ran the
